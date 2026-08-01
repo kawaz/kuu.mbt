@@ -745,6 +745,7 @@ fn output_legacy(
   ast : AtomicAST,
   effects~ : Array[@abi.Binding],
   resolved? : Array[@abi.Binding] = effects,
+  complete_static? : Bool = true,
 ) -> OutputView {
   let result = build_result_export(
     ast.root,
@@ -752,6 +753,7 @@ fn output_legacy(
     export_map(ast),
     extensions=ast.extensions,
     templates=ast.templates,
+    complete_static~,
   )
   {
     result,
@@ -784,7 +786,7 @@ pub fn output_of_interpretation(
   ast : AtomicAST,
   interp : Interpretation,
 ) -> @abi.ResultValue {
-  let view = output_legacy(ast, effects=interp.raw.binds)
+  let view = output_legacy(ast, effects=interp.raw.binds, complete_static=false)
   filter_interpretation_result(view.result, view.sources)
 }
 

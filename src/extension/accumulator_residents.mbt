@@ -36,7 +36,7 @@ fn append_resolve_cli(
             Err(error) => return Err(error)
           }
         @abi.Set if binding.value is @abi.Null => {
-          resolved.push(binding)
+          resolved.clear()
           committed = false
         }
         @abi.Unset => {

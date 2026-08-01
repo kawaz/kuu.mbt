@@ -578,17 +578,30 @@ test "front_door.resolve+result: ref+repeat accum セルの row 集約が resolv
   // single-fire-list: 1 発火でも要素1件の配列 (scalar への unwrap をしない、DR-034)。
   assert_eq(
     hlcolors_of(["--hlcolors", "red"]),
-    @abi.Array([@abi.Object([("colorname", @abi.Scalar(@abi.String("red")))])]),
+    @abi.Array([
+      @abi.Object([
+        ("colorname", @abi.Scalar(@abi.String("red"))),
+        ("r", @abi.Scalar(@abi.Null)),
+        ("g", @abi.Scalar(@abi.Null)),
+        ("b", @abi.Scalar(@abi.Null)),
+      ]),
+    ]),
   )
   // two-fires-branch-append: 2 発火 (or の異なる枝) は row をそのまま順に積む (枝の違いを畳まない)。
   assert_eq(
     hlcolors_of(["--hlcolors", "red", "--hlcolors", "0", "128", "255"]),
     @abi.Array([
-      @abi.Object([("colorname", @abi.Scalar(@abi.String("red")))]),
+      @abi.Object([
+        ("colorname", @abi.Scalar(@abi.String("red"))),
+        ("r", @abi.Scalar(@abi.Null)),
+        ("g", @abi.Scalar(@abi.Null)),
+        ("b", @abi.Scalar(@abi.Null)),
+      ]),
       @abi.Object([
         ("r", @abi.Scalar(@abi.Number(0.0))),
         ("g", @abi.Scalar(@abi.Number(128.0))),
         ("b", @abi.Scalar(@abi.Number(255.0))),
+        ("colorname", @abi.Scalar(@abi.Null)),
       ]),
     ]),
   )
@@ -2649,6 +2662,49 @@ test "front_door.output: named or は発火時に全枝を null 補形し、未�
   assert_eq(
     wbtest_view_of(anonymous, ["true"]),
     "result={fast=true} sources={fast=cli} effects=fast",
+  )
+}
+
+///|
+/// ref template の内部は宣言済みの closed な構造なので、選択された枝以外の leaf も `null` で補形する。
+/// wrapper だけを射影木へ登録すると内部座が sparse に戻るため、template declaration も同じ木へ合成する。
+test "front_door.output: ref template 内部座を null 補形する" {
+  let src =
+    #|{"definitions":{"templates":{"choice":{"or":[
+    #|  {"type":"string","name":"text"},
+    #|  {"type":"number","name":"number"}]}}},
+    #| "positionals":[{"name":"value","ref":"choice"}]}
+  assert_eq(
+    wbtest_view_of(src, ["x"]),
+    "result={value={number=null,text=x}} sources={value={number=null,text=cli}} effects=text",
+  )
+}
+
+///|
+/// accumulator の unset は Value fn の `null` を通常の set として返すが、行供給にはならない。
+/// 後続 set があれば null 行を残さず、空席化した accumulator へその値だけを積み直す。
+test "front_door.output: accumulator の set(null) は行を積まず後続 set だけを残す" {
+  let src =
+    #|{"options":[{"name":"tags","type":"string","long":[":set","reset:unset"],
+    #| "multiple":"append"}]}
+  assert_eq(
+    wbtest_view_of(src, ["--reset-tags", "--tags", "x"]),
+    "result={tags=[x]} sources={tags=[cli]} effects=tags",
+  )
+}
+
+///|
+/// command alias は canonical と同じ露出キーへ合流する。選択された alias subtree があるとき、
+/// canonical 側の未選択座を同じキーの `null` として重ねてはならない。
+test "front_door.output: command alias は canonical subtree と null 座を二重化しない" {
+  let src =
+    #|{"commands":[
+    #| {"type":"command","name":"checkout","options":[
+    #|  {"name":"branch","type":"string","long":true}]},
+    #| {"alias":"checkout","type":"command","name":"co"}]}
+  assert_eq(
+    wbtest_view_of(src, ["co", "--branch", "x"]),
+    "result={checkout={branch=x}} sources={checkout={branch=cli}} effects=branch",
   )
 }
 

@@ -880,7 +880,7 @@ fn build_result(
               nones~,
               extensions~,
               shape=child_shape,
-              complete_static=true,
+              complete_static~,
             ),
           )
         }
@@ -907,7 +907,7 @@ fn build_result(
         nones~,
         extensions~,
         shape=child_shape,
-        complete_static=true,
+        complete_static~,
       )
       let collected = if is_accum {
         match collector_here(cells, path, seg) {
@@ -1366,6 +1366,27 @@ fn collect_defaults(
 }
 
 ///|
+fn projected_command_key_selected(
+  sc : @engine.Scope,
+  binds : Array[@abi.Binding],
+  declaration_path : Array[String],
+  export_map : @engine.ExportScopeMap,
+  key : String,
+) -> Bool {
+  for greedy in sc.greedy {
+    match greedy {
+      @engine.CommandSatisfied(name, _) =>
+        if export_map.exposed_scope(name) == Some(key) &&
+          @engine.scope_selected(binds, path_push(declaration_path, name)) {
+          return true
+        }
+      _ => ()
+    }
+  }
+  false
+}
+
+///|
 /// front_door 昇格 (issue 2026-07-16-result-projection-production-promotion、MDR-005「射程外」節
 /// の解消、DR-109 §5 UX-Q5=a): `binds` → `result` オブジェクト (CONFORMANCE.md §2 の
 /// `result: {...}`) を組み立てる 4 素材 (`apply_export_keys`/`accum_cells`/
@@ -1403,17 +1424,21 @@ fn command_projection_bindings(
         } else {
           match exposed {
             Some(key) =>
-              out.push({
-                key,
-                op: @abi.Set,
-                value: @abi.Null,
-                source: @abi.Default,
-                scope: result_path.copy(),
-                link_selections: [],
-                observation: None,
-                levels_to_declaring_scope: 0,
-                at_pos: None,
-              })
+              if !projected_command_key_selected(
+                  sc, binds, declaration_path, export_map, key,
+                ) {
+                out.push({
+                  key,
+                  op: @abi.Set,
+                  value: @abi.Null,
+                  source: @abi.Default,
+                  scope: result_path.copy(),
+                  link_selections: [],
+                  observation: None,
+                  levels_to_declaring_scope: 0,
+                  at_pos: None,
+                })
+              }
             None => ()
           }
         }
@@ -1430,6 +1455,7 @@ fn build_result_export(
   ek : @engine.ExportScopeMap,
   extensions? : @node.Registry = canonical_registry(),
   templates? : Map[String, @engine.Node] = Map([]),
+  complete_static? : Bool = true,
 ) -> @abi.ResultValue {
   let projected = apply_export_keys(active_link_bindings(binds), ek)
   command_projection_bindings(sc, binds, [], [], ek, projected)
@@ -1441,7 +1467,7 @@ fn build_result_export(
     nones=internal_cells(sc, ek, binds, templates~),
     extensions~,
     shape=Some(ek),
-    complete_static=true,
+    complete_static~,
   )
 }
 
@@ -2024,6 +2050,33 @@ fn candidate_satisfied(
 /// scope boundaries prepend the path on the way out) — that mechanism doesn't run here (the path
 /// is already fully resolved), so `sc.path` (DR-066 §4 result-nesting path) is threaded in
 /// directly via struct-update.
+fn constraint_pending_invoke(
+  bindings : Array[@abi.Binding],
+  path : Array[String],
+  name : String,
+) -> @abi.FnInvocation? {
+  let mut pending : @abi.FnInvocation? = None
+  for binding in bindings {
+    if binding.key == name && path_eq(binding.scope, path) {
+      pending = match binding.op {
+        @abi.Invoke(invocation) => Some(invocation)
+        _ => None
+      }
+    }
+  }
+  pending
+}
+
+///|
+fn constraint_has_pending_invoke(
+  bindings : Array[@abi.Binding],
+  path : Array[String],
+  name : String,
+) -> Bool {
+  constraint_pending_invoke(bindings, path, name) is Some(_)
+}
+
+///|
 fn eval_requires(
   sc : @engine.ScopedCons,
   bindings : Array[@abi.Binding],
@@ -2035,6 +2088,17 @@ fn eval_requires(
   // DR-093 §1/§3: 目的語の充足判定は型 (値空間) への委譲 — 値空間なし (none) は発火 (committed)、
   // bool は解決後値が true、それ以外 (通常の値空間あり型) は値の有無。none 分岐が先 (bool/非bool の
   // 判定は値空間があることが前提で、none には値そのものが無い)。
+  let committed = fn(t : String) -> Bool {
+    if is_none_entity(sc.entities, t) {
+      @engine.is_committed(bindings, path, t)
+    } else {
+      match constraint_pending_invoke(bindings, path, t) {
+        Some(invocation) if invocation.name == "unset" => false
+        Some(_) => @engine.is_committed(resolved, path, t)
+        None => @engine.is_committed(bindings, path, t)
+      }
+    }
+  }
   let satisfied = fn(t : String) -> Bool {
     if is_none_entity(sc.entities, t) {
       @engine.is_committed(bindings, path, t)
@@ -2047,7 +2111,7 @@ fn eval_requires(
   for c in sc.constraints {
     match c {
       Requires(elem, targets) =>
-        if @engine.is_committed(bindings, path, elem) {
+        if committed(elem) {
           for t in targets {
             if !satisfied(t) {
               out.push({
@@ -2063,7 +2127,7 @@ fn eval_requires(
           }
         }
       RequiresIf(entity, branch_id, v, targets) => {
-        let active = @engine.is_committed(bindings, path, entity) &&
+        let active = committed(entity) &&
           (match @engine.element_value(bindings, path, entity) {
             Some(x) => x == v
             None => false
@@ -2084,7 +2148,49 @@ fn eval_requires(
           }
         }
       }
-      Conflicts(_, _) | Exclusive(_, _) => () // committed 基準、値源不問なので KTop で確定済み
+      Conflicts(elem, targets) =>
+        if committed(elem) {
+          for target in targets {
+            if (
+                constraint_has_pending_invoke(bindings, path, elem) ||
+                constraint_has_pending_invoke(bindings, path, target)
+              ) &&
+              committed(target) {
+              out.push({
+                ..@abi.ParseError::constraint(
+                  elem,
+                  "conflicts_with_violated",
+                  "'\{elem}' conflicts with '\{target}'",
+                  pos,
+                ),
+                path,
+              })
+            }
+          }
+        }
+      Exclusive(group, members) => {
+        let mut count = 0
+        let mut pending = false
+        for candidate in members {
+          if constraint_has_pending_invoke(bindings, path, candidate) {
+            pending = true
+          }
+          if committed(candidate) {
+            count = count + 1
+          }
+        }
+        if pending && count > 1 {
+          out.push({
+            ..@abi.ParseError::constraint(
+              group,
+              "exclusive_group_violated",
+              "exclusive group '\{group}' allows at most one",
+              pos,
+            ),
+            path,
+          })
+        }
+      }
       Required(display, candidates) => {
         // DR-093 §1/§2: 自身の充足は型委譲。値空間なし (none) = 発火 (committed)、値空間あり =
         // 最終状態の値の有無 (default 込み、DR-047 §5 不変)。`satisfied` (上記 requires 目的語用) は
@@ -3084,6 +3190,14 @@ fn resolve_entity_raw(
   // effect) — factored into its own function.
   match e.accum {
     Some(resident) => {
+      let normalized_cli : Array[@abi.Binding] = []
+      for binding in cli {
+        match binding.op {
+          @abi.Invoke(invocation) if invocation.name == "unset" =>
+            normalized_cli.push({ ..binding, op: @abi.Set, value: @abi.Null })
+          _ => normalized_cli.push(binding)
+        }
+      }
       let lower : @extension.LowerSeat = fn(include_default_) {
         resolve_ladder_below_cli(
           e,
@@ -3097,7 +3211,12 @@ fn resolve_entity_raw(
           include_default=include_default_,
         )
       }
-      return resident.resolve_cli(e.name, cli, include_default, lower)
+      return resident.resolve_cli(
+        e.name,
+        normalized_cli,
+        include_default,
+        lower,
+      )
     }
     None => ()
   }

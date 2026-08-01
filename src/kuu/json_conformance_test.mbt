@@ -218,12 +218,17 @@ fn render_val(v : @abi.Value) -> String {
     @abi.String(s) => "string:" + s
     @abi.Bool(b) => "bool:" + (if b { "true" } else { "false" })
     @abi.Number(d) => {
-      let prefix = "number:"
-      let i = d.to_int()
-      if i.to_double() == d {
-        prefix + i.to_string()
+      let rendered = d.to_string()
+      if rendered == "Infinity" || rendered == "-Infinity" {
+        "string:" + rendered
       } else {
-        prefix + d.to_string()
+        let prefix = "number:"
+        let i = d.to_int()
+        if i.to_double() == d {
+          prefix + i.to_string()
+        } else {
+          prefix + rendered
+        }
       }
     }
   }
@@ -2786,9 +2791,9 @@ test "conformance: @engine.OrBranch auto id (#{seq}) は held-error / ambiguous 
       }
       let joined = join_comma(views)
       no_leak(joined)
-      if !joined.contains("a=5") || !joined.contains("b=5") {
+      if !joined.contains("a=number:5") || !joined.contains("b=number:5") {
         abort(
-          "expected both interpretations (a=5/b=5) in ambiguous text, got: \{joined}",
+          "expected both interpretations (a=number:5/b=number:5) in ambiguous text, got: \{joined}",
         )
       }
     }
@@ -2833,7 +2838,7 @@ test "DR-078: definitions.templates + ref — repeat over a shared or-template (
   // と同じ形、色テンプレの leaf 名は "colorname")。
   assert_eq(
     render_success(df.ast, ["red", "blue"]),
-    "ok{hlcolors=[{colorname=red},{colorname=blue}]}",
+    "ok{hlcolors=[{b=null,colorname=string:red,g=null,r=null},{b=null,colorname=string:blue,g=null,r=null}]}",
   )
   // rgb 枝 (1 回発火, 3 トークン) vs colorname 枝 (3 回発火, 1 トークンずつ) — 構造的に異なる完全経路
   // が両立し ambiguous:2 (DR-038)。
@@ -2871,7 +2876,7 @@ test "DR-078: preference does not erode or-branch ambiguity (share-dimension onl
   )
   assert_eq(
     render_success(df.ast, ["red", "green", "blue"]),
-    "ok{hlcolors=[{colorname=red},{colorname=green},{colorname=blue}]}",
+    "ok{hlcolors=[{b=null,colorname=string:red,g=null,r=null},{b=null,colorname=string:green,g=null,r=null},{b=null,colorname=string:blue,g=null,r=null}]}",
   )
 }
 
@@ -2949,7 +2954,10 @@ test "decode: an ordinary `#`-free name is unaffected by the reserved-name check
     #|  "cases": []
     #|}
   let df = dec_fixture(@json.parse(src))
-  assert_eq(render_success(df.ast, ["red"]), "ok{hlcolors=[{colorname=red}]}")
+  assert_eq(
+    render_success(df.ast, ["red"]),
+    "ok{hlcolors=[{b=null,colorname=string:red,g=null,r=null}]}",
+  )
 }
 
 ///|
@@ -4017,12 +4025,10 @@ test "CONST-Q1: const wins over a default_fn seat (the default_fn branch must no
 }
 
 ///|
-/// 受け入れ条件の対極: const は「値セルに最初からいる」が、**未選択 scope 配下は従来どおり absent**
-/// (DR-051 / `export-key/unselected-scope-no-default-leak.json` が default について固定している
-/// gate と同じ)。const がこの gate をすり抜けて未選択 command の値を root へ漏らさないことを固定する
-/// — 「セルに最初からいる」のは*そのセルが存在する場合*の話であって、未選択 scope のセルは
-/// そもそも結果に現れない。
-test "CONST-Q1: a const under an UNSELECTED command scope stays absent (no leak past the scope gate)" {
+/// 受け入れ条件の対極: const は「値セルに最初からいる」が、未選択 scope は内側を実現せず、
+/// 親レベルの command 座 1 つを `null` に畳む (DR-130 §2)。const がこの gate をすり抜けて
+/// 未選択 command の値を root へ漏らさないことを固定する。
+test "CONST-Q1: an unselected command scope is null without leaking its const" {
   let src =
     #|{
     #|  "query": "parse",
@@ -4038,8 +4044,8 @@ test "CONST-Q1: a const under an UNSELECTED command scope stays absent (no leak 
     #|      "args": ["build"],
     #|      "expect": {
     #|        "outcome": "success",
-    #|        "result": {"build": {"jobs": 4}},
-    #|        "sources": {"build": {"jobs": "const"}}
+    #|        "result": {"build": {"jobs": 4}, "test": null},
+    #|        "sources": {"build": {"jobs": "const"}, "test": null}
     #|      }
     #|    }
     #|  ]

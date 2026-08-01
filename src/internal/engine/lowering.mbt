@@ -4270,7 +4270,7 @@ fn collect_unsupported_accum_update(
     if e.multiple {
       for v in e.variants {
         match v.op {
-          Invoke(_) =>
+          Invoke(invocation) if invocation.name != "unset" =>
             out.push(
               def_err(
                 e.name,
@@ -4288,7 +4288,7 @@ fn collect_unsupported_accum_update(
     if e.multiple {
       for v in e.variants {
         match v.op {
-          Invoke(_) =>
+          Invoke(invocation) if invocation.name != "unset" =>
             out.push(
               def_err(
                 e.name,
@@ -4329,7 +4329,7 @@ fn collect_unsupported_accum_update(
                   classify_long_spelling(l, alias_name, canon.ty, extensions) {
                   Variant(v) =>
                     match v.op {
-                      Invoke(_) =>
+                      Invoke(invocation) if invocation.name != "unset" =>
                         out.push(
                           def_err(
                             canon.name,
@@ -4359,7 +4359,7 @@ fn collect_unsupported_accum_update(
                   classify_long_form(form, alias_name, canon.ty, extensions) {
                   Variant(v) =>
                     match v.op {
-                      Invoke(_) =>
+                      Invoke(invocation) if invocation.name != "unset" =>
                         out.push(
                           def_err(
                             canon.name,
@@ -5628,9 +5628,10 @@ fn command_is_alias_copy(def : Definition, c : CommandDef) -> Bool {
 fn build_export_scopes(
   def : Definition,
   out : Array[DefError],
+  template_declarations : Map[String, ElementDef],
 ) -> ExportScopeMap {
   let node = ExportScopeMap::empty()
-  gather_export_scope(def, node, out)
+  gather_export_scope(def, node, out, template_declarations)
   node
 }
 
@@ -5643,9 +5644,10 @@ fn gather_export_scope(
   def : Definition,
   node : ExportScopeMap,
   out : Array[DefError],
+  template_declarations : Map[String, ElementDef],
 ) -> Unit {
   let seats : Array[ExportSeat] = []
-  gather_export_seats(def, node, seats, out)
+  gather_export_seats(def, node, seats, out, template_declarations)
   report_export_key_collisions(seats, out)
 }
 
@@ -5656,12 +5658,13 @@ fn gather_export_seats(
   node : ExportScopeMap,
   seats : Array[ExportSeat],
   out : Array[DefError],
+  template_declarations : Map[String, ElementDef],
 ) -> Unit {
   for e in def.options {
-    gather_element_seats(e, node, seats, out, true)
+    gather_element_seats(e, node, seats, out, true, template_declarations)
   }
   for e in def.positionals {
-    gather_element_seats(e, node, seats, out, true)
+    gather_element_seats(e, node, seats, out, true, template_declarations)
   }
   for c in def.commands {
     // command はスコープラベル軸のみに載る。同名の option が同じスコープに居ても値セル軸は
@@ -5681,10 +5684,11 @@ fn gather_export_seats(
         node.occupy_scope(c.name)
         node.project_scope(c.name)
         seats.push({ element: c.name, key, space: scope_value_space() })
-        gather_export_scope(c.body, child, out)
+        gather_export_scope(c.body, child, out, template_declarations)
       }
       // 透過 command: スコープキーが落ち、子の結果キー持ちが親スコープへ昇格する。
-      None => gather_export_seats(c.body, child, seats, out)
+      None =>
+        gather_export_seats(c.body, child, seats, out, template_declarations)
     }
   }
 }
@@ -5708,6 +5712,7 @@ fn gather_element_seats(
   seats : Array[ExportSeat],
   out : Array[DefError],
   project : Bool,
+  template_declarations : Map[String, ElementDef],
 ) -> Unit {
   // 非参加要素の席は自分も内側も数えない — alias / global コピーは canonical 側と同じ構造の
   // 写しなので、内側まで数えると canonical の席が二重に立つ。軸は remap のために登録する
@@ -5730,6 +5735,32 @@ fn gather_element_seats(
           None => ()
         }
       }
+      match e.ref_target {
+        Some(target) =>
+          match template_declarations.get(target) {
+            Some(template) => {
+              let inner : Array[ExportSeat] = []
+              let inner_node = node.element_scope(e.name)
+              match template.body {
+                Or(branches) =>
+                  for branch in branches {
+                    for item in branch.items {
+                      gather_element_seats(
+                        item, inner_node, inner, out, true, template_declarations,
+                      )
+                    }
+                  }
+                _ =>
+                  gather_element_seats(
+                    template, inner_node, inner, out, true, template_declarations,
+                  )
+              }
+              report_export_key_collisions(inner, out)
+            }
+            None => ()
+          }
+        None => ()
+      }
     }
     Or(branches) => {
       // 匿名 or (positional の `{"or":[...]}`, held-errors 2 fixture) は lowering 側でも `Scoped`
@@ -5737,7 +5768,9 @@ fn gather_element_seats(
       if e.name == "" {
         for br in branches {
           for it in br.items {
-            gather_element_seats(it, node, seats, out, false)
+            gather_element_seats(
+              it, node, seats, out, false, template_declarations,
+            )
           }
         }
         return
@@ -5759,7 +5792,9 @@ fn gather_element_seats(
           let inner : Array[ExportSeat] = []
           for br in branches {
             for it in br.items {
-              gather_element_seats(it, inner_node, inner, out, true)
+              gather_element_seats(
+                it, inner_node, inner, out, true, template_declarations,
+              )
             }
           }
           report_export_key_collisions(inner, out)
@@ -5767,7 +5802,9 @@ fn gather_element_seats(
         None =>
           for br in branches {
             for it in br.items {
-              gather_element_seats(it, inner_node, seats, out, true)
+              gather_element_seats(
+                it, inner_node, seats, out, true, template_declarations,
+              )
             }
           }
       }
@@ -5789,13 +5826,17 @@ fn gather_element_seats(
           seats.push({ element: e.name, key, space: group_value_space() })
           let inner : Array[ExportSeat] = []
           for it in items {
-            gather_element_seats(it, inner_node, inner, out, true)
+            gather_element_seats(
+              it, inner_node, inner, out, true, template_declarations,
+            )
           }
           report_export_key_collisions(inner, out)
         }
         None =>
           for it in items {
-            gather_element_seats(it, inner_node, seats, out, true)
+            gather_element_seats(
+              it, inner_node, seats, out, true, template_declarations,
+            )
           }
       }
     }
@@ -5966,7 +6007,9 @@ fn lower_definition_snapshot_impl(
     Ok(scope) => {
       let validation_errors : Array[DefError] = []
       collect_absent_link(def, validation_errors)
-      let export_scopes = build_export_scopes(def, validation_errors)
+      let export_scopes = build_export_scopes(
+        def, validation_errors, template_declarations,
+      )
       if validation_errors.length() > 0 {
         Err(validation_errors)
       } else {
@@ -5980,7 +6023,7 @@ fn lower_definition_snapshot_impl(
     }
     Err(errors) => {
       collect_absent_link(def, errors)
-      let _ = build_export_scopes(def, errors)
+      let _ = build_export_scopes(def, errors, template_declarations)
       Err(errors)
     }
   }

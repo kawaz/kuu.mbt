@@ -4271,6 +4271,21 @@ pub fn is_committed(
 }
 
 ///|
+fn has_pending_invoke(
+  bindings : Array[Binding],
+  path : Array[String],
+  name : String,
+) -> Bool {
+  let mut pending = false
+  for b in bindings {
+    if b.key == name && scope_path_eq(b.scope, path) {
+      pending = b.op is Invoke(_)
+    }
+  }
+  pending
+}
+
+///|
 /// The committed value of the (path, name) cell (last-wins), or None.
 pub fn element_value(
   bindings : Array[Binding],
@@ -4418,7 +4433,8 @@ fn eval_constraints(
   for c in sc.constraints {
     match c {
       Requires(elem, targets) =>
-        if is_committed(bindings, path, elem) {
+        if is_committed(bindings, path, elem) &&
+          !has_pending_invoke(bindings, path, elem) {
           for t in targets {
             if !value_declared(t, bindings, path, sc.entities) {
               out.push(
@@ -4438,6 +4454,7 @@ fn eval_constraints(
         // branch_id は installer で id 未指定時に entity 名にフォールバックされているので、id なしの
         // parent 直属 value_requires は従来通り entity 名で attribution される。
         let active = is_committed(bindings, path, entity) &&
+          !has_pending_invoke(bindings, path, entity) &&
           (match element_value(bindings, path, entity) {
             Some(x) => x == v
             None => false
@@ -4458,9 +4475,11 @@ fn eval_constraints(
         }
       }
       Conflicts(elem, targets) =>
-        if is_committed(bindings, path, elem) {
+        if is_committed(bindings, path, elem) &&
+          !has_pending_invoke(bindings, path, elem) {
           for t in targets {
-            if is_committed(bindings, path, t) {
+            if is_committed(bindings, path, t) &&
+              !has_pending_invoke(bindings, path, t) {
               out.push(
                 ParseError::constraint(
                   elem,
@@ -4474,12 +4493,15 @@ fn eval_constraints(
         }
       Exclusive(group, members) => {
         let mut count = 0
+        let mut pending = false
         for m in members {
-          if is_committed(bindings, path, m) {
+          if has_pending_invoke(bindings, path, m) {
+            pending = true
+          } else if is_committed(bindings, path, m) {
             count = count + 1
           }
         }
-        if count > 1 {
+        if !pending && count > 1 {
           out.push(
             ParseError::constraint(
               group,
