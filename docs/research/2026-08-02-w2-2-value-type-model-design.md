@@ -40,10 +40,12 @@
 | `src/extension/node_traits.mbt` | `TypeOutputShape` 削除、`TypeExt::output_shape` → `output_type`、`input_type` 席追加 |
 | `src/extension/type_residents.mbt` | builtin 10 residents の `output_shape` impl を `output_type` へ (§4.2 の表) |
 | `src/extension/registry.mbt` | `Registry::resolve_type_reference` 追加 |
+| `src/extension/abi_aliases.mbt` | `pub using @abi { ... }` ブロック (L4-51) に `type ValueType,` の alias を追記 — extension パッケージは ABI 型を unqualified で使う慣行 (`TypeParseFail` / `Value` 等と同列) |
 | `src/internal/engine/layer_aliases.mbt` | `type TypeOutputShape,` の行を削除 (`ValueType` は `@abi` 直参照で足りるか確認、engine の既存 `@abi` alias 慣行に合わせる) |
 | `src/internal/engine/lowering.mbt` | `LinkPathResolution::Residual` の carrier 置換、暫定分類関数、`collect_type_reference_errors` 追加 |
 | `src/extension/type_residents_wbtest.mbt` | `:77`/`:80` の `output_shape` 表明を `output_type` へ書き換え |
-| `src/kuu/value_type_reference_wbtest.mbt` | **新規**。§6 の parse_definition レベル wbtest |
+| `src/kuu/value_type_reference_wbtest.mbt` | **新規**。§6.2 の parse_definition レベル wbtest |
+| `src/internal/engine/value_type_classification_wbtest.mbt` | **新規**。§6.3 の暫定分類 table-driven wbtest |
 | 各 `pkg.generated.mbti` | `moon info` で再生成 |
 
 kuu-node (`src/kuu-node/installer.mbt`) は `lookup_type` の薄い委譲のみで `output_shape` に触れて
@@ -79,7 +81,7 @@ pub(all) enum ValueType {
   Array(ValueType) // {"array": T}
   Map(ValueType) // {"map": T} — キーは常に string
   Record(Array[(String, String)]) // {"record": {field: <type 参照>}} — 宣言順を保存する
-  Union(Array[ValueType]) // [T1, T2, ...] — 2 要素以上
+  Union(Array[ValueType]) // [T1, T2, ...] — 2 要素以上、重複なし。要素は value_type 全域 (union の入れ子も構文上合法)
 } derive(Eq, Debug)
 ```
 
@@ -96,8 +98,10 @@ pub(all) enum ValueType {
   effects 観測の決定性に効く (kuu.mbt の `ConfigVal::Object` / `ResultValue::Object` が
   `Array[(String, ...)]` を選んでいる既存慣行と同じ)。フィールドの重複キーは §2.1 の
   well-formedness で弾く
-- **union は平坦**。DR-107 由来の記法上 union の入れ子は書けない (JSON 配列の要素は
-  value_type)。enum 上は `Union(Union(...))` が構築できてしまうため §2.1 で弾く
+- **union の入れ子は構文上合法**。spec `schema/descriptor.schema.json` `$defs.value_type` の
+  union 枝は `items: {"$ref": value_type}` で union 自身を含む — `Union(Union(...))` は
+  合法な宣言であり弾かない。§2.1 が union に課すのは要素数 2 以上 (`minItems: 2`) と
+  重複 member なし (`uniqueItems: true`) のみ
 
 ### 2.1 宣言の well-formedness 検査 (abi 内の純関数)
 
@@ -106,15 +110,28 @@ resident の宣言は schema を通らない。等価なゲートを 1 つ置く
 
 ```moonbit
 ///|
-/// 宣言としての構文健全性。schema/descriptor.schema.json が wire 側で強制する制約の
-/// コード側等価物: union は 2 要素以上かつ直下に union を含まない、record のフィールド名は
-/// 非空かつ重複なし、type 参照の綴りは非空。違反箇所を人間可読の径路つきで列挙する。
+/// 宣言としての構文健全性。schema/descriptor.schema.json $defs.value_type が wire 側で
+/// 強制する制約のコード側等価物:
+///   - union は 2 要素以上 (minItems: 2) かつ重複 member なし (uniqueItems: true の等価、
+///     構造 Eq での重複検査)
+///   - record のフィールド名は重複なし (下記 rationale)
+///   - type 参照の綴りは schema pattern ^([a-z][a-z0-9_]*/)?[a-z][a-z0-9_]*$ に一致する
+///     (lexical 検査。非空だけでは不足 — 大文字 / 記号 / 先頭数字 / 多段 ns を弾く)
+/// 違反箇所を人間可読の径路つきで列挙する。
 pub fn ValueType::declaration_violations(self : ValueType) -> Array[String]
 ```
 
 再帰で全部の入れ子を検査し、`"union has 1 member (needs 2+) at .array"` のような文字列を返す。
 lowering の collector (§5) が非空なら `InvalidRange` の DefError に畳む (単一値の内部不正でなく
 「宣言の組合せが値域外」なので `InvalidRange`、`repeat min > max` と同じ整理 — DR-082 系)。
+
+Design rationale (schema との対応関係):
+
+- **フィールド名そのものの検査 (非空等) は置かない** — schema の record 枝に propertyNames
+  制約は無く、コード側だけの発明になるため。schema に無い制約を足さない
+- **重複フィールドキーの検査は置く** — wire の JSON object では重複キーがそもそも表現
+  不能なので schema に規定は現れないが、`Array[(String, String)]` 表現では構築できて
+  しまう。「wire で表現不能な宣言はコード側でも不正」というコード側等価として正当
 
 ## 3. type 参照の解決 — `Registry::resolve_type_reference`
 
@@ -273,6 +290,15 @@ fn value_type_primitive_only(vt : ValueType) -> Bool {
 | `:4162` (`check_element_absent_link` 内) | `Missing \| Residual(Primitive) => true` | `Missing => true` / `Residual(declared) => residual_is_primitive_only(declared)` |
 | `:4163` | `Resolved(..) \| Residual(Opaque) => false` | `Resolved(..) => false` |
 
+**適用順序の保証 — 暫定分類は well-formedness 検査 (§2.1) を通った宣言にのみ適用される。**
+malformed な宣言 (例: `Union([])`) は §5 の collector が `InvalidRange` で必ず落とすことが
+確定しているため、Residual の消費側 (`:4065` / `:4162`) は宣言が malformed
+(`declaration_violations` 非空) の場合は分類関数を呼ばず、link 由来のエラー (Unsupported /
+absent-ref) も重畳しない — **malformed union のエラー重畳方針は `InvalidRange` のみ**。
+これにより `Union([])` で `all([]) == true` が primitive 側に落ちる穴は到達しない
+(到達不能根拠: 分類関数が呼ばれる前提条件が well-formed であること自体を消費側のガードで
+保証する。両 collector は同じ全件列挙の窓に居るので実行順には依存しない)。
+
 `:2456` / `:2489` の `Residual(_)` ワイルドカード 2 箇所は無変更で通る。エラーメッセージ
 (`"this link path reaches an opaque value structure"` 等) も**一字も変えない** — conformance
 `link-parse/absent-target.json` 等が pin している。
@@ -308,16 +334,37 @@ collect_type_reference_errors(def, extensions, errs) // 追加
 
 `extensions : Registry` は同関数の引数として既に手元にある。
 
-### 5.2 アルゴリズム
+### 5.2 アルゴリズム — 純粋 walker と seed collector の 2 層
+
+構成は 2 層に分離する:
+
+**層 1 — 純粋な型グラフ walker** (Definition を知らない):
 
 ```moonbit
 ///|
-/// DR-126 §1: record フィールドの type 参照は registry 空間で解決できなければ
-/// definition-error unknown-vocab、型依存グラフ (record フィールド経由の type edge) の
-/// 循環は circular-ref。検査対象は当該 definition の要素が使う型から到達可能な範囲のみ。
-/// DR-067 の参照層 (ref template の collect_absent_ref / collect_circular_ref) と同じ
-/// kind 語彙・同じ全件列挙の窓を共有するが、グラフは別 (あちらは ref template の
-/// head-position chain、こちらは registry type の宣言依存)。
+/// DR-126 §1: value_type 宣言 (root) から type 参照 edge を辿り、未登録参照 = unknown-vocab、
+/// 循環 = circular-ref、malformed 宣言 = invalid-range を列挙する純粋 walker。
+/// root が ValueType である点が肝 — 呼び手は「どの宣言面 (output_type / 将来の input_type
+/// の Record 参照) から検査を始めるか」だけを決め、graph の辿り方はここに一本化する。
+fn validate_value_type_references(
+  root : ValueType,
+  extensions : Registry,
+  element : String, // 診断の帰属先 (seed の要素名)
+  out : Array[DefError],
+) -> Unit
+```
+
+edge の辿り方:
+
+- `Record(fields)` → 各 field の参照綴りが edge。**参照先の中へは、参照先 type の
+  `output_type()` を通して降りる** (DR-126 §1 の再帰導出と同じ経路)
+- `Array(t)` / `Map(t)` → `t` を再帰 (record が入れ子で現れうる: `{"array": {"record": ...}}`)
+- `Union(members)` → 各 member を再帰
+- primitive / `Value` → edge なし
+
+**層 2 — Definition seed collector** (walker の呼び手):
+
+```moonbit
 fn collect_type_reference_errors(
   def : Definition,
   extensions : Registry,
@@ -325,34 +372,34 @@ fn collect_type_reference_errors(
 ) -> Unit
 ```
 
-1. **seed 集め**: `def.options` / `def.positionals` の各 `ElementDef.ty`、`def.commands` は
-   `command.body` へ再帰 (walker の形は `collect_link_path_errors` (`:4026`) を写す)。
-   seed は「(要素名, resident)」の組。同一 resident 名は要素ごとに重複させない
-2. **各 seed から DFS**: 現在の型の `output_type()` から type 参照を集める:
-   - `Record(fields)` → 各 field の参照綴りが edge。**参照先の中へは、参照先 type の
-     `output_type()` を通して降りる** (DR-126 §1 の再帰導出と同じ経路)
-   - `Array(t)` / `Map(t)` → `t` を再帰 (record が入れ子で現れうる: `{"array": {"record": ...}}`)
-   - `Union(members)` → 各 member を再帰
-   - primitive / `Value` → edge なし
-3. **未登録参照**: `extensions.resolve_type_reference(spelling)` が `None` →
+`def.options` / `def.positionals` の各 `ElementDef.ty` から seed (要素名 + resident の
+`output_type()`) を集め、`def.commands` は `command.body` へ再帰 (walker の形は
+`collect_link_path_errors` (`:4026`) を写す)。seed ごとに層 1 の walker を呼ぶ。
+
+この分離の理由: 将来 `input_type` の Record 参照検査 (DR-128 サイクル) も**同じ層 1 walker を
+別 seed で受ける** — walker が Definition でなく ValueType を root に取ることで、宣言面の追加が
+seed 追加だけで済む。なお DR-128 §8 の `input_structure` DAG は **seed も edge も別の別グラフ**
+(定義片の splice 依存であって型宣言依存ではない) であり、層 1 walker の拡張ではなく DR-128
+実装サイクルが別途置く。
+
+診断規則:
+
+1. **未登録参照**: `extensions.resolve_type_reference(spelling)` が `None` →
    `DefError { element: <seed の要素名>, kind: UnknownVocab, message: "type '<型名>' field
    '<フィールド名>' references unregistered type '<綴り>'", hint: "register the type or fix
    the reference spelling" }`。message 文言は最終的に実装者が整えてよいが、**型名・フィールド名・
    参照綴りの 3 つを必ず含める** (参照は seed から複数 hop 先にありうるため、要素名だけでは
    位置が特定できない)
-4. **循環**: DFS の on-stack 集合 (正規化済み綴りで持つ) に既在の型へ edge が向いたら
+2. **循環**: DFS の on-stack 集合 (正規化済み綴りで持つ) に既在の型へ edge が向いたら
    `CircularRef`。message には循環路を含める (例: `"type dependency cycle: timerange ->
    timestamp -> timerange"`)。自己参照 (`Node.next -> Node`) も同規則で落ちる (DR-126 §1)
-5. **重複抑制**: 同一 (element, kind, 対象綴り) の DefError は 1 defintion 内で 1 回。
-   visited 集合 (検査済みの型) を definition 単位で共有すれば、seed が違っても同じ壊れ方を
-   二重報告しない — ただし **element 帰属が変わる場合は seed ごとに報告してよい**
-   (`collect_*` 系の「全件収集」慣行に合わせ、実装の単純さを優先)
-6. **well-formedness**: DFS 中に各型の宣言へ §2.1 の `declaration_violations` を 1 回適用し、
-   非空なら `InvalidRange` で報告する
-
-注意: 検査は `output_type()` の宣言グラフのみを辿る。`input_type` 側の依存
-(DR-128 §8 の `input_structure` 経由循環) は定義片の splice 実装 (DR-128 サイクル) の領分で、
-本段では辿らない。
+3. **走査状態と重複抑制**: on-stack / visited 集合は **seed ごと**に独立に持つ (定義単位で
+   共有しない — 共有すると element 帰属が最初の seed に固定され、複数要素が同じ壊れた型を
+   使う場合の帰属が欠落する)。診断の dedup だけを `(element, kind, 対象綴り)` の組で行い、
+   同一 definition 内で同組は 1 回にする。型グラフは小さい (builtin 10 + テスト数個規模) ので
+   seed ごとの再走査に性能問題はない
+4. **well-formedness**: DFS 中に各型の宣言へ §2.1 の `declaration_violations` を 1 回適用し
+   (dedup は 3 と同じ組で効く)、非空なら `InvalidRange` で報告する
 
 ## 6. wbtest 計画
 
@@ -364,11 +411,15 @@ fn collect_type_reference_errors(
   Some(String)` 等、10 件)
 - override しない外部 resident (テスト内 struct) の `output_type() == None`
 - `input_type()` の既定が `ValueType::String` (builtin 1 件 + override なし外部 1 件)
+- `input_type()` を **override する** test resident 1 件 (`Record(...)` か `Union(...)` を返す) —
+  trait の新席が既定値でなく override 側へ正しく dispatch することを pin (既定値の表明だけでは
+  「席が dispatch されない実装」を検出できない)
 
 ### 6.2 `src/kuu/value_type_reference_wbtest.mbt` (新規)
 
 registry 構築は `src/kuu/lower_conformance_wbtest.mbt:660` 付近の builtin 登録パターンを写し、
-そこへテスト用 resident を追加登録する。テスト用 resident は最小 4 種:
+そこへテスト用 resident を追加登録する。テスト用 resident の基本 4 種 (境界ケース h〜p 用の
+追加 resident は各ケース行に記す):
 
 ```moonbit
 // output_type だけが本題。parse_token は Ok(@abi.String(token)) 等の stub でよい
@@ -395,11 +446,37 @@ kind / message を表明する。ケース:
 | e3 | record を名乗る type (timerange) の葉セルへ `link: "tr.since"` の残余 | **暫定** `Rejected` `Unsupported` — W2-6 が遷移表で置換する予定地。テストコメントに `W2-6 で record 降下 (静的成功) へ置換される暫定 pin` と明記 |
 | f | union 全 primitive (`Union([Bool, Null])`) を名乗る type へ残余つき link | `Rejected` `AbsentRef` (§4.4 の primitive-only 分類) |
 | g | `Union([Bool])` (1 要素 union) を名乗る type を使う定義 | `Rejected` `InvalidRange` (§2.1 well-formedness) |
+| h | brokenref を registry に**登録するが定義は使わない** (options は `string` のみ) | `Ok(_)` — 「使用型から到達可能な範囲のみ」の核心 pin。未使用の壊れた resident が無関係の定義を落とさない |
+| i1 | `output_type Some(Array(Record([("x","nosuch")])))` の type を使う定義 | `Rejected` `UnknownVocab` — array の内側の record 参照も辿る |
+| i2 | `output_type Some(Map(Record([("x","nosuch")])))` | 同上 (map の内側) |
+| i3 | `output_type Some(Union([Bool, Record([("x","nosuch")])]))` | 同上 (union member の内側) |
+| j | 2 hop 先の未登録: `hop_a` (Record → `hop_b`) を使い、`hop_b` (Record → `nosuch`) は登録済み | `Rejected` `UnknownVocab`、message の型名は `hop_b` (seed 直下でなく複数 hop 先で位置特定できること) |
+| k | array を介した cycle: `cyc_a` (Record → `cyc_b`)、`cyc_b` (`Array(Record([("g","cyc_a")]))`) | `Rejected` `CircularRef` — edge が record 直下でなく array/union 経由でも循環を検出 |
+| l | extension ns の参照: `myapp/foo` を registry に登録し、record field が `"myapp/foo"` を参照 | `Ok(_)` — ns 付き綴りが変形されず exact lookup される (糖衣正規化は `builtin/` prefix のみ、m2 と同件) |
+| m | 空 record (`Record([])`) を名乗る type を使う定義 | `Ok(_)` — schema 上「常に `{}`」の定まった型で合法 (DR-126 §1) |
+| n | 重複 member の union (`Union([Bool, Bool])`) を名乗る type を使う定義 | `Rejected` `InvalidRange` (§2.1、uniqueItems の等価) |
+| o | pattern 違反の type 参照 (`Record([("x","Bad-Name")])`) を名乗る type を使う定義 | `Rejected` `InvalidRange` (§2.1、lexical 検査。UnknownVocab より前に宣言自体が不正) |
+| p | **2 つの要素** (options 2 本) が同じ brokenref を使う定義 | `Rejected` `UnknownVocab` **2 件** — 両 element へ帰属報告 (§5.2 診断規則 3: 走査状態は seed ごと、dedup は element 込みの組) |
 
 `resolve_type_reference` 単体 (糖衣正規化・exact 一致) は `src/extension` 側か registry 系
 wbtest に 2〜3 表明を足してもよい (b/d1 が実質カバーするので任意)。
 
-### 6.3 出口条件の再確認
+### 6.3 `src/internal/engine/value_type_classification_wbtest.mbt` (新規) — 暫定分類の全域固定
+
+`value_type_primitive_only` (§4.4) の table-driven wbtest。全 constructor を全域固定する:
+
+| 入力 | 期待 |
+|---|---|
+| `String` / `Number` / `Bool` / `Null` | `true` |
+| `Value` | `false` |
+| `Array(String)` / `Map(String)` / `Record([])` | `false` |
+| `Union([Bool, Record([("x","string")])])` (mixed union) | `false` |
+| `Union([String, Number, Bool, Null])` (全 primitive union) | `true` |
+
+`residual_is_primitive_only(None) == false` も 1 表明。`Union([])` は入れない — §4.4 の
+順序保証どおり malformed 宣言に分類関数は適用されない (到達しない入力の挙動を pin しない)。
+
+### 6.4 出口条件の再確認
 
 - `just fmt` (moon fmt) → `just test`: **612 + 新規分 passed / conformance 885 cases
   mismatches=0 / 両台帳空** — 既存分は 1 件も変化しないこと
@@ -423,11 +500,12 @@ wbtest に 2〜3 表明を足してもよい (b/d1 が実質カバーするの�
   暫定である旨を明示
 - 対案: pin しない (W2-6 でのテスト書き換えを省く)。silent hole を許すので不利
 
-### 7.3 §2.1 well-formedness を definition-error にすること自体
+### 7.3 §2.1 well-formedness を definition-error にすること自体 — **採用で確定**
 
 DR-126 に「コード側 resident の malformed 宣言」の明文規範は無い (wire 側は JSON Schema の
 領分)。`InvalidRange` での definition-error 化は「schema が wire で強制する制約のコード側等価」
-という整理での提案。却下 (= 検査しない、構築側 invariant のコメント注記のみ) でも本段は成立する。
+という整理。二次レビュー反映の統括裁定 (§2.1 の検査項目確定 + §4.4 の順序保証 = malformed は
+`InvalidRange` のみで落とす) が本検査の存在を前提に確定しており、採用済み — 実装前の追加裁定は不要。
 
 ## 8. 統括の読みとの食い違い (指示書との照合結果)
 
@@ -448,8 +526,9 @@ DR-126 に「コード側 resident の malformed 宣言」の明文規範は無�
 ## 9. 規模見積と作業順
 
 plan §5 の 400〜700 行に対し、本設計の実装は概ね: abi 90〜130 / extension 60〜90 /
-lowering 130〜200 / wbtest 250〜350 = **530〜770 行** (wbtest 込み。やや上振れは e/f/g 系の
-定義 JSON が嵩むため)。
+lowering 140〜210 / wbtest 400〜550 = **690〜980 行** (wbtest 込み。plan 見積を明確に超える —
+上振れの主因はレビュー反映で増えた §6.2 の境界ケース h〜p (テスト用 resident と定義 JSON が
+1 ケースごとに嵩む) と §6.3 の分類全域固定。lowering の +10 は §4.4 の malformed ガード分)。
 
 推奨作業順 (各点で `just test` green を維持):
 
