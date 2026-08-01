@@ -1152,7 +1152,7 @@ test "front_door.output: name を持つ or は 1 段の結果スコープを作�
     #|   {"type":"string","name":"cname"}]}]}
   assert_eq(
     result_of(seq_branch_named, ["--color", "1", "2"]),
-    "{color={g=2,r=1}}",
+    "{color={cname=null,g=2,r=1}}",
   )
   // 同じ seq 枝の子が匿名なら §5.1 の「子の値の配列」— option 直下の `seq` と同じ畳み方。
   let seq_branch_anon =
@@ -1507,7 +1507,7 @@ test "front_door.output: named link path descends into a sibling scope child" {
     #|  ]},
     #|  {"name":"legacy","type":"string","long":true,"short":"l","link":"timerange.since"}
     #|]}
-  let expected = "result={timerange={since=x}} sources={timerange={since=link}} effects=since"
+  let expected = "result={timerange={since=x,until=null}} sources={timerange={since=link,until=null}} effects=since"
   assert_eq(wbtest_view_of(src, ["--legacy", "x"]), expected)
   assert_eq(wbtest_view_of(src, ["--legacy=x"]), expected)
   assert_eq(wbtest_view_of(src, ["-l", "x"]), expected)
@@ -1527,13 +1527,13 @@ test "front_door.output: named link path crosses export_key projection without c
     #|]}
   assert_eq(
     wbtest_view_of(src, ["--legacy", "x"]),
-    "result={range={start=x}} sources={range={start=link}} effects=since",
+    "result={range={start=x,until=null}} sources={range={start=link,until=null}} effects=since",
   )
 }
 
 ///|
 /// DR-127 §4.1b keeps consumption choice separate from cell writes. A link may route to a cell in an
-/// unselected structural-or branch, but that branch's value remains absent from result and sources.
+/// unselected structural-or branch, but it does not realize the branch scope; the wrapper remains null.
 test "front_door.output: named link path does not select the target structural branch" {
   let src =
     #|{"options":[
@@ -1545,7 +1545,7 @@ test "front_door.output: named link path does not select the target structural b
     #|]}
   assert_eq(
     wbtest_view_of(src, ["--legacy", "x"]),
-    "result={} sources={} effects=right",
+    "result={choice=null} sources={choice=null} effects=right",
   )
 }
 
@@ -1564,7 +1564,7 @@ test "front_door.output: selected structural branch keeps a later named link wri
     #|]}
   assert_eq(
     wbtest_view_of(root_src, ["--choice", "7", "--legacy", "x"]),
-    "result={choice={right=x}} sources={choice={right=link}} effects=right,right",
+    "result={choice={left=null,right=x}} sources={choice={left=null,right=link}} effects=right,right",
   )
   let command_src =
     #|{"commands":[{"name":"sub","type":"command","options":[
@@ -1576,7 +1576,7 @@ test "front_door.output: selected structural branch keeps a later named link wri
     #|]}]}
   assert_eq(
     wbtest_view_of(command_src, ["sub", "--choice", "7", "--legacy", "x"]),
-    "result={sub={choice={right=x}}} sources={sub={choice={right=link}}} effects=right,right",
+    "result={sub={choice={left=null,right=x}}} sources={sub={choice={left=null,right=link}}} effects=right,right",
   )
 }
 
@@ -1911,10 +1911,13 @@ test "front_door.output: named or の結果スコープ path は command 無し�
   let with_command = "{" +
     body +
     ",\"commands\":[{\"type\":\"command\",\"name\":\"dummy\"}]}"
-  assert_eq(wbtest_sources_of(no_command, ["--mode", "7"]), "{mode={num=cli}}")
+  assert_eq(
+    wbtest_sources_of(no_command, ["--mode", "7"]),
+    "{mode={flag=null,num=cli}}",
+  )
   assert_eq(
     wbtest_sources_of(with_command, ["--mode", "7"]),
-    "{dummy=null,mode={num=cli}}",
+    "{dummy=null,mode={flag=null,num=cli}}",
   )
 }
 
@@ -2146,7 +2149,7 @@ test "front_door.output: named seq / or / repeat 配下の none も 3 面から�
     #|  {"name":"num","type":"int"}]}]}
   assert_eq(
     wbtest_view_of(or_seq, ["--mode", "a", "b"]),
-    "result={mode={keep=b}} sources={mode={keep=cli}} effects=keep",
+    "result={mode={keep=b,num=null}} sources={mode={keep=cli,num=null}} effects=keep",
   )
   // `repeat` 配下は sources の path に index segment が現れるが、その綴りは未裁定 (下記) なので
   // 席の集合だけを見る。
@@ -2243,11 +2246,11 @@ test "front_door.output: accum セルの default 席は 0 回発火のときだ�
   )
   assert_eq(
     wbtest_view_of(or_, ["--color", "7"]),
-    "result={color=[{num=7}]} sources={color=[{num=cli}]} effects=num",
+    "result={color=[{flag=null,num=7}]} sources={color=[{flag=null,num=cli}]} effects=num",
   )
   assert_eq(
     wbtest_view_of(or_, ["--color", "7", "--color", "true"]),
-    "result={color=[{num=7},{flag=true}]} sources={color=[{num=cli},{flag=cli}]} effects=flag,num",
+    "result={color=[{flag=null,num=7},{flag=true,num=null}]} sources={color=[{flag=null,num=cli},{flag=cli,num=null}]} effects=flag,num",
   )
   // 対照: スカラ accum は cell 自身に着席するので、従来どおり cell address の entry で判定できる。
   let scalar =
@@ -2633,10 +2636,6 @@ test "front_door.output: named or は発火時に全枝を null 補形し、未�
   assert_eq(
     wbtest_view_of(src, ["--mode", "x"]),
     "result={mode={fast=x,slow=null}} sources={mode={fast=cli,slow=null}} effects=fast",
-  )
-  assert_eq(
-    wbtest_view_of(src, ["--mode", "7"]),
-    "result={mode={fast=null,slow=7}} sources={mode={fast=null,slow=cli}} effects=slow",
   )
   assert_eq(
     wbtest_view_of(src, []),

@@ -573,9 +573,35 @@ fn active_link_bindings(binds : Array[@abi.Binding]) -> Array[@abi.Binding] {
 }
 
 ///|
+fn projection_child(
+  shape : @engine.ExportScopeMap?,
+  key : String,
+) -> @engine.ExportScopeMap? {
+  match shape {
+    Some(node) => node.projection_child(key)
+    None => None
+  }
+}
+
+///|
+fn result_object_has_key(
+  fields : Array[(String, @abi.ResultValue)],
+  key : String,
+) -> Bool {
+  for field in fields {
+    if field.0 == key {
+      return true
+    }
+  }
+  false
+}
+
+///|
 /// Build the nested result value from the winning flat bindings. `cells` locates every
 /// accumulate cell by result path (so an empty cell still renders `[]`, DR-044 uniform array);
-/// `path` is the current result-scope path.
+/// `path` is the current result-scope path. `shape` is the DR-120 declaration occupancy tree;
+/// when present, every statically declared seat missing from this realized scope is completed
+/// with `null` (DR-130 §1/§4).
 fn build_result(
   binds : Array[@abi.Binding],
   cells : Array[AccumCell],
@@ -583,6 +609,8 @@ fn build_result(
   path : Array[String],
   nones? : Array[InternalCell] = [],
   extensions? : @node.Registry = canonical_registry(),
+  shape? : @engine.ExportScopeMap? = None,
+  complete_static? : Bool = false,
 ) -> @abi.ResultValue {
   // ROW-GROUP (DR-078 §1 ref テンプレ result 写像, issue 2026-07-09-ref-template-result-shape):
   // a "#row" sentinel at this level (installer.mbt's `ref_row_head`) marks one repetition's row
@@ -603,6 +631,8 @@ fn build_result(
           path,
           nones~,
           extensions~,
+          shape~,
+          complete_static~,
         ),
       )
     }
@@ -627,7 +657,16 @@ fn build_result(
             elems.push(@abi.Scalar(@abi.Null))
           } else {
             elems.push(
-              build_result(indexed, cells, defaults, path, nones~, extensions~),
+              build_result(
+                indexed,
+                cells,
+                defaults,
+                path,
+                nones~,
+                extensions~,
+                shape~,
+                complete_static~,
+              ),
             )
           }
         }
@@ -642,6 +681,8 @@ fn build_result(
               path,
               nones~,
               extensions~,
+              shape~,
+              complete_static~,
             ),
           )
         }
@@ -792,6 +833,7 @@ fn build_result(
     // entirely to the injection below) when it names a THIS-path accum cell with no "#row" —
     // fired >=1 time (a real "#row" present) still recurses normally, unaffected.
     let seg_binds = sub_under(binds, seg)
+    let child_shape = projection_child(shape, seg)
     let is_accum = cell_here(cells, path, seg)
     let unfired_ref_accum_seg = is_accum && !has_direct_key(seg_binds, "#row")
     // DR-084 §2 (issue multiple-ref-accum-gap): a ref+repeat element that is ALSO `multiple`
@@ -837,6 +879,8 @@ fn build_result(
               path_push(path, seg),
               nones~,
               extensions~,
+              shape=child_shape,
+              complete_static=true,
             ),
           )
         }
@@ -862,6 +906,8 @@ fn build_result(
         path_push(path, seg),
         nones~,
         extensions~,
+        shape=child_shape,
+        complete_static=true,
       )
       let collected = if is_accum {
         match collector_here(cells, path, seg) {
@@ -919,6 +965,20 @@ fn build_result(
         None => @abi.Null
       }
       obj.push((d.name, @abi.Scalar(value)))
+    }
+  }
+  // DR-130 §4: realized structural scopes/rows enumerate their statically declared seats. This
+  // runs after bound values, accumulators, and defaults so a missing seat alone receives null;
+  // an unselected branch's default is intentionally not evaluated.
+  if complete_static {
+    match shape {
+      Some(node) =>
+        for key in node.projection_keys() {
+          if !result_object_has_key(obj, key) {
+            obj.push((key, @abi.Scalar(@abi.Null)))
+          }
+        }
+      None => ()
     }
   }
   @abi.Object(obj)
@@ -1380,6 +1440,8 @@ fn build_result_export(
     [],
     nones=internal_cells(sc, ek, binds, templates~),
     extensions~,
+    shape=Some(ek),
+    complete_static=true,
   )
 }
 
@@ -1638,6 +1700,12 @@ fn source_shadow(
     @abi.Object(fields) => {
       let out : Array[(String, @abi.ResultValue)] = []
       for field in fields {
+        // A null result seat has no supplying subject. Check the completed result before consulting
+        // global source seats, because another repeat row may have a binding for the same declaration.
+        if field.1 is @abi.Scalar(@abi.Null) {
+          out.push((field.0, @abi.Scalar(@abi.Null)))
+          continue
+        }
         // Accum source projection must use this recursive row's bindings before the global SourceSeat:
         // nested structural rows share one declaration path, while each row owns a different binding
         // slice. Root cells are equivalent here; if no direct slice exists, fall back to SourceSeat or

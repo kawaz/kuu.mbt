@@ -70,6 +70,8 @@ pub struct ExportScopeMap {
   priv scopes_ : Map[String, ExportKey]
   priv occupied_cells_ : Map[String, Bool]
   priv occupied_scopes_ : Map[String, Bool]
+  priv projected_cells_ : Map[String, Bool]
+  priv projected_scopes_ : Map[String, Bool]
   priv children_ : Map[String, ExportScopeMap]
 }
 
@@ -83,6 +85,8 @@ pub fn ExportScopeMap::empty() -> ExportScopeMap {
     scopes_: Map([], capacity=0),
     occupied_cells_: Map([], capacity=0),
     occupied_scopes_: Map([], capacity=0),
+    projected_cells_: Map([], capacity=0),
+    projected_scopes_: Map([], capacity=0),
     children_: Map([], capacity=0),
   }
 }
@@ -156,6 +160,25 @@ pub fn ExportScopeMap::occupy_scope(
 }
 
 ///|
+/// 成功 result の実現スコープで全列挙する値セル。衝突検査用の occupancy とは別軸で、
+/// nameless `or` の排他枝は occupancy を持っても同時列挙しない (DR-130 §4)。
+pub fn ExportScopeMap::project_cell(
+  self : ExportScopeMap,
+  name : String,
+) -> Unit {
+  self.projected_cells_.set(name, true)
+}
+
+///|
+/// 成功 result の実現スコープで全列挙する子スコープ座。
+pub fn ExportScopeMap::project_scope(
+  self : ExportScopeMap,
+  name : String,
+) -> Unit {
+  self.projected_scopes_.set(name, true)
+}
+
+///|
 pub fn ExportScopeMap::has_occupancy(self : ExportScopeMap) -> Bool {
   self.occupied_cells_.length() > 0 || self.occupied_scopes_.length() > 0
 }
@@ -212,6 +235,69 @@ pub fn ExportScopeMap::child(
     Some(node) => node
     None => ExportScopeMap::empty()
   }
+}
+
+///|
+fn push_projection_key(keys : Array[String], key : String) -> Unit {
+  for existing in keys {
+    if existing == key {
+      return
+    }
+  }
+  keys.push(key)
+}
+
+///|
+/// この結果スコープで宣言上占有される露出キーを列挙する。DR-120 §4 の占有判定を射影側も
+/// そのまま読むための面で、binding の有無は見ない。透過 wrapper 自身は結果座を持たず、
+/// 実現した子の射影は runtime bindings が作る同じスコープで扱う。
+pub fn ExportScopeMap::projection_keys(self : ExportScopeMap) -> Array[String] {
+  let keys : Array[String] = []
+  for name, _ in self.projected_cells_ {
+    match self.exposed_cell(name) {
+      Some(key) => push_projection_key(keys, key)
+      None => ()
+    }
+  }
+  for name, _ in self.projected_scopes_ {
+    match self.exposed_scope(name) {
+      Some(key) => push_projection_key(keys, key)
+      None => ()
+    }
+  }
+  keys
+}
+
+///|
+/// `key` が実現した子結果スコープなら、その宣言ノードを返す。透過 wrapper は結果 path を
+/// 1 段作らないため、その内側も同じ `key` で再帰探索する。
+pub fn ExportScopeMap::projection_child(
+  self : ExportScopeMap,
+  key : String,
+) -> ExportScopeMap? {
+  for name, child in self.children_ {
+    let cell_exposed = if self.cells_.contains(name) {
+      self.exposed_cell(name)
+    } else {
+      None
+    }
+    let scope_exposed = if self.scopes_.contains(name) {
+      self.exposed_scope(name)
+    } else {
+      None
+    }
+    if cell_exposed == Some(key) || scope_exposed == Some(key) {
+      return Some(child)
+    }
+    if (self.cells_.contains(name) && cell_exposed is None) ||
+      (self.scopes_.contains(name) && scope_exposed is None) {
+      match child.projection_child(key) {
+        Some(found) => return Some(found)
+        None => ()
+      }
+    }
+  }
+  None
 }
 
 ///|

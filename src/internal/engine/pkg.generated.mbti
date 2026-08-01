@@ -359,6 +359,10 @@ pub fn ExportScopeMap::exposed_scope(Self, String) -> String?
 pub fn ExportScopeMap::has_occupancy(Self) -> Bool
 pub fn ExportScopeMap::occupy_cell(Self, String) -> Unit
 pub fn ExportScopeMap::occupy_scope(Self, String) -> Unit
+pub fn ExportScopeMap::project_cell(Self, String) -> Unit
+pub fn ExportScopeMap::project_scope(Self, String) -> Unit
+pub fn ExportScopeMap::projection_child(Self, String) -> Self?
+pub fn ExportScopeMap::projection_keys(Self) -> Array[String]
 pub fn ExportScopeMap::scope_is_occupied(Self, String) -> Bool
 
 pub(all) enum FailDef {

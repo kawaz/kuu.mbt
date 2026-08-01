@@ -5658,10 +5658,10 @@ fn gather_export_seats(
   out : Array[DefError],
 ) -> Unit {
   for e in def.options {
-    gather_element_seats(e, node, seats, out)
+    gather_element_seats(e, node, seats, out, true)
   }
   for e in def.positionals {
-    gather_element_seats(e, node, seats, out)
+    gather_element_seats(e, node, seats, out, true)
   }
   for c in def.commands {
     // command はスコープラベル軸のみに載る。同名の option が同じスコープに居ても値セル軸は
@@ -5679,6 +5679,7 @@ fn gather_export_seats(
       // 全部 absent でも空 kv `{}` を持つ)。子は 1 段ネストした別の結果スコープ。
       Some(key) => {
         node.occupy_scope(c.name)
+        node.project_scope(c.name)
         seats.push({ element: c.name, key, space: scope_value_space() })
         gather_export_scope(c.body, child, out)
       }
@@ -5706,6 +5707,7 @@ fn gather_element_seats(
   node : ExportScopeMap,
   seats : Array[ExportSeat],
   out : Array[DefError],
+  project : Bool,
 ) -> Unit {
   // 非参加要素の席は自分も内側も数えない — alias / global コピーは canonical 側と同じ構造の
   // 写しなので、内側まで数えると canonical の席が二重に立つ。軸は remap のために登録する
@@ -5719,6 +5721,9 @@ fn gather_element_seats(
       node.declare_element(e.name, e.export_key)
       if element_occupies_seat(e) {
         node.occupy_cell(e.name)
+        if project {
+          node.project_cell(e.name)
+        }
         match resolved_export_key(e.name, e.export_key) {
           Some(key) =>
             seats.push({ element: e.name, key, space: export_value_space(e) })
@@ -5732,7 +5737,7 @@ fn gather_element_seats(
       if e.name == "" {
         for br in branches {
           for it in br.items {
-            gather_element_seats(it, node, seats, out)
+            gather_element_seats(it, node, seats, out, false)
           }
         }
         return
@@ -5747,11 +5752,14 @@ fn gather_element_seats(
       match seat_key {
         Some(key) => {
           node.occupy_cell(e.name)
+          if project {
+            node.project_cell(e.name)
+          }
           seats.push({ element: e.name, key, space: group_value_space() })
           let inner : Array[ExportSeat] = []
           for br in branches {
             for it in br.items {
-              gather_element_seats(it, inner_node, inner, out)
+              gather_element_seats(it, inner_node, inner, out, true)
             }
           }
           report_export_key_collisions(inner, out)
@@ -5759,7 +5767,7 @@ fn gather_element_seats(
         None =>
           for br in branches {
             for it in br.items {
-              gather_element_seats(it, inner_node, seats, out)
+              gather_element_seats(it, inner_node, seats, out, true)
             }
           }
       }
@@ -5775,16 +5783,19 @@ fn gather_element_seats(
       match seat_key {
         Some(key) => {
           node.occupy_cell(e.name)
+          if project {
+            node.project_cell(e.name)
+          }
           seats.push({ element: e.name, key, space: group_value_space() })
           let inner : Array[ExportSeat] = []
           for it in items {
-            gather_element_seats(it, inner_node, inner, out)
+            gather_element_seats(it, inner_node, inner, out, true)
           }
           report_export_key_collisions(inner, out)
         }
         None =>
           for it in items {
-            gather_element_seats(it, inner_node, seats, out)
+            gather_element_seats(it, inner_node, seats, out, true)
           }
       }
     }

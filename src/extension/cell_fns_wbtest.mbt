@@ -213,7 +213,15 @@ test "builtin cell fn residents execute through their registered descriptors" {
     Ok(FnOutput::Value(@abi.Value::Number(7.0))),
   )
 
-  for name in ["default", "unset", "empty"] {
+  // `unset` is a Value fn: null is the ordinary value that opens the target cell's ladder.
+  let unset = registry.lookup_cell_fn("unset").unwrap()
+  assert_eq(
+    unset.invoke({ name: "unset", args: [] }, ctx),
+    Ok(FnOutput::Value(@abi.Null)),
+  )
+  // `default` remains deferred; `empty` keeps internal sentinel plumbing while its public
+  // effect is the distinct `empty` observation. Both are sentinel outputs at this boundary.
+  for name in ["default", "empty"] {
     let descriptor = registry.lookup_cell_fn(name).unwrap()
     assert_true(
       descriptor.invoke({ name, args: [] }, ctx) is Ok(FnOutput::Sentinel(_)),
