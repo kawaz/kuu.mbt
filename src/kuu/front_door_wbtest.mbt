@@ -1680,27 +1680,48 @@ test "front_door.output: indexed link path counts only value-bearing transparent
 }
 
 ///|
-/// Cell-space indices are declaration-time positions, so negative and out-of-range positions cannot
-/// be deferred to runtime and both fail with absent-ref.
-test "front_door.parse_definition: invalid cell-space link indices are absent-ref" {
-  for link in ["pair[-1]", "pair[2]"] {
-    let src = "{\"options\":[{\"name\":\"pair\",\"long\":true,\"seq\":[{\"type\":\"string\"},{\"type\":\"string\"}]},{\"name\":\"legacy\",\"type\":\"string\",\"long\":true,\"link\":\"" +
-      link +
-      "\"}]}"
-    match parse_definition(@json.parse(src)) {
-      Err(Rejected(errors)) => {
-        let mut found = false
-        for error in errors {
-          if error.element == "legacy" && error.kind == @abi.AbsentRef {
-            found = true
-          }
+/// Cell-space negative indices are resolved against every declaration-time value-bearing child,
+/// including zero-consumption literals. `[-1]` selects the third seat and effects records index 2.
+/// Link writes do not fire the parent seq, so both unwritten sibling seats remain null.
+test "front_door.output: negative cell-space link index is normalized" {
+  let src =
+    #|{"options":[
+    #|  {"name":"pair","long":true,"seq":[
+    #|    {"type":"string","value":"fixed"},
+    #|    {"type":"string"},
+    #|    {"type":"string"}
+    #|  ]},
+    #|  {"name":"legacy","type":"string","long":true,"link":"pair[-1]"}
+    #|]}
+  assert_eq(
+    wbtest_view_of(src, ["--legacy", "b"]),
+    "result={pair=[null,null,b]} sources={pair=[null,null,link]} effects=pair[2]",
+  )
+}
+
+///|
+/// Cell-space indices are declaration-time positions, so an index outside the fixed tuple arity is
+/// a definition error rather than a runtime branch rejection.
+test "front_door.parse_definition: out-of-range cell-space link index is absent-ref" {
+  let src =
+    #|{"options":[
+    #|  {"name":"pair","long":true,"seq":[{"type":"string"},{"type":"string"}]},
+    #|  {"name":"legacy","type":"string","long":true,"link":"pair[2]"}
+    #|]}
+  match parse_definition(@json.parse(src)) {
+    Err(Rejected(errors)) => {
+      let mut found = false
+      for error in errors {
+        if error.element == "legacy" && error.kind == @abi.AbsentRef {
+          found = true
         }
-        assert_true(found)
       }
-      Err(Malformed(message)) =>
-        fail("expected absent-ref, got malformed: " + message)
-      Ok(_) => fail("invalid cell-space index must fail definition validation")
+      assert_true(found)
     }
+    Err(Malformed(message)) =>
+      fail("expected absent-ref, got malformed: " + message)
+    Ok(_) =>
+      fail("out-of-range cell-space index must fail definition validation")
   }
 }
 

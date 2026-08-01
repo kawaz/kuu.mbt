@@ -2157,11 +2157,10 @@ fn inst_long(
 }
 
 ///|
-/// Whether this declaration owns a value cell that can be the final destination of a link route.
-/// Structural wrappers are traversable by a fixed path, but remain non-cells unless their existing
-/// accumulator semantics already give the wrapper a value seat.
-fn element_is_link_target(e : ElementDef) -> Bool {
-  if e.link_path is Some(_) || e.is_dd || e.is_exact || e.is_literal {
+/// Whether this declaration occupies a coordinate in a nameless result tuple. Zero-consumption
+/// literals own a value seat even though their constant value cannot be overwritten through link.
+fn element_has_value_seat(e : ElementDef) -> Bool {
+  if e.link_path is Some(_) || e.is_dd || e.is_exact {
     return false
   }
   match e.body {
@@ -2171,6 +2170,14 @@ fn element_is_link_target(e : ElementDef) -> Bool {
     Enum(_) => true
     Or(_) | Group(_) => e.multiple
   }
+}
+
+///|
+/// Whether this declaration owns a value cell that can be the final destination of a link route.
+/// Structural wrappers are traversable by a fixed path, but remain non-cells unless their existing
+/// accumulator semantics already give the wrapper a value seat.
+fn element_is_link_target(e : ElementDef) -> Bool {
+  !e.is_literal && element_has_value_seat(e)
 }
 
 ///|
@@ -2218,7 +2225,7 @@ fn nameless_tuple_arity(element : ElementDef) -> Int {
     Group(items) => {
       let mut arity = 0
       for item in items {
-        if element_is_link_target(item) {
+        if element_has_value_seat(item) {
           arity += 1
         }
       }
@@ -2233,24 +2240,30 @@ fn indexed_structural_child(
   element : ElementDef,
   target_index : Int,
 ) -> (ElementDef, Int)? {
-  if target_index < 0 {
-    return None
-  }
   match element.body {
     Group(items) => {
       if seq_row_is_kv(items) {
         return None
       }
+      let resolved_index = if target_index < 0 {
+        nameless_tuple_arity(element) + target_index
+      } else {
+        target_index
+      }
+      if resolved_index < 0 {
+        return None
+      }
       let mut value_index = 0
-      let mut declaration_index = 0
       for item in items {
-        if element_is_link_target(item) {
-          if value_index == target_index {
-            return Some((item, declaration_index))
+        if element_has_value_seat(item) {
+          if value_index == resolved_index {
+            if element_is_link_target(item) {
+              return Some((item, resolved_index))
+            }
+            return None
           }
           value_index += 1
         }
-        declaration_index += 1
       }
       None
     }
@@ -2356,22 +2369,22 @@ fn resolve_link_path(def : Definition, path : LinkPath) -> LinkPathResolution {
         }
       Index(target_index) =>
         match indexed_structural_child(current, target_index) {
-          Some((child, declaration_index)) => {
+          Some((child, resolved_index)) => {
             tuple_arities.push(nameless_tuple_arity(current))
             if current.name != "" {
               scope.push(current.name)
               observation = Some({
                 entity: current.name,
-                path: [ObservationIndex(target_index)],
+                path: [ObservationIndex(resolved_index)],
               })
             } else {
               match observation {
                 Some(address) =>
-                  address.path.push(ObservationIndex(target_index))
+                  address.path.push(ObservationIndex(resolved_index))
                 None => ()
               }
             }
-            scope.push("#" + declaration_index.to_string())
+            scope.push("#" + resolved_index.to_string())
             current = child
           }
           None =>
