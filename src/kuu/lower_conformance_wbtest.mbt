@@ -85,6 +85,7 @@ fn str_has_prefix(value : String, prefix : String) -> Bool {
 ///|
 fn render_val(value : @abi.Value) -> String {
   match value {
+    @abi.Null => "null"
     @abi.String(text) => text
     @abi.Bool(flag) => if flag { "true" } else { "false" }
     @abi.Number(number) => {

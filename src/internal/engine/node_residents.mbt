@@ -79,6 +79,7 @@ fn effect_op_json(op : @abi.EffectOp) -> Json {
 /// 同一 node として畳まれる。
 fn value_json(value : @abi.Value) -> Json {
   match value {
+    @abi.Null => ["null".to_json()].to_json()
     @abi.String(text) => ["string".to_json(), text.to_json()].to_json()
     @abi.Number(number) => ["number".to_json(), number.to_json()].to_json()
     @abi.Bool(boolean) => ["bool".to_json(), boolean.to_json()].to_json()

@@ -182,6 +182,9 @@ pub fn apply_filter_chain(
   chain : Array[FnInvocation],
   value : Value,
 ) -> Result[Value, FnReason] {
+  if value is @abi.Null {
+    return Ok(value)
+  }
   let mut current = value
   for spelling in chain {
     match registry.lookup_filter(spelling.name) {

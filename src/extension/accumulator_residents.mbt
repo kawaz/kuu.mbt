@@ -519,6 +519,7 @@ fn result_value_json(value : @abi.ResultValue) -> Json {
   match value {
     @abi.Scalar(value) =>
       match value {
+        @abi.Null => ().to_json()
         @abi.String(value) => value.to_json()
         @abi.Number(value) => value.to_json()
         @abi.Bool(value) => value.to_json()

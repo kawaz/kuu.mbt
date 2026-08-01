@@ -152,6 +152,7 @@ fn test_join_comma(items : Array[String]) -> String {
 ///|
 fn test_render_val(value : @abi.Value) -> String {
   match value {
+    @abi.Null => "null"
     @abi.String(s) => s
     @abi.Bool(b) => if b { "true" } else { "false" }
     @abi.Number(d) => {

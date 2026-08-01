@@ -15,6 +15,7 @@
 ///|
 /// A resolved value that can land in the result object.
 pub(all) enum Value {
+  Null
   String(String)
   Number(Double)
   Bool(Bool)
@@ -23,6 +24,7 @@ pub(all) enum Value {
 ///|
 pub fn value_str(value : Value) -> String {
   match value {
+    Null => abort("null has no scalar string representation")
     String(string) => string
     Bool(boolean) => if boolean { "true" } else { "false" }
     Number(number) => {
@@ -242,6 +244,7 @@ pub(all) struct ParseError {
 /// leniency table a second time — `Value`'s 3 variants map 1:1 onto `ConfigVal`'s 3 scalar ones.
 pub fn value_to_configval(v : Value) -> ConfigVal {
   match v {
+    Null => Null
     String(s) => String(s)
     Number(d) => Number(d)
     Bool(b) => Bool(b)

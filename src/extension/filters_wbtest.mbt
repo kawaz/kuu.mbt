@@ -69,6 +69,21 @@ test "lookup_filter: built-in signatures match DR-077 §2's validate/transform s
 }
 
 ///|
+/// 保証: null は値変換・検証の入力にならず、共通 dispatcher が chain 全体を素通しする。
+/// validate/transform の双方を含む chain でも住人は呼ばれず、null がそのまま返る。
+test "filter chains bypass null without invoking their residents" {
+  match
+    apply_filter_chain(
+      test_filter_registry(),
+      chain(["non_empty", "in_range:1:10", "increment"]),
+      @abi.Null,
+    ) {
+    Ok(value) => assert_eq(value, @abi.Null)
+    Err(_) => fail("null is a value-less seat and must bypass the whole chain")
+  }
+}
+
+///|
 /// 保証: `trim` は前後の空白を剥がす (DR-040 §piece_filters 例)。文字列以外の値は素通し (防御的 —
 /// piece_filters 相は本来 string→string でしか呼ばれない契約、値型混入時に落とすより無害な
 /// pass-through の方が診断しやすい)。

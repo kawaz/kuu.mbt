@@ -117,6 +117,9 @@ fn allowed_keys(
 
 ///|
 fn json_to_value(json : Json) -> @abi.Value raise DecodeSkip {
+  if json is Null {
+    return @abi.Null
+  }
   match json.j_bool() {
     Some(value) => return @abi.Bool(value)
     None => ()
@@ -211,14 +214,16 @@ fn join_comma(items : Array[String]) -> String {
 ///|
 fn render_val(v : @abi.Value) -> String {
   match v {
-    @abi.String(s) => s
-    @abi.Bool(b) => if b { "true" } else { "false" }
+    @abi.Null => "null"
+    @abi.String(s) => "string:" + s
+    @abi.Bool(b) => "bool:" + (if b { "true" } else { "false" })
     @abi.Number(d) => {
+      let prefix = "number:"
       let i = d.to_int()
       if i.to_double() == d {
-        i.to_string()
+        prefix + i.to_string()
       } else {
-        d.to_string()
+        prefix + d.to_string()
       }
     }
   }
@@ -1582,6 +1587,7 @@ fn dec_help_fixture(j : Json) -> DHelpFixture raise DecodeSkip {
 ///|
 fn help_value_json(value : @abi.Value) -> Json {
   match value {
+    @abi.Null => ().to_json()
     @abi.String(text) => text.to_json()
     @abi.Number(number) => number.to_json()
     @abi.Bool(boolean) => boolean.to_json()

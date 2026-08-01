@@ -3361,6 +3361,7 @@ test "DR-088 対極2: an explicit optional:true positional is unaffected (still 
 ///|
 fn dd_value_to_str(v : @abi.Value) -> String {
   match v {
+    @abi.Null => "null"
     @abi.String(s) => s
     @abi.Number(d) => d.to_string()
     @abi.Bool(b) => b.to_string()
