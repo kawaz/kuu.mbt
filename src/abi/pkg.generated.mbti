@@ -8,7 +8,7 @@ import {
 // Values
 pub fn attach_mode_of(String) -> AttachMode?
 
-pub fn bindings_through_link(Array[Binding], String, String, Array[String], Array[LinkSelection], ObservationAddress?, Int) -> Array[Binding]
+pub fn bindings_through_link(Array[Binding], String, String, Array[String], Array[Int], Array[LinkSelection], ObservationAddress?, Int) -> Array[Binding]
 
 pub fn config_from_json(Json) -> ConfigVal
 

@@ -37,20 +37,24 @@ test "bindings_through_link: indexed shape seed preserves source escape levels" 
     "legacy",
     "value",
     ["pair", "#0"],
+    [1],
     [],
     None,
     3,
   )
   let mut seed_levels : Int? = None
+  let mut seed_arity : @abi.Value? = None
   let mut value_levels : Int? = None
   for binding in routed {
     if binding.key == "[]" {
       seed_levels = Some(binding.levels_to_declaring_scope)
+      seed_arity = Some(binding.value)
     } else if binding.key == "value" {
       value_levels = Some(binding.levels_to_declaring_scope)
     }
   }
   assert_eq(seed_levels, Some(5))
+  assert_eq(seed_arity, Some(@abi.Number(1.0)))
   assert_eq(value_levels, Some(5))
 }
 

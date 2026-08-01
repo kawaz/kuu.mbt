@@ -374,6 +374,7 @@ pub fn bindings_through_link(
   from : String,
   target : String,
   target_scope : Array[String],
+  target_tuple_arities : Array[Int],
   target_selections : Array[LinkSelection],
   target_observation : ObservationAddress?,
   levels_to_target : Int,
@@ -384,12 +385,17 @@ pub fn bindings_through_link(
     if binding.key == from {
       if !shape_seeded {
         let prefix : Array[String] = []
+        let mut tuple_index = 0
         for segment in target_scope {
           if segment.length() > 0 && segment[0:1].to_owned() == "#" {
+            if tuple_index >= target_tuple_arities.length() {
+              abort("link tuple shape metadata does not match the target scope")
+            }
+            let tuple_arity = target_tuple_arities[tuple_index]
             routed.push({
               key: "[]",
               op: Set,
-              value: Bool(false),
+              value: Number(tuple_arity.to_double()),
               source: Link,
               scope: prefix.copy(),
               link_selections: target_selections.copy(),
@@ -398,8 +404,12 @@ pub fn bindings_through_link(
               levels_to_target,
               at_pos: None,
             })
+            tuple_index += 1
           }
           prefix.push(segment)
+        }
+        if tuple_index != target_tuple_arities.length() {
+          abort("link tuple shape metadata does not match the target scope")
         }
         shape_seeded = true
       }

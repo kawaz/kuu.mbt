@@ -177,7 +177,9 @@ fn fire_groups(binds : Array[@abi.Binding]) -> Array[Array[@abi.Binding]] {
 }
 
 ///|
-/// Index segments ("#k") among the direct children, ordered by k ascending.
+/// Index segments ("#k") among the direct children, ordered by k ascending. A link-routed fixed
+/// tuple also carries its declared value-seat count on the direct `[]` marker; callers compare that
+/// count with this coordinate-preserving index set before projecting an array.
 fn ordered_indices(binds : Array[@abi.Binding]) -> Array[String] {
   let idxs : Array[String] = []
   for b in binds {
@@ -204,6 +206,30 @@ fn ordered_indices(binds : Array[@abi.Binding]) -> Array[String] {
     i = i + 1
   }
   idxs
+}
+
+///|
+/// `bindings_through_link` writes a numeric `[]` marker only for fixed nameless tuples. Ordinary
+/// seq/repeat array markers remain Bool(false), so their established projection is not cardinality-
+/// gated. Multiple link writes may repeat the same marker; the declared arity is identical.
+fn fixed_tuple_arity(binds : Array[@abi.Binding]) -> Int? {
+  for binding in binds {
+    if binding.scope.length() == 0 && binding.key == "[]" {
+      match binding.value {
+        @abi.Number(arity) => return Some(arity.to_int())
+        _ => ()
+      }
+    }
+  }
+  None
+}
+
+///|
+fn fixed_tuple_complete(binds : Array[@abi.Binding]) -> Bool {
+  match fixed_tuple_arity(binds) {
+    Some(arity) => ordered_indices(binds).length() == arity
+    None => true
+  }
 }
 
 ///|
@@ -586,6 +612,12 @@ fn build_result(
   // ARRAY: a "[]" sentinel at this level => build one element per "#k" child. Elements keep the
   // array's path (an indexed repeat element is not a named result-scope segment cells key on).
   if has_direct_key(binds, "[]") {
+    // LNK2-Q1=a: a fixed nameless tuple is one result seat, not a sparse array. Until every
+    // declared coordinate exists, its caller must treat the whole tuple as absent; returning an
+    // empty object here also gives the root-projection case an absent representation.
+    if !fixed_tuple_complete(binds) {
+      return @abi.Object([])
+    }
     let elems : Array[@abi.ResultValue] = []
     for idx in ordered_indices(binds) {
       elems.push(
@@ -746,6 +778,8 @@ fn build_result(
     // fired >=1 time (a real "#row" present) still recurses normally, unaffected.
     let seg_binds = sub_under(binds, seg)
     let is_accum = cell_here(cells, path, seg)
+    let incomplete_fixed_tuple = has_direct_key(seg_binds, "[]") &&
+      !fixed_tuple_complete(seg_binds)
     let unfired_ref_accum_seg = is_accum && !has_direct_key(seg_binds, "#row")
     // DR-084 §2 (issue multiple-ref-accum-gap): a ref+repeat element that is ALSO `multiple`
     // fires "#fire" per firing (`inst_long`'s repeat-bearing ref branch — unconditional, a
@@ -807,7 +841,7 @@ fn build_result(
         None => accumulated
       }
       obj.push((seg, collected))
-    } else if !unfired_ref_accum_seg {
+    } else if !unfired_ref_accum_seg && !incomplete_fixed_tuple {
       let accumulated = build_result(
         sub_under(binds, seg),
         cells,

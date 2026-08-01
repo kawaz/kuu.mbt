@@ -1581,10 +1581,10 @@ test "front_door.output: selected structural branch keeps a later named link wri
 }
 
 ///|
-/// DR-127 §1 resolves a cell-space index against value-bearing transparent children. The actual
-/// engine seat may use a synthetic scope id, but result/sources keep tuple position and effects expose
-/// the nearest named ancestor plus the resolved non-negative index.
-test "front_door.output: indexed link path descends into a nameless transparent child" {
+/// DR-127 §1 resolves a cell-space index against value-bearing transparent children. LNK2-Q1=a
+/// keeps a nameless tuple absent from result/sources until every value seat exists, because compressing
+/// a partial array would erase the written coordinate. Effects still expose the routed write.
+test "front_door.output: indexed link path keeps an incomplete nameless tuple absent" {
   let src =
     #|{"options":[
     #|  {"name":"pair","long":true,"seq":[
@@ -1593,15 +1593,65 @@ test "front_door.output: indexed link path descends into a nameless transparent 
     #|  ]},
     #|  {"name":"legacy","type":"string","long":true,"short":"l","link":"pair[0]"}
     #|]}
-  let expected = "result={pair=[x]} sources={pair=[link]} effects=pair[0]"
+  let expected = "result={} sources={} effects=pair[0]"
   assert_eq(wbtest_view_of(src, ["--legacy", "x"]), expected)
   assert_eq(wbtest_view_of(src, ["--legacy=x"]), expected)
   assert_eq(wbtest_view_of(src, ["-l", "x"]), expected)
 }
 
 ///|
-/// Position counting excludes transparent children that own no value seat. The first value child
-/// therefore has observed path [0] even when its engine scope follows a none child.
+/// Writing only the second seat must not compress it to array position zero. The tuple key stays
+/// absent from both value and source trees while the effect address preserves pair[1].
+test "front_door.output: second indexed link alone does not lose its tuple coordinate" {
+  let src =
+    #|{"options":[
+    #|  {"name":"pair","long":true,"seq":[
+    #|    {"type":"string"},
+    #|    {"type":"string"}
+    #|  ]},
+    #|  {"name":"second","type":"string","long":true,"link":"pair[1]"}
+    #|]}
+  assert_eq(
+    wbtest_view_of(src, ["--second", "b"]),
+    "result={} sources={} effects=pair[1]",
+  )
+}
+
+///|
+/// Once both fixed tuple seats are written, their declaration coordinates determine the complete
+/// array order and each source seat remains independently tagged as link.
+test "front_door.output: indexed links project a nameless tuple after every seat is written" {
+  let src =
+    #|{"options":[
+    #|  {"name":"pair","long":true,"seq":[
+    #|    {"type":"string"},
+    #|    {"type":"string"}
+    #|  ]},
+    #|  {"name":"first","type":"string","long":true,"link":"pair[0]"},
+    #|  {"name":"second","type":"string","long":true,"link":"pair[1]"}
+    #|]}
+  assert_eq(
+    wbtest_view_of(src, ["--second", "b", "--first", "a"]),
+    "result={pair=[a,b]} sources={pair=[link,link]} effects=pair[0],pair[1]",
+  )
+}
+
+///|
+/// Ordinary seq consumption fills every nameless seat in one firing, so LNK2-Q1 does not change its
+/// existing tuple projection or CLI source shadow.
+test "front_door.output: ordinary nameless seq consumption still projects its complete tuple" {
+  let src =
+    #|{"options":[{"name":"pair","long":true,"seq":[
+    #|  {"type":"string"},{"type":"string"}]}]}
+  assert_eq(
+    wbtest_view_of(src, ["--pair", "a", "b"]),
+    "result={pair=[a,b]} sources={pair=[cli,cli]} effects=",
+  )
+}
+
+///|
+/// Position counting excludes transparent children that own no value seat. The first and only value
+/// child is a complete one-seat tuple even when its engine scope follows a none child.
 test "front_door.output: indexed link path counts only value-bearing transparent children" {
   let src =
     #|{"options":[

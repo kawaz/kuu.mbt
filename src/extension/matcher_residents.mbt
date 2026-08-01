@@ -51,6 +51,7 @@ pub struct EqEntry {
   priv deprecated : Bool
   priv link_target : String?
   priv link_target_scope : Array[String]
+  priv link_target_tuple_arities : Array[Int]
   priv link_target_selections : Array[@abi.LinkSelection]
   priv link_target_observation : @abi.ObservationAddress?
   priv link_additional_levels : Int
@@ -68,6 +69,7 @@ pub fn eq_entry(
   deprecated? : Bool = false,
   link_target? : String? = None,
   link_target_scope? : Array[String] = [],
+  link_target_tuple_arities? : Array[Int] = [],
   link_target_selections? : Array[@abi.LinkSelection] = [],
   link_target_observation? : @abi.ObservationAddress? = None,
   link_additional_levels? : Int = 0,
@@ -83,6 +85,7 @@ pub fn eq_entry(
     deprecated,
     link_target,
     link_target_scope,
+    link_target_tuple_arities,
     link_target_selections,
     link_target_observation,
     link_additional_levels,
@@ -104,6 +107,7 @@ pub struct ShortEntry {
   priv is_alias : Bool
   priv link_target : String?
   priv link_target_scope : Array[String]
+  priv link_target_tuple_arities : Array[Int]
   priv link_target_selections : Array[@abi.LinkSelection]
   priv link_target_observation : @abi.ObservationAddress?
   priv link_additional_levels : Int
@@ -123,6 +127,7 @@ pub fn short_entry(
   is_alias? : Bool = false,
   link_target? : String? = None,
   link_target_scope? : Array[String] = [],
+  link_target_tuple_arities? : Array[Int] = [],
   link_target_selections? : Array[@abi.LinkSelection] = [],
   link_target_observation? : @abi.ObservationAddress? = None,
   link_additional_levels? : Int = 0,
@@ -140,6 +145,7 @@ pub fn short_entry(
     is_alias,
     link_target,
     link_target_scope,
+    link_target_tuple_arities,
     link_target_selections,
     link_target_observation,
     link_additional_levels,
@@ -252,6 +258,7 @@ fn eq_entry_json(entry : EqEntry) -> Json {
     Some(target) => {
       fields.push(target.to_json())
       fields.push(entry.link_target_scope.to_json())
+      fields.push(entry.link_target_tuple_arities.to_json())
       fields.push(link_selections_json(entry.link_target_selections))
       fields.push(observation_json(entry.link_target_observation))
       fields.push(entry.link_additional_levels.to_json())
@@ -279,6 +286,7 @@ fn short_entry_json(entry : ShortEntry) -> Json {
     Some(target) => {
       fields.push(target.to_json())
       fields.push(entry.link_target_scope.to_json())
+      fields.push(entry.link_target_tuple_arities.to_json())
       fields.push(link_selections_json(entry.link_target_selections))
       fields.push(observation_json(entry.link_target_observation))
       fields.push(entry.link_additional_levels.to_json())
@@ -371,6 +379,7 @@ fn route_entry_bindings(
   name : String,
   target : String?,
   target_scope : Array[String],
+  target_tuple_arities : Array[Int],
   target_selections : Array[@abi.LinkSelection],
   target_observation : @abi.ObservationAddress?,
   levels : Int,
@@ -379,8 +388,8 @@ fn route_entry_bindings(
   match target {
     Some(target_name) =>
       @abi.bindings_through_link(
-        bindings, name, target_name, target_scope, target_selections, target_observation,
-        levels,
+        bindings, name, target_name, target_scope, target_tuple_arities, target_selections,
+        target_observation, levels,
       )
     None => bindings
   }
@@ -453,6 +462,7 @@ fn run_eq_split(
                   e.name,
                   e.link_target,
                   e.link_target_scope,
+                  e.link_target_tuple_arities,
                   e.link_target_selections,
                   e.link_target_observation,
                   e.link_additional_levels,
@@ -492,6 +502,7 @@ fn run_eq_split(
                 e.name,
                 e.link_target,
                 e.link_target_scope,
+                e.link_target_tuple_arities,
                 e.link_target_selections,
                 e.link_target_observation,
                 e.link_additional_levels,
@@ -597,6 +608,7 @@ fn short_val(
             e.name,
             e.link_target,
             e.link_target_scope,
+            e.link_target_tuple_arities,
             e.link_target_selections,
             e.link_target_observation,
             e.link_additional_levels,
@@ -627,6 +639,7 @@ fn short_val(
             e.name,
             e.link_target,
             e.link_target_scope,
+            e.link_target_tuple_arities,
             e.link_target_selections,
             e.link_target_observation,
             e.link_additional_levels,
@@ -703,6 +716,7 @@ fn walk_short(
             e.name,
             e.link_target,
             e.link_target_scope,
+            e.link_target_tuple_arities,
             e.link_target_selections,
             e.link_target_observation,
             e.link_additional_levels,

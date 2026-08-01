@@ -1767,12 +1767,13 @@ fn inst_long(
     let (
       link_target,
       link_target_scope,
+      link_target_tuple_arities,
       link_target_selections,
       link_target_observation,
       link_additional_levels,
     ) = match link_route_fields(def, e) {
       Some(fields) => fields
-      None => (None, [], [], None, 0)
+      None => (None, [], [], [], None, 0)
     }
     let matcher_link_levels = if link_target is Some(_) {
       link_additional_levels + e.link_depth
@@ -2091,6 +2092,7 @@ fn inst_long(
                 deprecated=e.deprecated,
                 link_target~,
                 link_target_scope~,
+                link_target_tuple_arities~,
                 link_target_selections~,
                 link_target_observation~,
                 link_additional_levels=matcher_link_levels,
@@ -2176,6 +2178,7 @@ priv enum LinkPathResolution {
   Resolved(
     String,
     Array[String],
+    Array[Int],
     Array[LinkSelection],
     ObservationAddress?,
     Int
@@ -2207,6 +2210,22 @@ fn named_structural_child(
     Cell | Enum(_) => ()
   }
   None
+}
+
+///|
+fn nameless_tuple_arity(element : ElementDef) -> Int {
+  match element.body {
+    Group(items) => {
+      let mut arity = 0
+      for item in items {
+        if element_is_link_target(item) {
+          arity += 1
+        }
+      }
+      arity
+    }
+    Cell | Enum(_) | Or(_) => 0
+  }
 }
 
 ///|
@@ -2309,6 +2328,7 @@ fn resolve_link_path(def : Definition, path : LinkPath) -> LinkPathResolution {
   let root_depth = root_element.link_depth
   let mut current = root_element
   let scope : Array[String] = []
+  let tuple_arities : Array[Int] = []
   let selections : Array[LinkSelection] = []
   let mut observation : ObservationAddress? = None
   let mut index = 0
@@ -2337,6 +2357,7 @@ fn resolve_link_path(def : Definition, path : LinkPath) -> LinkPathResolution {
       Index(target_index) =>
         match indexed_structural_child(current, target_index) {
           Some((child, declaration_index)) => {
+            tuple_arities.push(nameless_tuple_arity(current))
             if current.name != "" {
               scope.push(current.name)
               observation = Some({
@@ -2363,7 +2384,14 @@ fn resolve_link_path(def : Definition, path : LinkPath) -> LinkPathResolution {
     index += 1
   }
   if element_is_link_target(current) {
-    Resolved(current.name, scope, selections, observation, root_depth)
+    Resolved(
+      current.name,
+      scope,
+      tuple_arities,
+      selections,
+      observation,
+      root_depth,
+    )
   } else {
     Missing
   }
@@ -2389,19 +2417,34 @@ fn bound_named_route(path : LinkPath) -> (String, Array[String])? {
 fn link_route_fields(
   def : Definition,
   e : ElementDef,
-) -> (String?, Array[String], Array[LinkSelection], ObservationAddress?, Int)? {
+) -> (
+  String?,
+  Array[String],
+  Array[Int],
+  Array[LinkSelection],
+  ObservationAddress?,
+  Int,
+)? {
   match e.link_path {
-    None => Some((None, [], [], None, 0))
+    None => Some((None, [], [], [], None, 0))
     Some(Invalid(_)) => None
     Some(Valid(path)) =>
       match e.link_additional_levels {
         Some(bound_levels) =>
           match resolve_link_path(def, path) {
-            Resolved(target, target_scope, selections, observation, _) =>
+            Resolved(
+              target,
+              target_scope,
+              tuple_arities,
+              selections,
+              observation,
+              _
+            ) =>
               Some(
                 (
                   Some(target),
                   target_scope,
+                  tuple_arities,
                   selections,
                   observation,
                   bound_levels,
@@ -2410,7 +2453,7 @@ fn link_route_fields(
             Residual(_) | Missing =>
               match bound_named_route(path) {
                 Some((target, target_scope)) =>
-                  Some((Some(target), target_scope, [], None, bound_levels))
+                  Some((Some(target), target_scope, [], [], None, bound_levels))
                 None => None
               }
           }
@@ -2419,6 +2462,7 @@ fn link_route_fields(
             Resolved(
               target,
               target_scope,
+              tuple_arities,
               selections,
               observation,
               target_depth
@@ -2432,6 +2476,7 @@ fn link_route_fields(
                 (
                   Some(target),
                   target_scope,
+                  tuple_arities,
                   selections,
                   observation,
                   additional_levels,
@@ -2451,7 +2496,13 @@ fn link_route_fields(
 fn route_link_entry(def : Definition, e : ElementDef, node : Node) -> Node? {
   match link_route_fields(def, e) {
     Some(
-      (Some(target), target_scope, target_selections, target_observation, levels
+      (
+        Some(target),
+        target_scope,
+        target_tuple_arities,
+        target_selections,
+        target_observation,
+        levels,
       )
     ) =>
       Some(
@@ -2459,6 +2510,7 @@ fn route_link_entry(def : Definition, e : ElementDef, node : Node) -> Node? {
           e.name,
           target,
           target_scope,
+          target_tuple_arities,
           target_selections,
           target_observation,
           levels,
@@ -2466,7 +2518,7 @@ fn route_link_entry(def : Definition, e : ElementDef, node : Node) -> Node? {
           node,
         ),
       )
-    Some((None, _, _, _, _)) => Some(node)
+    Some((None, _, _, _, _, _)) => Some(node)
     None => None
   }
 }
@@ -2545,12 +2597,13 @@ fn inst_short(def : Definition, build : InstallOutput) -> Unit {
     let (
       link_target,
       link_target_scope,
+      link_target_tuple_arities,
       link_target_selections,
       link_target_observation,
       link_additional_levels,
     ) = match link_route_fields(def, e) {
       Some(fields) => fields
-      None => (None, [], [], None, 0)
+      None => (None, [], [], [], None, 0)
     }
     let matcher_link_levels = if link_target is Some(_) {
       link_additional_levels + e.link_depth
@@ -2589,6 +2642,7 @@ fn inst_short(def : Definition, build : InstallOutput) -> Unit {
           is_alias=e.is_alias,
           link_target~,
           link_target_scope~,
+          link_target_tuple_arities~,
           link_target_selections~,
           link_target_observation~,
           link_additional_levels=matcher_link_levels,
@@ -2695,7 +2749,7 @@ fn inst_global(sb : InstallBuilder) -> Unit {
         None => None
         Some(_) =>
           match link_route_fields(sb.definition(), opt) {
-            Some((Some(_), _, _, _, levels)) => Some(levels)
+            Some((Some(_), _, _, _, _, levels)) => Some(levels)
             _ => opt.link_additional_levels
           }
       }
@@ -2904,7 +2958,7 @@ fn collect_value_names(
     Many(inner, _) => collect_value_names(inner, registry, visiting, out)
     BoundedTail(inner, _, _) =>
       collect_value_names(inner, registry, visiting, out)
-    LinkTarget(_, _, _, _, _, _, _, inner) =>
+    LinkTarget(_, _, _, _, _, _, _, _, inner) =>
       collect_value_names(inner, registry, visiting, out)
     Rooted(inner, _) => collect_value_names(inner, registry, visiting, out)
     Scoped(_, inner) => collect_value_names(inner, registry, visiting, out)
@@ -3711,7 +3765,7 @@ fn head_progresses(
     IndexedRepeat(_, _, _, _) => true // 名前付き indexed repeat は head を消費
     BoundedTail(head, budget, _) =>
       budget >= 1 && head_progresses(head, registry, visiting)
-    LinkTarget(_, _, _, _, _, _, _, inner) =>
+    LinkTarget(_, _, _, _, _, _, _, _, inner) =>
       head_progresses(inner, registry, visiting)
     Rooted(inner, _) => head_progresses(inner, registry, visiting)
     Bind(_, _) | ChildDefault(_, _, _) => false // a child-default fallback may consume 0 tokens
@@ -4014,7 +4068,7 @@ fn collect_link_path_errors(def : Definition, out : Array[DefError]) -> Unit {
                   "declare a structural output shape before linking into the value",
                 ),
               )
-            Resolved(_, _, _, _, _) | Residual(Primitive) | Missing => ()
+            Resolved(_, _, _, _, _, _) | Residual(Primitive) | Missing => ()
           }
         }
       None => ()
@@ -4103,7 +4157,7 @@ fn check_element_absent_link(
     Some(Valid(path)) => {
       let absent = match resolve_link_path(def, path) {
         Missing | Residual(Primitive) => true
-        Resolved(_, _, _, _, _) | Residual(Opaque) => false
+        Resolved(_, _, _, _, _, _) | Residual(Opaque) => false
       }
       if absent {
         out.push(
