@@ -2157,9 +2157,10 @@ fn inst_long(
 }
 
 ///|
-/// Whether this declaration occupies a coordinate in a nameless result tuple. Zero-consumption
-/// literals own a value seat even though their constant value cannot be overwritten through link.
-fn element_has_value_seat(e : ElementDef) -> Bool {
+/// Whether this declaration owns a value cell that can be the final destination of a link route.
+/// Zero-consumption `value:` literals are ordinary value cells: const is a non-privileged initial
+/// source, so cli/link effects may overwrite it under DR-031's normal precedence.
+fn element_is_link_target(e : ElementDef) -> Bool {
   if e.link_path is Some(_) || e.is_dd || e.is_exact {
     return false
   }
@@ -2170,14 +2171,6 @@ fn element_has_value_seat(e : ElementDef) -> Bool {
     Enum(_) => true
     Or(_) | Group(_) => e.multiple
   }
-}
-
-///|
-/// Whether this declaration owns a value cell that can be the final destination of a link route.
-/// Structural wrappers are traversable by a fixed path, but remain non-cells unless their existing
-/// accumulator semantics already give the wrapper a value seat.
-fn element_is_link_target(e : ElementDef) -> Bool {
-  !e.is_literal && element_has_value_seat(e)
 }
 
 ///|
@@ -2225,7 +2218,7 @@ fn nameless_tuple_arity(element : ElementDef) -> Int {
     Group(items) => {
       let mut arity = 0
       for item in items {
-        if element_has_value_seat(item) {
+        if element_is_link_target(item) {
           arity += 1
         }
       }
@@ -2255,12 +2248,9 @@ fn indexed_structural_child(
       }
       let mut value_index = 0
       for item in items {
-        if element_has_value_seat(item) {
+        if element_is_link_target(item) {
           if value_index == resolved_index {
-            if element_is_link_target(item) {
-              return Some((item, resolved_index))
-            }
-            return None
+            return Some((item, resolved_index))
           }
           value_index += 1
         }

@@ -1527,6 +1527,21 @@ test "front_door.output: named link path descends into a sibling scope child" {
 }
 
 ///|
+/// DR-031 makes a `value:` const a non-privileged initial value: a normal link effect may overwrite
+/// the same root value cell, after which both the final source and the effect source are `link`.
+test "front_door.output: bare link overwrites a root const cell" {
+  let src =
+    #|{"options":[
+    #|  {"name":"target","type":"string","value":"fixed"},
+    #|  {"name":"legacy","type":"string","long":true,"link":"target"}
+    #|]}
+  assert_eq(
+    wbtest_view_of(src, ["--legacy", "override"]),
+    "result={target=override} sources={target=link} effects=target",
+  )
+}
+
+///|
 /// Link path lookup stays on declaration names while result/source projection independently applies
 /// each target declaration's export_key. Effects therefore retain the leaf declaration name.
 test "front_door.output: named link path crosses export_key projection without changing lookup" {
@@ -1696,6 +1711,24 @@ test "front_door.output: negative cell-space link index is normalized" {
   assert_eq(
     wbtest_view_of(src, ["--legacy", "b"]),
     "result={pair=[null,null,b]} sources={pair=[null,null,link]} effects=pair[2]",
+  )
+}
+
+///|
+/// A nameless `value:` literal owns an ordinary value cell. DR-031's const precedence therefore lets
+/// a positional link target overwrite that seat, and DR-127 §6 observes the resolved index 0.
+test "front_door.output: indexed link overwrites a nameless literal seat" {
+  let src =
+    #|{"options":[
+    #|  {"name":"pair","long":true,"seq":[
+    #|    {"type":"string","value":"fixed"},
+    #|    {"type":"string"}
+    #|  ]},
+    #|  {"name":"legacy","type":"string","long":true,"link":"pair[0]"}
+    #|]}
+  assert_eq(
+    wbtest_view_of(src, ["--legacy", "override"]),
+    "result={pair=[override,null]} sources={pair=[link,null]} effects=pair[0]",
   )
 }
 
