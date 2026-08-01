@@ -141,7 +141,7 @@ fn el(
     dd_self_keep,
     is_global,
     link_depth: 0,
-    link_target: None,
+    link_path: None,
     link_additional_levels: None,
     ref_target: ref_,
     repeat,

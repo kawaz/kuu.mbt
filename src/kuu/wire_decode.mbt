@@ -207,6 +207,14 @@ fn decode_help_render(o : Map[String, Json]) -> @abi.HelpRenderDecl? {
 }
 
 ///|
+fn decode_link_path(raw : String?) -> @engine.LinkPathDecode? {
+  match raw {
+    Some(path) => Some(@engine.decode_link_path(path))
+    None => None
+  }
+}
+
+///|
 fn opt(
   name : String,
   ty : &@extension.TypeExt,
@@ -283,7 +291,7 @@ fn opt(
     dd_self_keep: false,
     is_global: global,
     link_depth: 0,
-    link_target: link_,
+    link_path: decode_link_path(link_),
     link_additional_levels: None,
     ref_target: ref_,
     repeat,
@@ -402,7 +410,7 @@ fn pos(
     dd_self_keep: false,
     is_global: false,
     link_depth: 0,
-    link_target: link_,
+    link_path: decode_link_path(link_),
     link_additional_levels: None,
     ref_target: ref_,
     repeat,
@@ -486,7 +494,7 @@ fn dd_marker(
     dd_self_keep: self_keep,
     is_global: false,
     link_depth: 0,
-    link_target: None,
+    link_path: None,
     link_additional_levels: None,
     ref_target: None,
     repeat: None,
@@ -561,7 +569,7 @@ fn exact_marker(spelling : String) -> @engine.ElementDef {
     dd_self_keep: false,
     is_global: false,
     link_depth: 0,
-    link_target: None,
+    link_path: None,
     link_additional_levels: None,
     ref_target: None,
     repeat: None,

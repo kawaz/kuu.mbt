@@ -60,6 +60,8 @@ pub fn count_type(allow_base_prefix? : Bool) -> &@extension.TypeExt
 
 pub fn decode_fn_invocation_parts(@abi.FnInvocationForm) -> Result[Array[String], String]
 
+pub fn decode_link_path(String) -> LinkPathDecode
+
 pub fn deprecation_mark(String) -> Node
 
 pub fn effect_mark(String, @abi.EffectOp) -> Node
@@ -266,7 +268,7 @@ pub(all) struct ElementDef {
   dd_self_keep : Bool
   is_global : Bool
   link_depth : Int
-  link_target : String?
+  link_path : LinkPathDecode?
   link_additional_levels : Int?
   ref_target : String?
   repeat : @abi.RepeatSpec?
@@ -400,6 +402,21 @@ pub struct InstallerPlan {
   // private fields
 }
 pub fn InstallerPlan::new(Array[Array[String]], Array[(InstallBuilder) -> Unit], Array[(DefsView) -> Array[@abi.DefError]]) -> Self
+
+pub(all) struct LinkPath {
+  root : String
+  segments : Array[LinkSegment]
+} derive(Eq, @debug.Debug)
+
+pub(all) enum LinkPathDecode {
+  Valid(LinkPath)
+  Invalid(String)
+} derive(Eq, @debug.Debug)
+
+pub(all) enum LinkSegment {
+  Name(String)
+  Index(Int)
+} derive(Eq, @debug.Debug)
 
 pub(all) enum LongSpelling {
   Main(String)

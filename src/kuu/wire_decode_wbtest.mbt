@@ -16,6 +16,52 @@ test "dec_option carries configured from_entries collector" {
     DAlias(_) => fail("decoded as alias")
   }
 }
+
+///|
+/// DR-127 §1: bare name is the zero-segment path; dot and integer-index suffixes decode into an
+/// ordered AST. Negative indices remain signed because cell-space resolution decides them later.
+test "dec_option decodes link fixed-path syntax into LinkPath" {
+  let cases : Array[(String, @engine.LinkPath)] = [
+    ("a", { root: "a", segments: [] }),
+    ("a.b", { root: "a", segments: [@engine.Name("b")] }),
+    ("a[0]", { root: "a", segments: [@engine.Index(0)] }),
+    ("a[-1]", { root: "a", segments: [@engine.Index(-1)] }),
+    (
+      "a.b[2].c",
+      {
+        root: "a",
+        segments: [@engine.Name("b"), @engine.Index(2), @engine.Name("c")],
+      },
+    ),
+  ]
+  for case in cases {
+    let (raw, expected) = case
+    let src = "{\"name\":\"entry\",\"type\":\"string\",\"long\":true,\"link\":\"" +
+      raw +
+      "\"}"
+    match dec_option(@json.parse(src), Map([])) {
+      DOpt(element) =>
+        assert_eq(element.link_path, Some(@engine.Valid(expected)))
+      DAlias(_) => fail("decoded as alias")
+    }
+  }
+}
+
+///|
+/// DR-127 §1: empty names, unmatched delimiters, non-integer indices, and delimiter characters in
+/// a name are malformed syntax. Decode records the malformed spelling for definition-time reporting.
+test "dec_option retains malformed link paths for invalid-argument validation" {
+  let invalid = ["a..b", "a[", "a]", ".b", "", "a[x]", "a.b].c"]
+  for raw in invalid {
+    let src = "{\"name\":\"entry\",\"type\":\"string\",\"long\":true,\"link\":\"" +
+      raw +
+      "\"}"
+    match dec_option(@json.parse(src), Map([])) {
+      DOpt(element) => assert_eq(element.link_path, Some(@engine.Invalid(raw)))
+      DAlias(_) => fail("decoded as alias")
+    }
+  }
+}
 // json_conformance_test.mbt から昇格した decode 関数のうち、fixture 経由でなく直接検証している
 // ケース (TypeShadow の carry 経路など) をここへ移す。
 

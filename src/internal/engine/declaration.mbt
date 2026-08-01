@@ -1,4 +1,108 @@
 ///|
+pub(all) enum LinkSegment {
+  Name(String)
+  Index(Int)
+} derive(Eq, Debug)
+
+///|
+pub(all) struct LinkPath {
+  root : String
+  segments : Array[LinkSegment]
+} derive(Eq, Debug)
+
+///|
+pub(all) enum LinkPathDecode {
+  Valid(LinkPath)
+  Invalid(String)
+} derive(Eq, Debug)
+
+///|
+fn parse_link_index(chars : Array[Char], start : Int) -> (Int, Int)? {
+  let mut cursor = start
+  let mut negative = false
+  if cursor < chars.length() && chars[cursor] == '-' {
+    negative = true
+    cursor += 1
+  }
+  if cursor >= chars.length() || chars[cursor] < '0' || chars[cursor] > '9' {
+    return None
+  }
+  let mut value = 0
+  while cursor < chars.length() && chars[cursor] >= '0' && chars[cursor] <= '9' {
+    let digit = chars[cursor].to_int() - '0'.to_int()
+    if negative {
+      let minimum = -2147483647 - 1
+      if value < (minimum + digit) / 10 {
+        return None
+      }
+      value = value * 10 - digit
+    } else {
+      if value > (2147483647 - digit) / 10 {
+        return None
+      }
+      value = value * 10 + digit
+    }
+    cursor += 1
+  }
+  Some((value, cursor))
+}
+
+///|
+pub fn decode_link_path(raw : String) -> LinkPathDecode {
+  let chars = raw.to_array()
+  if chars.length() == 0 {
+    return Invalid(raw)
+  }
+  let root = StringBuilder::new()
+  let mut cursor = 0
+  while cursor < chars.length() &&
+        chars[cursor] != '.' &&
+        chars[cursor] != '[' &&
+        chars[cursor] != ']' {
+    root.write_char(chars[cursor])
+    cursor += 1
+  }
+  if root.to_string().length() == 0 ||
+    (cursor < chars.length() && chars[cursor] == ']') {
+    return Invalid(raw)
+  }
+  let segments : Array[LinkSegment] = []
+  while cursor < chars.length() {
+    if chars[cursor] == '.' {
+      cursor += 1
+      let name = StringBuilder::new()
+      while cursor < chars.length() &&
+            chars[cursor] != '.' &&
+            chars[cursor] != '[' &&
+            chars[cursor] != ']' {
+        name.write_char(chars[cursor])
+        cursor += 1
+      }
+      if name.to_string().length() == 0 ||
+        (cursor < chars.length() && chars[cursor] == ']') {
+        return Invalid(raw)
+      }
+      segments.push(Name(name.to_string()))
+    } else if chars[cursor] == '[' {
+      cursor += 1
+      match parse_link_index(chars, cursor) {
+        Some((index, next)) => {
+          if next >= chars.length() || chars[next] != ']' {
+            return Invalid(raw)
+          }
+          segments.push(Index(index))
+          cursor = next + 1
+        }
+        None => return Invalid(raw)
+      }
+    } else {
+      return Invalid(raw)
+    }
+  }
+  Valid({ root: root.to_string(), segments })
+}
+
+///|
 /// UsefulAST element. Attribute arrays are READ-ONLY to installers (invariant ①': 宣言層 read-only).
 /// The declaration layer is never emptied — help / diagnose / 再シリアライズが元の宣言を保持し、後段
 /// installer (global 等) も引き続き参照できる。Idempotency は add-if-absent が担う。
@@ -51,10 +155,10 @@ pub(all) struct ElementDef {
   dd_self_keep : Bool // false=drop (既定、消費1・捨てる) | true=keep (消費0・自身含め以降 raw)
   is_global : Bool // global installer 所有 (子孫 command scope へコピー伝播)
   link_depth : Int // >0 なら global COPY が declaring scope 何段下に置かれたか (satellite が Rooted で escape する段数)
-  // DR-029 / DR-031 / DR-121 §4: bare-name value-synchronization target. A linked element is an
-  // entry only: it owns parsing shape and spellings but no Entity/result seat; every effect produced
-  // for its own name is routed to this target and tagged Source::Link during evaluation.
-  link_target : String?
+  // DR-029 / DR-031 / DR-121 §4 / DR-127 §1: fixed-path value-synchronization target. A bare name
+  // is the degenerate path with no segments. Invalid syntax is retained until definition validation
+  // so malformed paths participate in the ordinary all-errors collection.
+  link_path : LinkPathDecode?
   // A global link copy must preserve the target identity resolved in its declaring scope (DR-032):
   // Some(n) is the extra lexical escape beyond this entry's own link_depth. None means this is the
   // original declaration and resolution still occurs against its current lexical declaration scope.

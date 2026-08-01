@@ -1416,6 +1416,50 @@ test "front_door.parse_definition: an absent bare link target is @abi.AbsentRef 
 }
 
 ///|
+/// DR-127 Stage A keeps legal non-bare paths behind an explicit implementation gate. The syntax is
+/// accepted into the AST, but lowering must not reinterpret `a.b` as a single bare declaration name.
+test "front_door.parse_definition: non-bare link path is explicitly unsupported during Stage A" {
+  let src =
+    #|{"options":[{"name":"target","type":"string"},{"name":"entry","type":"string","long":true,"link":"target.child"}]}
+  match parse_definition(@json.parse(src)) {
+    Err(Rejected(errors)) => {
+      let mut found = false
+      for error in errors {
+        if error.element == "entry" && error.kind == @abi.Unsupported {
+          found = true
+        }
+      }
+      assert_true(found)
+    }
+    Err(Malformed(message)) =>
+      fail("expected unsupported, got malformed: " + message)
+    Ok(_) => fail("non-bare path must remain gated during Stage A")
+  }
+}
+
+///|
+/// DR-127 §1 classifies malformed fixed-path syntax as invalid-argument rather than absent-ref: the
+/// spelling itself is invalid before any target lookup can occur.
+test "front_door.parse_definition: malformed link path is invalid-argument" {
+  let src =
+    #|{"options":[{"name":"target","type":"string"},{"name":"entry","type":"string","long":true,"link":"target..child"}]}
+  match parse_definition(@json.parse(src)) {
+    Err(Rejected(errors)) => {
+      let mut found = false
+      for error in errors {
+        if error.element == "entry" && error.kind == @abi.InvalidArgument {
+          found = true
+        }
+      }
+      assert_true(found)
+    }
+    Err(Malformed(message)) =>
+      fail("expected invalid-argument, got malformed: " + message)
+    Ok(_) => fail("malformed path must not lower")
+  }
+}
+
+///|
 /// DR-029 では ref/type と link は直交するが、現実装は ref leaf の wrapper scope 除去と複合値 carrier
 /// をまだ持たない。silent wrong answer を避け、解除条件が実装されるまで unsupported で明示的に塞ぐ。
 test "front_door.parse_definition: ref plus link is explicitly unsupported until structured routing exists" {

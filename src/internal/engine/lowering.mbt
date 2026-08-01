@@ -427,7 +427,7 @@ fn clone_elem(e : ElementDef) -> ElementDef {
     dd_self_keep: e.dd_self_keep,
     is_global: e.is_global,
     link_depth: e.link_depth,
-    link_target: e.link_target,
+    link_path: e.link_path,
     link_additional_levels: e.link_additional_levels,
     ref_target: e.ref_target,
     repeat: e.repeat,
@@ -1354,7 +1354,7 @@ fn ensure_entity_body(
   // DR-029 / DR-120 §4: a link declaration is an entry into another element's cell, never a cell
   // of its own. Keep this at the recursive funnel so future body shapes cannot accidentally register
   // a phantom Entity for the reference-side name.
-  if e.link_target is Some(_) {
+  if e.link_path is Some(_) {
     return
   }
   if e.is_exact {
@@ -2147,7 +2147,7 @@ fn inst_long(
 /// `link_depth > 0` is a global entry copy: its Entity lives in an ancestor, but a local link may
 /// still resolve to it and must carry that escape depth.
 fn element_is_link_target(e : ElementDef) -> Bool {
-  if e.link_target is Some(_) || e.is_dd || e.is_exact || e.is_literal {
+  if e.link_path is Some(_) || e.is_dd || e.is_exact || e.is_literal {
     return false
   }
   match e.body {
@@ -2177,9 +2177,11 @@ fn link_target_depth(def : Definition, target : String) -> Int? {
 
 ///|
 fn link_route_fields(def : Definition, e : ElementDef) -> (String?, Int)? {
-  match e.link_target {
+  match e.link_path {
     None => Some((None, 0))
-    Some(target) =>
+    Some(Invalid(_)) => None
+    Some(Valid(path)) => {
+      let target = path.root
       match e.link_additional_levels {
         Some(bound_levels) => Some((Some(target), bound_levels))
         None =>
@@ -2202,6 +2204,7 @@ fn link_route_fields(def : Definition, e : ElementDef) -> (String?, Int)? {
               }
           }
       }
+    }
   }
 }
 
@@ -2438,7 +2441,7 @@ fn add_greedy(build : InstallOutput, g : Node) -> Unit {
 fn inst_global(sb : InstallBuilder) -> Unit {
   for opt in sb.definition().options {
     if opt.is_global {
-      let bound_link_levels : Int? = match opt.link_target {
+      let bound_link_levels : Int? = match opt.link_path {
         None => None
         Some(_) =>
           match link_route_fields(sb.definition(), opt) {
@@ -2510,7 +2513,7 @@ fn copy_global_into(
     dd_self_keep: copy.dd_self_keep,
     is_global: copy.is_global,
     link_depth: copy.link_depth + 1,
-    link_target: copy.link_target,
+    link_path: copy.link_path,
     // DR-032: bind target identity/depth in the declaring scope; descendants must not re-resolve
     // the bare name against a same-named local shadow.
     link_additional_levels: bound_link_levels,
@@ -2949,7 +2952,7 @@ fn alias_entry(
     dd_self_keep: false,
     is_global: false,
     link_depth: 0,
-    link_target: None,
+    link_path: None,
     link_additional_levels: None,
     ref_target: None,
     repeat: None,
@@ -3712,6 +3715,44 @@ fn check_elem_absent_ref(
 }
 
 ///|
+fn collect_link_path_errors(def : Definition, out : Array[DefError]) -> Unit {
+  fn check(element : ElementDef, out : Array[DefError]) -> Unit {
+    match element.link_path {
+      Some(Invalid(raw)) =>
+        out.push(
+          def_err(
+            element.name,
+            InvalidArgument,
+            "link path '\{raw}' is not valid fixed-path syntax",
+            "use name followed only by .name or [integer] segments",
+          ),
+        )
+      Some(Valid(path)) =>
+        if path.segments.length() > 0 {
+          out.push(
+            def_err(
+              element.name,
+              Unsupported,
+              "link path segments are not supported by this implementation",
+              "use a bare target name until fixed-path routing is implemented",
+            ),
+          )
+        }
+      None => ()
+    }
+  }
+  for element in def.options {
+    check(element, out)
+  }
+  for element in def.positionals {
+    check(element, out)
+  }
+  for command in def.commands {
+    collect_link_path_errors(command.body, out)
+  }
+}
+
+///|
 /// Temporary implementation gate for DR-029-legal combinations whose result carrier is not yet
 /// representable by the bare-cell link route. A `ref` produces template leaf bindings under the
 /// reference-side scope, while structural Or/Group bodies can produce multiple child bindings;
@@ -3724,7 +3765,7 @@ fn collect_unsupported_link_shape(
   out : Array[DefError],
 ) -> Unit {
   fn check(element : ElementDef, out : Array[DefError]) -> Unit {
-    if element.link_target is Some(_) {
+    if element.link_path is Some(_) {
       let structural = match element.body {
         Or(_) | Group(_) => true
         Cell | Enum(_) => false
@@ -3779,19 +3820,19 @@ fn check_element_absent_link(
   if element.link_depth > 0 {
     return
   }
-  match element.link_target {
-    Some(target) =>
-      if link_target_depth(def, target) is None {
+  match element.link_path {
+    Some(Valid(path)) =>
+      if link_target_depth(def, path.root) is None {
         out.push(
           def_err(
             element.name,
             AbsentRef,
-            "link target '\{target}' is not defined as a value cell in this scope",
-            "define '\{target}' as a value element in the same scope",
+            "link target '\{path.root}' is not defined as a value cell in this scope",
+            "define '\{path.root}' as a value element in the same scope",
           ),
         )
       }
-    None => ()
+    Some(Invalid(_)) | None => ()
   }
 }
 
@@ -5196,7 +5237,7 @@ fn export_value_space(e : ElementDef) -> String {
 ///   「発火しても結果に痕跡を残さない」を pin 済み)、`config_file` の内部セル (DR-050 —
 ///   `fixtures/value-sources/config/*` の result に現れない)
 fn element_occupies_seat(e : ElementDef) -> Bool {
-  if e.link_target is Some(_) ||
+  if e.link_path is Some(_) ||
     e.is_alias ||
     e.link_depth > 0 ||
     e.is_dd ||
@@ -5544,6 +5585,7 @@ fn lower_definition_snapshot_impl(
   // DR-117 §2.6 / §8.1: `insert_form` の 3 種 invalid (enum 逸脱・非 completion_script への宣言・
   // 複数入口間の食い違い) を invalid-range で一括収集する。
   collect_completion_script_errors(def, errs)
+  collect_link_path_errors(def, errs)
   collect_unsupported_link_shape(def, errs)
   if errs.length() > 0 {
     return Err(errs) // ALL definition-error 列挙
