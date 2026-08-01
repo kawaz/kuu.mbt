@@ -2160,16 +2160,32 @@ test "front_door.output: named seq / or / repeat 配下の none も 3 面から�
 }
 
 ///|
-/// accumulator の各 row は、その発火で選ばれた or 枝だけを持つ。別枝の repeat セルは
-/// 宣言上 accumulator でも、成立しなかった row へ暗黙の空配列席を作らない。
-test "front_door.output: accumulator の or row は選択枝だけを持つ (DR-051 / DR-122 §2)" {
+/// accumulator の各 row は、宣言から静的に分かる全枝座を持つ。選択されなかった枝は値源ラダーを
+/// 回さず `null` で補形するため、repeat 枝の暗黙 bottom `[]` も非選択 row には注入されない。
+/// result と sources は同じ row 形を共有する (DR-130 §4/§5)。
+test "front_door.output: accumulator の or row は静的な全枝座を null 補形する" {
   let src =
     #|{"options":[{"name":"sel","long":true,"multiple":"append","or":[
     #|  {"name":"nums","type":"number","repeat":{"min":1}},
     #|  {"name":"word","type":"string"}]}]}
   assert_eq(
     wbtest_view_of(src, ["--sel", "1", "2", "--sel", "foo"]),
-    "result={sel=[{nums=[1,2]},{word=foo}]} sources={sel=[{nums=[cli,cli]},{word=cli}]} effects=nums,nums,word",
+    "result={sel=[{nums=[1,2],word=null},{nums=null,word=foo}]} sources={sel=[{nums=[cli,cli],word=null},{nums=null,word=cli}]} effects=nums,nums,word",
+  )
+}
+
+///|
+/// accumulator の default_fn が `null` を返す場合、その値は行供給座では「供給なし」である。
+/// `null` 1 件の行を積まず、値源ラダー由来なので effects にも観測を出さない (DR-131 §2.1)。
+test "front_door.output: accumulator の null default_fn は行も effect も供給しない" {
+  let src =
+    #|{"options":[
+    #|  {"name":"source","type":"string","long":true},
+    #|  {"name":"tags","type":"string","long":true,"multiple":"append",
+    #|   "default_fn":"borrow:source"}]}
+  assert_eq(
+    wbtest_view_of(src, []),
+    "result={source=null,tags=[]} sources={source=null,tags=[]} effects=",
   )
 }
 
@@ -2606,15 +2622,27 @@ test "front_door.output: unique removes the duplicate value and its source toget
 }
 
 ///|
-test "front_door.output: 未選択の or 枝が持つ default seat は result にも sources にも現れない (DR-052 §3)" {
+/// named `or` はセルが発火したときだけ枝スコープを実現し、その内側では宣言された全枝キーを
+/// 列挙する。非選択枝は default を供給せず `null` になり、sources も同じ座を `null` にする
+/// (DR-130 §4 NULOR-Q1=a)。セル自体が未発火なら枝を展開せず wrapper 1 座の `null` で止まる。
+test "front_door.output: named or は発火時に全枝を null 補形し、未発火時は wrapper null で止まる" {
   let src =
     #|{"options":[{"name":"mode","long":true,"or":[
     #|  {"name":"fast","type":"string"},
     #|  {"name":"slow","type":"int","default":7}]}]}
   assert_eq(
     wbtest_view_of(src, ["--mode", "x"]),
-    "result={mode={fast=x}} sources={mode={fast=cli}} effects=fast",
+    "result={mode={fast=x,slow=null}} sources={mode={fast=cli,slow=null}} effects=fast",
   )
+  assert_eq(
+    wbtest_view_of(src, ["--mode", "7"]),
+    "result={mode={fast=null,slow=7}} sources={mode={fast=null,slow=cli}} effects=slow",
+  )
+  assert_eq(
+    wbtest_view_of(src, []),
+    "result={mode=null} sources={mode=null} effects=",
+  )
+  // nameless `or` は wrapper セルを持たず、選択された枝の 1 セルだけを射影する。
   let anonymous =
     #|{"positionals":[{"or":[
     #|  {"name":"fast","type":"bool"},
