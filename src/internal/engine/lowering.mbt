@@ -420,7 +420,6 @@ fn clone_elem(e : ElementDef) -> ElementDef {
     help_meta: e.help_meta,
     is_tty: e.is_tty,
     tty_stream: e.tty_stream,
-    tty_cygwin: e.tty_cygwin,
     is_dd: e.is_dd,
     is_exact: e.is_exact,
     is_literal: e.is_literal,
@@ -1625,11 +1624,7 @@ fn ensure_entity(
   // Preset defaults are resident-owned. tty remains a distinct resident on Entity so its
   // provider-backed default-seat resolver can run at ladder time; count supplies 0 before
   // its value cell converges to the ordinary number resident.
-  let seat_ty = if e.is_tty {
-    tty_type(e.tty_stream, cygwin=e.tty_cygwin)
-  } else {
-    e.ty
-  }
+  let seat_ty = if e.is_tty { tty_type(e.tty_stream) } else { e.ty }
   let default_values : Array[Value]? = match e.default_values {
     Some(vs) => Some(vs)
     None =>
@@ -2508,7 +2503,6 @@ fn copy_global_into(
     help_meta: copy.help_meta,
     is_tty: copy.is_tty,
     tty_stream: copy.tty_stream,
-    tty_cygwin: copy.tty_cygwin,
     is_dd: copy.is_dd,
     is_exact: copy.is_exact,
     is_literal: copy.is_literal,
@@ -2948,7 +2942,6 @@ fn alias_entry(
     help_meta,
     is_tty: false, // alias entry-copy も値源は実体側のまま (§3 と同じ理由、env と対称)
     tty_stream: None,
-    tty_cygwin: true,
     is_dd: false,
     is_exact: false,
     is_literal: false,

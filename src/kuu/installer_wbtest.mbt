@@ -69,7 +69,6 @@ fn el(
   env? : Array[String] = [],
   is_tty? : Bool = false,
   tty_stream? : String? = None,
-  tty_cygwin? : Bool = true,
   is_dd? : Bool = false,
   // issue 2026-07-15-audit-node-nodashstr-deprmark-variants 副次発見: positional-face nameless
   // exact-match leaf marker (installer.mbt's `@engine.ElementDef.is_exact` doc comment) — exposed here so
@@ -135,7 +134,6 @@ fn el(
     },
     is_tty,
     tty_stream,
-    tty_cygwin,
     is_dd,
     is_exact,
     is_literal,
@@ -3142,10 +3140,10 @@ test "DR-099 §3/§7: a positional selecting builtin/tty without tty_stream is a
 ///|
 /// DR-099 §2: `ensure_entity` (installer.mbt) は is_tty 要素を @builtins.bool_type() の暗黙 default:false プリセット
 /// (LOWERING §A.5 / DR-051 §2、上の flag テストが固定するのと同じ機構) から除外する — 除外しないと
-/// 「宣言 default 無し」という状態が `ensure_entity` の時点で消え、`resolve.mbt` の tty fold が観測
+/// 「宣言 default 無し」という状態が `ensure_entity` の時点で消え、`resolve.mbt` の tty 観測解決が
 /// なし時に absent へ落ちる余地を失う (常に false が浮かび上がってしまう)。ここでは `parse_definition`
 /// を通した実 @engine.Entity の `default_values` が `None` のままであることを直接固定する
-/// (resolve.mbt 側の fold-fallthrough 自体は resolve_wbtest.mbt が別途検証)。
+/// (resolve.mbt 側の観測なし fallthrough 自体は resolve_wbtest.mbt が別途検証)。
 test "ensure_entity: a tty preset element without an explicit default keeps default_values None (DR-099 §2)" {
   let use_color = el(
     "use_color",

@@ -279,7 +279,6 @@ pub fn count_type(allow_base_prefix? : Bool = false) -> &TypeExt {
 ///|
 priv struct TtyTypeExt {
   stream : String?
-  cygwin : Bool
 }
 
 ///|
@@ -289,7 +288,7 @@ impl TypeExt for TtyTypeExt with fn name(_self) {
 
 ///|
 impl TypeExt for TtyTypeExt with fn encode(self) {
-  ["tty".to_json(), self.stream.to_json(), self.cygwin.to_json()].to_json()
+  ["tty".to_json(), self.stream.to_json()].to_json()
 }
 
 ///|
@@ -311,39 +310,19 @@ impl TypeExt for TtyTypeExt with fn default_seat_observation_key(self) {
 }
 
 ///|
-impl TypeExt for TtyTypeExt with fn default_seat_resolver(self, ctx) {
+impl TypeExt for TtyTypeExt with fn default_seat_resolver(_self, ctx) {
+  // DR-129 §3: `resolved_default = 観測 ?? 宣言 default ?? absent`。観測は端末か否かの bool 単一で、
+  // そのまま default 席の解決値になる (fold 計算は無い)。
   match ctx.observed() {
-    Some(json) =>
-      if json is Array(values) && values.length() == 2 {
-        let terminal = if values[0] is True {
-          Some(true)
-        } else if values[0] is False {
-          Some(false)
-        } else {
-          None
-        }
-        let cygwin = if values[1] is True {
-          Some(true)
-        } else if values[1] is False {
-          Some(false)
-        } else {
-          None
-        }
-        match (terminal, cygwin) {
-          (Some(terminal), Some(cygwin)) =>
-            Some(@abi.Bool(terminal || (self.cygwin && cygwin)))
-          _ => ctx.declared()
-        }
-      } else {
-        ctx.declared()
-      }
-    None => ctx.declared()
+    Some(True) => Some(@abi.Bool(true))
+    Some(False) => Some(@abi.Bool(false))
+    _ => ctx.declared()
   }
 }
 
 ///|
-pub fn tty_type(stream : String?, cygwin? : Bool = true) -> &TypeExt {
-  TtyTypeExt::{ stream, cygwin } as &TypeExt
+pub fn tty_type(stream : String?) -> &TypeExt {
+  TtyTypeExt::{ stream, } as &TypeExt
 }
 
 ///|

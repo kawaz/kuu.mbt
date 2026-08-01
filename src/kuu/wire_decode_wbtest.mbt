@@ -20,15 +20,15 @@ test "dec_option carries configured from_entries collector" {
 // ケース (TypeShadow の carry 経路など) をここへ移す。
 
 ///|
-/// issue typeshadow-carry-gap-or-leaf-positional-group: `dec_or_leaf` は TypeShadow の 7
-/// フィールド全てを carry する (base/int_round だけに絞っていた旧実装への回帰防止)。
+/// issue typeshadow-carry-gap-or-leaf-positional-group: `dec_or_leaf` は TypeShadow の全
+/// フィールドを carry する (base/int_round だけに絞っていた旧実装への回帰防止)。
 /// `fixtures/value-typing/or-leaf-factory-config.json` は bool_config / allow_base_prefix の
-/// carry を end-to-end (JSON result) で pin 済みだが、tty preset 由来の is_tty/tty_stream/
-/// tty_cygwin は同 fixture が触れていない軸 — 本 whitebox test で `dec_or_leaf` の返り値
+/// carry を end-to-end (JSON result) で pin 済みだが、tty preset 由来の is_tty/tty_stream は
+/// 同 fixture が触れていない軸 — 本 whitebox test で `dec_or_leaf` の返り値
 /// (@engine.ElementDef) を直接検査し、shadow の非 canonical 値 (is_tty=true, tty_stream=Some("stderr"),
-/// tty_cygwin=false, int_round=@abi.Floor, allow_base_prefix=true, 非 canonical bool_config) が
+/// int_round=@abi.Floor, allow_base_prefix=true, 非 canonical bool_config) が
 /// 1 つも canonical default に落ちずそのまま or leaf へ届くことを固定する。
-test "dec_or_leaf: TypeShadow の全フィールド (int_round/allow_base_prefix/bool_config/is_tty/tty_stream/tty_cygwin) が or leaf に carry される" {
+test "dec_or_leaf: TypeShadow の全フィールド (int_round/allow_base_prefix/bool_config/is_tty/tty_stream) が or leaf に carry される" {
   let shadows : Map[String, TypeShadow] = Map([])
   let custom_bool_config : @abi.BoolConfig = {
     true_values: ["on"],
@@ -43,7 +43,6 @@ test "dec_or_leaf: TypeShadow の全フィールド (int_round/allow_base_prefix
     bool_config: custom_bool_config,
     is_tty: true,
     tty_stream: Some("stderr"),
-    tty_cygwin: false,
   })
   let src =
     #|{"type": "dialect", "name": "leaf"}
@@ -56,12 +55,11 @@ test "dec_or_leaf: TypeShadow の全フィールド (int_round/allow_base_prefix
   assert_eq(e.bool_config, custom_bool_config)
   assert_eq(e.is_tty, true)
   assert_eq(e.tty_stream, Some("stderr"))
-  assert_eq(e.tty_cygwin, false)
 }
 
 ///|
 /// 対極 (shadow に無い bare 型名の場合): TypeShadow を経由しない or leaf は dec_ty の canonical
-/// 型解決 + @abi.Error/false/@builtins.bool_config_canonical()/false/None/true の canonical default に落ちる
+/// 型解決 + @abi.Error/false/@builtins.bool_config_canonical()/false/None の canonical default に落ちる
 /// ことの固定 (carry すべきものが無い場合に誤って何かを持ち込んでいないかの反証チェック)。
 test "dec_or_leaf: shadow に無い bare 型名 (\"int\") は canonical default (int_round=@abi.Error 等) に落ちる" {
   let shadows : Map[String, TypeShadow] = Map([])
@@ -75,7 +73,6 @@ test "dec_or_leaf: shadow に無い bare 型名 (\"int\") は canonical default 
   assert_eq(e.bool_config, @builtins.bool_config_canonical())
   assert_eq(e.is_tty, false)
   assert_eq(e.tty_stream, None)
-  assert_eq(e.tty_cygwin, true)
 }
 
 ///|

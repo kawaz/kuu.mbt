@@ -388,14 +388,14 @@ test "front_door.output: command 木でも子 scope の値源を OutputView.sour
 }
 
 ///|
-/// 保証 (統括裁定「@abi.ConfigVal/TtyObs の入力構築 API」(b)、DR-050 §2/§4): 外部利用者が `@abi.ConfigVal`
+/// 保証 (統括裁定「@abi.ConfigVal の入力構築 API」(b)、DR-050 §2/§4): 外部利用者が `@abi.ConfigVal`
 /// の variant (`@abi.Object`/`@abi.Array` 含む) を直接構築できない (`pub` でフィールド/variant 非公開) 制約下で、
 /// `config_from_json` が JSON から組んだ `@abi.ConfigVal` を `parse_legacy()`/`resolve_legacy()` の `config?` provider
 /// 経由で実際に config 席へ流し込めることを e2e で固定する。`config_file` 型要素 + `config_key`
 /// を持つ `port` の値が config 由来 (`8080`, source=config) で result/sources 双方に現れ、
 /// `config_file` 要素自身はインフラなので結果に現れない (`piece-filters/config-source.json` の
 /// 輪郭と同型)。
-test "front_door.config_from_json: JSON から組んだ @abi.ConfigVal が config 席経由で result/sources に反映される (DR-050 §2/§4, @abi.ConfigVal/TtyObs 入力構築 API)" {
+test "front_door.config_from_json: JSON から組んだ @abi.ConfigVal が config 席経由で result/sources に反映される (DR-050 §2/§4, @abi.ConfigVal 入力構築 API)" {
   let src =
     #|{"options": [
     #|  {"name": "config", "type": "config_file", "long": true, "default": "/app.toml"},
@@ -453,13 +453,12 @@ test "front_door.config_from_json: JSON から組んだ @abi.ConfigVal が confi
 }
 
 ///|
-/// 保証 (統括裁定「@abi.ConfigVal/TtyObs の入力構築 API」(b)、DR-099 §4): 外部利用者が `TtyObs` を
-/// (フィールド非公開のため) 直接構築できない制約下で、`tty_obs(terminal, cygwin)` が組んだ値を
-/// `parse_legacy()`/`resolve_legacy()` の `tty?` 引数経由で `builtin/tty` preset 型要素の default 席解決規則
-/// (`fold(観測) ?? 宣言 default ?? absent`、`tty-ladder.json` と同型) に実際に流し込めることを
-/// e2e で固定する。`{terminal: true, cygwin: false}` の観測は宣言 default (`false`) と異なる値
-/// (`true`) を fold するので、observation が宣言 default に優先することも同時に確認できる。
-test "front_door.tty_obs: 構築した TtyObs が tty 席経由で builtin/tty の default 解決規則に反映される (DR-099 §4, @abi.ConfigVal/TtyObs 入力構築 API)" {
+/// 保証 (DR-129 §1): 外部利用者が観測した端末判定 (`stream → bool`) を `parse_legacy()`/
+/// `resolve_legacy()` の `tty?` 引数経由で `builtin/tty` preset 型要素の default 席解決規則
+/// (`resolved_default = 観測 ?? 宣言 default ?? absent`、`tty-ladder.json` と同型) に実際に
+/// 流し込めることを e2e で固定する。観測 `true` は宣言 default (`false`) と異なる値なので、
+/// observation が宣言 default に優先することも同時に確認できる。
+test "front_door: 利用者が渡した tty 観測 bool が builtin/tty の default 解決規則に反映される (DR-129 §1)" {
   let src =
     #|{"definitions": {"types": {
     #|  "stdout_tty": {"name": "builtin/tty", "config": {"tty_stream": "stdout"}}
@@ -475,8 +474,7 @@ test "front_door.tty_obs: 構築した TtyObs が tty 席経由で builtin/tty �
       panic()
     }
   }
-  // 利用者は自前で { terminal: .., cygwin: .. } を組めない (フィールド非公開) — tty_obs へ渡すだけ。
-  let tty_map : Map[String, TtyObs] = { "stdout": tty_obs(true, false) }
+  let tty_map : Map[String, Bool] = { "stdout": true }
   let args : Array[String] = []
   let po = parse_legacy(ast, args, tty=fn(key) { tty_map.get(key) })
   let ro = resolve_legacy(ast, po, args, tty=fn(key) { tty_map.get(key) })

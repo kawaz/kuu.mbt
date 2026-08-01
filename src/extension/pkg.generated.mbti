@@ -125,7 +125,7 @@ pub fn string_type() -> &TypeExt
 
 pub fn trim_filter() -> FilterDescriptor
 
-pub fn tty_type(String?, cygwin? : Bool) -> &TypeExt
+pub fn tty_type(String?) -> &TypeExt
 
 pub fn type_parse_branch(String, Int, @abi.TypeParseFail, Array[@abi.Binding]) -> @abi.Branch
 

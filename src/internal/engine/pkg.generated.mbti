@@ -174,7 +174,7 @@ pub fn string_type() -> &@extension.TypeExt
 
 pub fn tried_triggers_of(Node, Array[@abi.ParseError]) -> Array[String]
 
-pub fn tty_type(String?, cygwin? : Bool) -> &@extension.TypeExt
+pub fn tty_type(String?) -> &@extension.TypeExt
 
 pub fn type_parse_branch(String, Int, @abi.TypeParseFail, Array[@abi.Binding]) -> @abi.Branch
 
@@ -259,7 +259,6 @@ pub(all) struct ElementDef {
   help_meta : @abi.HelpMetaDeclaration
   is_tty : Bool
   tty_stream : String?
-  tty_cygwin : Bool
   is_dd : Bool
   is_exact : Bool
   is_literal : Bool

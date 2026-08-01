@@ -267,7 +267,7 @@ fn apply_requires_filter(
   env : Map[String, String],
   toks_len : Int,
   provider? : (String) -> @abi.ConfigVal? = fn(_) { None },
-  tty? : Map[String, TtyObs] = Map([]),
+  tty? : Map[String, Bool] = Map([]),
 ) -> @engine.Outcome {
   apply_requires_filter_with_export(
     o,
@@ -303,7 +303,7 @@ fn resolve_scope(
   env_map : Map[String, String],
   at_pos? : Int = -1,
   path? : Array[String] = [],
-  tty? : Map[String, TtyObs] = Map([]),
+  tty? : Map[String, Bool] = Map([]),
 ) -> Result[Array[@abi.Binding], @abi.ParseError] {
   let out : Array[@abi.Binding] = []
   for e in sc.entities {
@@ -343,7 +343,7 @@ fn resolve_scope_config(
   path? : Array[String] = [],
   outer_values? : Map[String, @abi.Value] = Map([]),
   at_pos? : Int = -1,
-  tty? : Map[String, TtyObs] = Map([]),
+  tty? : Map[String, Bool] = Map([]),
 ) -> Result[Array[@abi.Binding], @abi.ParseError] {
   resolve_scope_config_with_export(
     sc,

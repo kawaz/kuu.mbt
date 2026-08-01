@@ -30,9 +30,6 @@ pub(all) struct ElementDef {
   // (`collect_tty_stream_missing`、bare `type:"tty"` を含む — config を供給する経路が無いため常に
   // definition-error)。
   tty_stream : String?
-  // DR-099 §3: `builtin/tty` factory の config `tty_cygwin` (既定 true)。`is_tty` が false の要素
-  // では未使用 (int_round が @builtins.int_type() 以外で未使用なのと同じ冗長フィールド)。
-  tty_cygwin : Bool
   is_dd : Bool // dd installer 所有 (type:"dd")
   // issue 2026-07-15-audit-node-nodashstr-deprmark-variants 副次発見の穴埋め (DR-063 A.1 裸文字列
   // → exact 正規化 / DR-018 配置で役割決定): a positional-face nameless exact-match leaf

@@ -502,10 +502,9 @@ struct DCase {
   tried_exp : String?
   resolve : Bool
   env : Map[String, String]
-  // DR-099 §4: tty_provider の runner 注入 — case JSON の `tty` フィールド (env と同型の注入形式)
-  // をそのまま Map[stream, TtyObs] として保持 (DR-098 の bool 単一値から生観測 2 値へ改訂)。
-  // キー不在 = 提供なし (null、CONFORMANCE §1)。
-  tty : Map[String, @kuu.TtyObs]
+  // DR-129 §1: tty_provider の runner 注入 — case JSON の `tty` フィールド (env と同型の注入形式)
+  // をそのまま Map[stream, 端末か否か] として保持。キー不在 = 提供なし (null、CONFORMANCE §1)。
+  tty : Map[String, Bool]
   cfg : CfgInj
 }
 
@@ -521,7 +520,7 @@ struct DecodedFixture {
 /// `@abi.ResultValue` の decode は definition の wire decode (`wire_decode.mbt`) ではなく、fixture の expect
 /// (`result`/`interpretations`) を読む側のヘルパー — そのためここに残す (MDR-005 §2 の境界判定)。
 /// `@abi.ConfigVal` 側の同種ヘルパー (旧 `json_to_configval`、`cases[].config`/`config_files` の decode)
-/// は front_door の `config_from_json` へ昇格済み (MDR-005 追記、「@abi.ConfigVal/TtyObs の入力構築
+/// は front_door の `config_from_json` へ昇格済み (MDR-005 追記、「@abi.ConfigVal の入力構築
 /// API」issue) — 用途が「fixture 入力の decode」から「production 呼び出し側の入力構築」まで
 /// 広がったため、runner 側もそちらを直接呼ぶ (下記 `cfg` 組み立て箇所参照)。
 fn json_to_rval(j : Json) -> @abi.ResultValue raise DecodeSkip {
@@ -794,11 +793,10 @@ fn dec_case(cj : Json) -> DCase raise DecodeSkip {
     }
     None => ()
   }
-  // DR-099 §4: case の `tty` フィールド (env と同型の注入形式) — tty_provider の runner 実装。
-  // 各 stream キーは `{terminal, cygwin}` の生観測 2 値 (DR-098 の bool 単一値から改訂、
-  // schema/fixture.schema.json の `additionalProperties: false` に合わせ両キー必須で decode)。
-  // キー不在 = 提供なし (CONFORMANCE §1「null = 未設定」の tty 版、DR-098 §1 の規定を継承)。
-  let tty : Map[String, @kuu.TtyObs] = Map([])
+  // DR-129 §1: case の `tty` フィールド (env と同型の注入形式) — tty_provider の runner 実装。
+  // 各 stream キーは「そのストリームは端末か否か」の bool 単一。キー不在 = 提供なし
+  // (CONFORMANCE §1「null = 未設定」の tty 版、DR-098 §1 の規定を継承)。
+  let tty : Map[String, Bool] = Map([])
   match co.get("tty") {
     Some(tj) => {
       let tobj = match tj.j_obj() {
@@ -806,30 +804,10 @@ fn dec_case(cj : Json) -> DCase raise DecodeSkip {
         None => raise DecodeSkip("case tty is not an object")
       }
       for k, v in tobj {
-        let vo = match v.j_obj() {
-          Some(x) => x
-          None => raise DecodeSkip("case tty[" + k + "] is not an object")
+        match v.j_bool() {
+          Some(b) => tty.set(k, b)
+          None => raise DecodeSkip("case tty[" + k + "] is not a bool")
         }
-        allowed_keys(vo, ["terminal", "cygwin"], "case tty[" + k + "]")
-        let terminal = match vo.get("terminal") {
-          Some(bj) =>
-            match bj.j_bool() {
-              Some(b) => b
-              None =>
-                raise DecodeSkip("case tty[" + k + "].terminal is not a bool")
-            }
-          None => raise DecodeSkip("case tty[" + k + "] missing 'terminal'")
-        }
-        let cygwin = match vo.get("cygwin") {
-          Some(bj) =>
-            match bj.j_bool() {
-              Some(b) => b
-              None =>
-                raise DecodeSkip("case tty[" + k + "].cygwin is not a bool")
-            }
-          None => raise DecodeSkip("case tty[" + k + "] missing 'cygwin'")
-        }
-        tty.set(k, @kuu.tty_obs(terminal, cygwin))
       }
     }
     None => ()
@@ -2343,7 +2321,7 @@ fn known_divergences() -> Array[String] {
 /// UNEXPECTED / VANISHED / CHANGED SKIP REASON all fail the run (like divergences, MDR-001 §6).
 ///
 /// Every fixture in the corpus (including DR-099's `builtin/tty` preset-type fixtures — the
-/// `definitions.types` factory branch and the case-level `{terminal, cygwin}` observation decode,
+/// `definitions.types` factory branch and the case-level single-bool observation decode,
 /// both `dec_types`/`dec_case` above) decodes and runs losslessly — full conformance, no known skip
 /// gaps.
 fn expected_skips() -> Array[(String, String)] {

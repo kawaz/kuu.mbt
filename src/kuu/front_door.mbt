@@ -228,14 +228,14 @@ pub fn parse_definition(
 ///   異なる config_file を動的に指す `CfgFiles` ケースも呼び出し元が対応する closure を渡すだけで
 ///   均一に扱われる (単一 @abi.ConfigVal だった旧契約の残存ギャップが解消)。未指定 = 常に `None`
 ///   を返す no-op provider
-/// - `tty`: DR-099 §4 の tty provider (stream 名 → 生観測 `TtyObs` の Map)。未指定 = 空 Map
+/// - `tty`: DR-129 §1 の tty provider (stream 名 → 端末か否かの bool の Map)。未指定 = 空 Map
 ///   (提供なし、CONFORMANCE §1)
 fn parse_legacy(
   ast : AtomicAST,
   args : Array[String],
   env? : (String) -> String? = fn(_) { None },
   config? : (String) -> @abi.ConfigVal? = fn(_) { None },
-  tty? : (String) -> TtyObs? = fn(_) { None },
+  tty? : (String) -> Bool? = fn(_) { None },
 ) -> @engine.Outcome {
   let root = @engine.ScopeNode(ast.root)
   let checked = apply_requires_filter_with_export(
@@ -288,7 +288,7 @@ fn resolve_legacy(
   args : Array[String],
   env? : (String) -> String? = fn(_) { None },
   config? : (String) -> @abi.ConfigVal? = fn(_) { None },
-  tty? : (String) -> TtyObs? = fn(_) { None },
+  tty? : (String) -> Bool? = fn(_) { None },
 ) -> @engine.Outcome {
   match outcome {
     @engine.Success(binds) =>
@@ -779,7 +779,7 @@ pub fn output_of_interpretation(
 }
 
 ///|
-/// 正面玄関の補助 (issue 追加分「@abi.ConfigVal/TtyObs の入力構築 API」、統括裁定 (b)): `parse()`/
+/// 正面玄関の補助 (issue 追加分「@abi.ConfigVal の入力構築 API」、統括裁定 (b)): `parse()`/
 /// `resolve()` の `config?` 引数 (`(path: String) -> @abi.ConfigVal?`) を組み立てたい利用者向けの JSON
 /// → `@abi.ConfigVal` 全域変換。`@abi.ConfigVal` は `pub` (フィールド/variant 非公開) のまま — `@abi.Object`/`@abi.Array`
 /// を含む全 variant を外部から直接構築する経路が無く (moonc [4036] で拒否される)、`@extension.value_to_configval`
@@ -794,16 +794,4 @@ pub fn output_of_interpretation(
 /// に落ちる — decode 失敗という概念を持たない全域関数 (`Result`/`raise` を返さない)。
 pub fn config_from_json(j : Json) -> @abi.ConfigVal {
   @extension.config_from_json(j)
-}
-
-///|
-/// 正面玄関の補助 (issue 追加分「@abi.ConfigVal/TtyObs の入力構築 API」、統括裁定 (b)): `parse()`/
-/// `resolve()` の `tty?` 引数 (`Map[String, TtyObs]`、DR-099 §4 の stream 名 → 生観測) を組み立てたい
-/// 利用者向けの構築関数。`TtyObs` は `pub` (フィールド非公開) のまま — 呼び出し側は自身で
-/// `isatty(2)` 相当を観測して得た 2 つの bool (`terminal`: TTY か、`cygwin`: DR-099 §12b の
-/// Cygwin/MSYS pty 判定) をここへ渡すだけでよい。config と異なり JSON 経由の入力を想定しない
-/// (呼び出し側プロセスの実観測値をそのまま渡す性質のため) ので `_from_json` ではなく直接の値
-/// コンストラクタとする。
-pub fn tty_obs(terminal : Bool, cygwin : Bool) -> TtyObs {
-  { terminal, cygwin }
 }

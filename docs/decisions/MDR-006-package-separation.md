@@ -57,7 +57,7 @@ cross-package で **フィールド読み取り・enum variant のパターン�
 
 | 区分 | 消費者 | 可視性 | 対象 (代表) |
 |---|---|---|---|
-| **利用者玄関** (assembly 契約) | kuu-ux / kuu-cli / runner | `pub(all)` (構築も許す入力型) + `pub` (読むだけの出力型) | `Outcome` / `Binding` / `Value` / `Cand` / `DefError` / `DefLoadError` / `Warning` / `SourceEntry` / `RVal`、入力構築子 (`config_from_json` / `tty_obs`) |
+| **利用者玄関** (assembly 契約) | kuu-ux / kuu-cli / runner | `pub(all)` (構築も許す入力型) + `pub` (読むだけの出力型) | `Outcome` / `Binding` / `Value` / `Cand` / `DefError` / `DefLoadError` / `Warning` / `SourceEntry` / `RVal`、入力構築子 (`config_from_json`) |
 | **extension 実装者** (engine 契約) | builtins + 3rd party 拡張 + RPC proxy | `pub(open)` trait + read-only `pub` 型 + factory / capability method | `NodeExt` / `MatcherExt` / `InstallerExt` / `TypeExt` / 各 descriptor trait、`Ctx` / `Branch` / `Registry` / `Node` (構造 variant) / `Scope` / `Entity` (最小形) |
 | **package 内部** | 自 package のみ | `priv` 型 / `priv` フィールド | `Cont` ADT (Resume 関数型の背後に隠蔽)、completes-cache、matcher 具象の構成データ、sentinel 綴り定数 |
 

@@ -217,7 +217,6 @@ fn opt(
   help_meta? : @abi.HelpMetaDeclaration = empty_help_meta(),
   is_tty? : Bool = false,
   tty_stream? : String? = None,
-  tty_cygwin? : Bool = true,
   global? : Bool = false,
   repeat? : @abi.RepeatSpec? = None,
   multiple? : Bool = false,
@@ -277,7 +276,6 @@ fn opt(
     help_meta,
     is_tty,
     tty_stream,
-    tty_cygwin,
     is_dd: false,
     is_exact: false,
     is_literal: false,
@@ -363,7 +361,6 @@ fn pos(
   help_meta? : @abi.HelpMetaDeclaration = empty_help_meta(),
   is_tty? : Bool = false,
   tty_stream? : String? = None,
-  tty_cygwin? : Bool = true,
   required? : Bool = false,
   requires? : Array[String] = [],
   // DR-012 / DR-055 / DR-103: constraint 系は「要素属性」なので positional にも同型に付与できる。
@@ -398,7 +395,6 @@ fn pos(
     help_meta,
     is_tty,
     tty_stream,
-    tty_cygwin,
     is_dd: false,
     is_exact: false,
     is_literal,
@@ -483,7 +479,6 @@ fn dd_marker(
     // is_tty/tty_stream を常に canonical default のまま持ち回るだけの冗長フィールド。
     is_tty: false,
     tty_stream: None,
-    tty_cygwin: true,
     is_dd: true,
     is_exact: false,
     is_literal: false,
@@ -559,7 +554,6 @@ fn exact_marker(spelling : String) -> @engine.ElementDef {
     help_meta: empty_help_meta(),
     is_tty: false,
     tty_stream: None,
-    tty_cygwin: true,
     is_dd: false,
     is_exact: true,
     is_literal: false,
@@ -1098,11 +1092,10 @@ priv struct TypeShadow {
   // struct に束ねた carrier、@engine.ElementDef.bool_config と同型)。canonical default = `@builtins.bool_config_canonical()`。
   bool_config : @abi.BoolConfig
   // DR-099 §1/§3 `builtin/tty` factory: base=@builtins.bool_type() + is_tty マーカー + tty_stream (必須 config、
-  // 未指定は definition-error) + tty_cygwin (既定 true)。他 factory と同じ「平坦 config キーを
-  // shadow に carry するだけ」パターン (@engine.ElementDef.is_tty/tty_stream/tty_cygwin と同型)。
+  // 未指定は definition-error)。他 factory と同じ「平坦 config キーを shadow に carry するだけ」
+  // パターン (@engine.ElementDef.is_tty/tty_stream と同型)。
   is_tty : Bool
   tty_stream : String?
-  tty_cygwin : Bool
 }
 
 ///|
@@ -1165,7 +1158,6 @@ fn dec_types(
         bool_config: @builtins.bool_config_canonical(),
         is_tty: false,
         tty_stream: None,
-        tty_cygwin: true,
       })
       help_types.push({ id: name, help: help_text, value_structure })
       continue
@@ -1246,7 +1238,6 @@ fn dec_types(
           bool_config: @builtins.bool_config_canonical(),
           is_tty: false,
           tty_stream: None,
-          tty_cygwin: true,
         })
       }
       "number_parser" | "builtin/number_parser" => {
@@ -1292,7 +1283,6 @@ fn dec_types(
           bool_config: @builtins.bool_config_canonical(),
           is_tty: false,
           tty_stream: None,
-          tty_cygwin: true,
         })
       }
       "bool_parser" | "builtin/bool_parser" => {
@@ -1353,7 +1343,6 @@ fn dec_types(
           bool_config: { true_values, false_values, case_insensitive },
           is_tty: false,
           tty_stream: None,
-          tty_cygwin: true,
         })
       }
       "tty" | "builtin/tty" => {
@@ -1361,9 +1350,8 @@ fn dec_types(
         // `collect_tty_stream_missing`, installer.mbt が別途検査する。decode 自体は DecodeSkip に
         // せず None のまま素通しする、definition-error という別チャンネルで表現する規約は
         // int_parser 等の decode-time DecodeSkip とは異なる、DR-098 の同型検査の踏襲)。
-        // `tty_cygwin` は既定 true。
+        // DR-129 §2: config キーは `tty_stream` のみ。
         let mut stream : String? = None
-        let mut cygwin = true
         match to.get("config") {
           Some(cj) => {
             let co = match cj.j_obj() {
@@ -1373,7 +1361,7 @@ fn dec_types(
                   "definitions.types[" + name + "].config is not an object",
                 )
             }
-            allowed_keys(co, ["tty_stream", "tty_cygwin"], "tty config")
+            allowed_keys(co, ["tty_stream"], "tty config")
             match co.get("tty_stream") {
               Some(vj) =>
                 match vj.j_str() {
@@ -1397,19 +1385,6 @@ fn dec_types(
                 }
               None => ()
             }
-            match co.get("tty_cygwin") {
-              Some(vj) =>
-                match vj.j_bool() {
-                  Some(b) => cygwin = b
-                  None =>
-                    raise DecodeSkip(
-                      "definitions.types[" +
-                      name +
-                      "].config.tty_cygwin is not a bool",
-                    )
-                }
-              None => ()
-            }
           }
           None => ()
         }
@@ -1421,7 +1396,6 @@ fn dec_types(
           bool_config: @builtins.bool_config_canonical(),
           is_tty: true,
           tty_stream: stream,
-          tty_cygwin: cygwin,
         })
       }
       other =>
@@ -1930,7 +1904,6 @@ fn dec_or_leaf(
     bool_config_from_shadow,
     is_tty_from_shadow,
     tty_stream_from_shadow,
-    tty_cygwin_from_shadow,
   ) = match jf_str(o, "type") {
     Some(t) =>
       match shadows.get(t) {
@@ -1942,7 +1915,6 @@ fn dec_or_leaf(
             sh.bool_config,
             sh.is_tty,
             sh.tty_stream,
-            sh.tty_cygwin,
           )
         None =>
           (
@@ -1952,7 +1924,6 @@ fn dec_or_leaf(
             @builtins.bool_config_canonical(),
             false,
             None,
-            true,
           )
       }
     None =>
@@ -1963,7 +1934,6 @@ fn dec_or_leaf(
         @builtins.bool_config_canonical(),
         false,
         None,
-        true,
       )
   }
   let ty = @builtins.configured_type(
@@ -1988,7 +1958,6 @@ fn dec_or_leaf(
     bool_config=bool_config_from_shadow,
     is_tty=is_tty_from_shadow,
     tty_stream=tty_stream_from_shadow,
-    tty_cygwin=tty_cygwin_from_shadow,
     repeat=owned.repeat,
     optional=owned.optional,
     multiple=owned.multiple,
@@ -2169,7 +2138,6 @@ fn dec_option(
     bool_config_from_shadow,
     is_tty_from_shadow,
     tty_stream_from_shadow,
-    tty_cygwin_from_shadow,
   ) = match tystr {
     // DR-113 §2: 5 直交 help preset (help / help_all_category / help_category /
     // help_show_hidden / help_tree)。M3a では decode 層で 5 type すべてを受理し、旧
@@ -2192,7 +2160,6 @@ fn dec_option(
         @builtins.bool_config_canonical(),
         false,
         None,
-        true,
       )
     "help_show_hidden" =>
       (
@@ -2204,7 +2171,6 @@ fn dec_option(
         @builtins.bool_config_canonical(),
         false,
         None,
-        true,
       )
     "config_file" =>
       if owned.config_file {
@@ -2217,7 +2183,6 @@ fn dec_option(
           @builtins.bool_config_canonical(),
           false,
           None,
-          true,
         )
       } else {
         (
@@ -2229,7 +2194,6 @@ fn dec_option(
           @builtins.bool_config_canonical(),
           false,
           None,
-          true,
         )
       }
     "tty" | "builtin/tty" =>
@@ -2242,7 +2206,6 @@ fn dec_option(
         @builtins.bool_config_canonical(),
         true,
         None,
-        true,
       )
     _ =>
       match shadows.get(tystr) {
@@ -2256,7 +2219,6 @@ fn dec_option(
             sh.bool_config,
             sh.is_tty,
             sh.tty_stream,
-            sh.tty_cygwin,
           )
         None =>
           (
@@ -2268,7 +2230,6 @@ fn dec_option(
             @builtins.bool_config_canonical(),
             false,
             None,
-            true,
           )
       }
   }
@@ -2420,7 +2381,6 @@ fn dec_option(
       help_meta~,
       is_tty=is_tty_from_shadow,
       tty_stream=tty_stream_from_shadow,
-      tty_cygwin=tty_cygwin_from_shadow,
       global~,
       multiple~,
       accumulator=acc,
@@ -2626,7 +2586,6 @@ fn dec_positional(
     bool_config_from_shadow,
     is_tty_from_shadow,
     tty_stream_from_shadow,
-    tty_cygwin_from_shadow,
   ) = match jf_str(o, "type") {
     Some("tty") | Some("builtin/tty") =>
       (
@@ -2636,7 +2595,6 @@ fn dec_positional(
         @builtins.bool_config_canonical(),
         true,
         None,
-        true,
       )
     Some(t) =>
       match shadows.get(t) {
@@ -2648,7 +2606,6 @@ fn dec_positional(
             sh.bool_config,
             sh.is_tty,
             sh.tty_stream,
-            sh.tty_cygwin,
           )
         None =>
           (
@@ -2658,7 +2615,6 @@ fn dec_positional(
             @builtins.bool_config_canonical(),
             false,
             None,
-            true,
           )
       }
     None =>
@@ -2669,7 +2625,6 @@ fn dec_positional(
         @builtins.bool_config_canonical(),
         false,
         None,
-        true,
       )
   }
   let ty = @builtins.configured_type(
@@ -2803,7 +2758,6 @@ fn dec_positional(
     env~,
     is_tty=is_tty_from_shadow,
     tty_stream=tty_stream_from_shadow,
-    tty_cygwin=tty_cygwin_from_shadow,
     final_filters~,
     accum_filters~,
     required~,

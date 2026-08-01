@@ -95,16 +95,15 @@ test "TypeExt default resolver supplies only preset defaults" {
 }
 
 ///|
-test "tty TypeExt owns its provider key and default-seat fold" {
-  // The resident, not Entity/resolve, owns stream selection and the terminal-or-Cygwin fold.
-  let tty = tty_type(Some("stdout"), cygwin=true)
+test "tty TypeExt owns its provider key and default-seat resolution" {
+  // The resident, not Entity/resolve, owns stream selection and the observation-first rule
+  // (DR-129 §3 `resolved_default = 観測 ?? 宣言 default ?? absent`).
+  let tty = tty_type(Some("stdout"))
   assert_eq(tty.default_seat_observation_key(), Some("stdout"))
+  // The observation wins over a declared default that disagrees with it.
   assert_eq(
     tty.default_seat_resolver(
-      SeatCtx::new(
-        Some(@abi.Bool(false)),
-        observed=Some([false.to_json(), true.to_json()].to_json()),
-      ),
+      SeatCtx::new(Some(@abi.Bool(false)), observed=Some(true.to_json())),
     ),
     Some(@abi.Bool(true)),
   )
@@ -114,9 +113,7 @@ test "tty TypeExt owns its provider key and default-seat fold" {
     Some(@abi.Bool(false)),
   )
   assert_eq(
-    tty_type(Some("stderr"), cygwin=false).default_seat_resolver(
-      SeatCtx::new(None),
-    ),
+    tty_type(Some("stderr")).default_seat_resolver(SeatCtx::new(None)),
     None,
   )
 }

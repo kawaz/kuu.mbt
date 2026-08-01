@@ -2143,7 +2143,7 @@ fn resolve_scope_tree_with_export_impl(
   path : Array[String],
   outer_values : Map[String, @abi.Value],
   at_pos : Int,
-  tty : (String) -> TtyObs?,
+  tty : (String) -> Bool?,
   ek : @engine.ExportScopeMap,
   extensions : @node.Registry,
   include_default : Bool,
@@ -2314,7 +2314,7 @@ fn resolve_child_default_seats(
   provider : (String) -> @abi.ConfigVal?,
   outer_values : Map[String, @abi.Value],
   at_pos : Int,
-  tty : (String) -> TtyObs?,
+  tty : (String) -> Bool?,
   ek : @engine.ExportScopeMap,
   extensions : @node.Registry,
   include_default : Bool,
@@ -2384,7 +2384,7 @@ fn resolve_scope_tree_with_export(
   path : Array[String],
   outer_values : Map[String, @abi.Value],
   at_pos : Int,
-  tty : (String) -> TtyObs?,
+  tty : (String) -> Bool?,
   ek : @engine.ExportScopeMap,
   extensions : @node.Registry,
   include_default : Bool,
@@ -2433,7 +2433,7 @@ fn apply_requires_filter_with_export(
   env : (String) -> String?,
   toks_len : Int,
   provider : (String) -> @abi.ConfigVal?,
-  tty : (String) -> TtyObs?,
+  tty : (String) -> Bool?,
   ek : @engine.ExportScopeMap,
   extensions : @node.Registry,
 ) -> @engine.Outcome {
@@ -2662,7 +2662,7 @@ fn resolve_entity(
   config_path : Array[String],
   at_pos : Int,
   epath : Array[String],
-  tty_map : (String) -> TtyObs?,
+  tty_map : (String) -> Bool?,
   extensions : @node.Registry,
   include_default : Bool,
 ) -> Result[Array[@abi.Binding], @abi.ParseError] {
@@ -2798,7 +2798,7 @@ fn resolve_entity_raw(
   config_path : Array[String],
   at_pos : Int,
   epath : Array[String],
-  tty_map : (String) -> TtyObs?,
+  tty_map : (String) -> Bool?,
   extensions : @node.Registry,
   include_default : Bool,
 ) -> Result[Array[@abi.Binding], @abi.ParseError] {
@@ -3028,16 +3028,6 @@ fn resolve_entity_raw(
 }
 
 ///|
-/// DR-099 §4: tty_provider が 1 stream について返す生観測 2 値。null (= このマップにキーが無い) は
-/// 「提供なし」(DR-098 §1 の規定を継承)。`fold = terminal || (tty_cygwin && cygwin)` — fold の計算
-/// 自体は `resolve_ladder_below_cli` 側 (spec 側の純データ計算、provider には委ねない、DR-099 §1
-/// 「採用しなかった案」参照)。
-pub struct TtyObs {
-  terminal : Bool
-  cygwin : Bool
-} derive(Eq, Debug)
-
-///|
 /// DR-081 §1 の「default 席書き換え」モデルの実装的正体: env/config/宣言 default という
 /// CLI 未満のラダー段。CLI seat がフォールスルーした場合の通常経路であると同時に、`resolve_entity_
 /// raw` の CLI seat 内で `@abi.Default` effect (`:default` variant) が発火した瞬間の **「その時点の
@@ -3059,7 +3049,7 @@ fn resolve_ladder_below_cli(
   config_path : Array[String],
   at_pos : Int,
   epath : Array[String],
-  tty_map : (String) -> TtyObs?,
+  tty_map : (String) -> Bool?,
   extensions : @node.Registry,
   include_default? : Bool = true,
 ) -> Result[Array[@abi.Binding], @abi.ParseError] {
@@ -3195,13 +3185,12 @@ fn resolve_ladder_below_cli(
   }
   // Provider-backed preset resolution is descriptor dispatch: the type resident owns
   // the opaque provider key and JSON schema, while this ladder only transports the
-  // selected observation. tty currently supplies `[terminal, cygwin]`; the resident owns
-  // `terminal || (tty_cygwin && cygwin)` and the declared-default fallback.
+  // selected observation. tty supplies a single `bool` (DR-129 §1: 端末か否かだけ); the resident
+  // owns the declared-default fallback.
   match e.ty.default_seat_observation_key() {
     Some(key) => {
       let observed : Json? = match tty_map(key) {
-        Some(obs) =>
-          Some([obs.terminal.to_json(), obs.cygwin.to_json()].to_json())
+        Some(terminal) => Some(terminal.to_json())
         None => None
       }
       let declared : @abi.Value? = if e.accum is None {
@@ -3607,7 +3596,7 @@ fn resolve_scope_config_with_export(
   path : Array[String],
   outer_values : Map[String, @abi.Value],
   at_pos : Int,
-  tty : (String) -> TtyObs?,
+  tty : (String) -> Bool?,
   ek : @engine.ExportScopeMap,
   extensions : @node.Registry,
   include_default : Bool,

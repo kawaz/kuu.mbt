@@ -35,7 +35,6 @@ fn ent(
   is_config_file? : Bool = false,
   is_tty? : Bool = false,
   tty_stream? : String? = None,
-  tty_cygwin? : Bool = true,
   accum? : String? = None,
   flatten? : Bool = false,
   is_multiple_decl? : Bool = false,
@@ -61,7 +60,7 @@ fn ent(
     declaring_path,
     link,
     ty: if is_tty {
-      @builtins.tty_type(tty_stream, cygwin=tty_cygwin)
+      @builtins.tty_type(tty_stream)
     } else {
       ty
     },
@@ -564,7 +563,6 @@ test "resolve_scope: tty 型 default 席は観測 > 宣言既定の順で解決�
     @builtins.bool_type(),
     is_tty=true,
     tty_stream=Some("stdout"),
-    tty_cygwin=false, // cygwin 分岐を無効化し fold=terminal に単純化 (cygwin dial は別テストで検証)
     default_value=Some(@abi.Bool(true)),
   )
   let sc : @engine.Scope = {
@@ -573,12 +571,12 @@ test "resolve_scope: tty 型 default 席は観測 > 宣言既定の順で解決�
     entities: [use_color],
     constraints: [],
   }
-  // tty 観測あり → fold が宣言 default より勝つ。
+  // tty 観測あり → 観測が宣言 default より勝つ。
   let tty_wins = resolve_scope(
     sc,
     [],
     Map([]),
-    tty=Map::from_array([("stdout", { terminal: false, cygwin: false })]),
+    tty=Map::from_array([("stdout", false)]),
   )
   assert_eq(tty_wins, Ok([mkb_pub("use_color", @abi.Bool(false), @abi.Tty)]))
   // 観測なし → 宣言 default (最終フォールバック)。
@@ -629,7 +627,7 @@ test "resolve_scope: tty 型 default 席の解決は stream ごとに独立 (複
     sc,
     [],
     Map([]),
-    tty=Map::from_array([("stdout", { terminal: true, cygwin: false })]),
+    tty=Map::from_array([("stdout", true)]),
   )
   assert_eq(
     bound,
@@ -642,60 +640,16 @@ test "resolve_scope: tty 型 default 席の解決は stream ごとに独立 (複
 }
 
 ///|
-/// DR-099 §3 の fold 計算式そのものの whitebox: `fold(観測) = terminal || (tty_cygwin && cygwin)`。
-/// 同一の生観測 `{terminal:false, cygwin:true}` を 2 要素に供給し、`tty_cygwin` config だけを変えて
-/// 結果が分岐することを @engine.Entity 直下で固定する (fixture `cygwin-dial-pair` の JSON 経由の対を
-/// ラダー層で裏取り — options/definitions.types の decode を介さず fold 式そのものを検証する axis)。
-test "resolve_scope: tty fold formula — tty_cygwin dial flips the result from the same raw observation (DR-099 §3)" {
-  let cygwin_on = ent(
-    "cygwin_on",
-    @builtins.bool_type(),
-    is_tty=true,
-    tty_stream=Some("stderr"),
-    tty_cygwin=true, // 既定
-  )
-  let cygwin_off = ent(
-    "cygwin_off",
-    @builtins.bool_type(),
-    is_tty=true,
-    tty_stream=Some("stderr"),
-    tty_cygwin=false,
-  )
-  let sc : @engine.Scope = {
-    greedy: [],
-    positional: [],
-    entities: [cygwin_on, cygwin_off],
-    constraints: [],
-  }
-  let bound = resolve_scope(
-    sc,
-    [],
-    Map([]),
-    tty=Map::from_array([("stderr", { terminal: false, cygwin: true })]),
-  )
-  // fold(cygwin_on)  = false || (true  && true) = true
-  // fold(cygwin_off) = false || (false && true) = false
-  assert_eq(
-    bound,
-    Ok([
-      mkb_pub("cygwin_on", @abi.Bool(true), @abi.Tty),
-      mkb_pub("cygwin_off", @abi.Bool(false), @abi.Tty),
-    ]),
-  )
-}
-
-///|
 /// DR-099 §2 の優先順位そのものの whitebox: 宣言 default と観測が異なる値を持つとき、観測が必ず
-/// 勝つ (`resolved_default = fold(観測) ?? 宣言 default ?? absent` の `??` は「観測が得られる限り」
-/// という意味であり、値の一致/不一致では条件分岐しない — fixture の fold-overrides-default と同じ
-/// 主張をラダー層で直接固定する)。
+/// 勝つ (`resolved_default = 観測 ?? 宣言 default ?? absent` (DR-129 §3) の `??` は「観測が得られる
+/// 限り」という意味であり、値の一致/不一致では条件分岐しない — fixture の
+/// observation-overrides-default と同じ主張をラダー層で直接固定する)。
 test "resolve_scope: tty 型要素は宣言 default と異なる観測値でも観測が勝つ (DR-099 §2)" {
   let use_color = ent(
     "use_color",
     @builtins.bool_type(),
     is_tty=true,
     tty_stream=Some("stdout"),
-    tty_cygwin=false,
     default_value=Some(@abi.Bool(true)), // 宣言 default = true
   )
   let sc : @engine.Scope = {
@@ -709,7 +663,7 @@ test "resolve_scope: tty 型要素は宣言 default と異なる観測値でも�
     sc,
     [],
     Map([]),
-    tty=Map::from_array([("stdout", { terminal: false, cygwin: false })]),
+    tty=Map::from_array([("stdout", false)]),
   )
   assert_eq(bound, Ok([mkb_pub("use_color", @abi.Bool(false), @abi.Tty)]))
 }
@@ -717,7 +671,7 @@ test "resolve_scope: tty 型要素は宣言 default と異なる観測値でも�
 ///|
 /// DR-099 §2「両方とも得られなければ absent (素の bool の default 無し要素と同じ帰結、§2.6)」—
 /// tty preset 要素は観測も宣言 default も無い場合、absent (result にキー自体が出ない) へ落ちること
-/// を resolve.mbt の fold-fallthrough 経路で固定する (`@engine.Entity.default_values` が None のケース)。
+/// を resolve.mbt の観測なし fallthrough 経路で固定する (`@engine.Entity.default_values` が None のケース)。
 /// どの fixture でも直接検証されていない軸: tty-ladder.json の null-observation-uses-default case は
 /// 必ず明示 default (`use_color` の `default: true`) を宣言しているため、「宣言 default も無い」は
 /// fixture から見えない。@engine.ElementDef→@engine.Entity 構築時に is_tty 要素へ @builtins.bool_type() の暗黙 default:false を注入

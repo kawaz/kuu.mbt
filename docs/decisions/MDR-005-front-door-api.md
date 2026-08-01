@@ -249,6 +249,12 @@ DR-104/CONFORMANCE.md §3 は `Cand` の wire 表現に `path` を含めない (
   `builtin/tty` preset 型の default 席解決規則 (`fold(観測) ?? 宣言 default ?? absent`) に反映
   され観測が宣言 default に優先すること (`source=tty`) を、production API のみを叩いて固定
 
+> **DR-129 追補**: tty_provider の観測が `{terminal, cygwin}` から端末か否かの bool 単一へ戻り、
+> `TtyObs` 型と `tty_obs` コンストラクタは不要になったため削除した (`tty?` 引数は
+> `(stream: String) -> Bool?`)。呼び出し側は素の `Bool` をそのまま渡す。本節の `config_from_json`
+> に関する裁定と §3 の可視性方針は不変。default 席の解決規則は
+> `resolved_default = 観測 ?? 宣言 default ?? absent` (DR-129 §3)。
+
 ## 射程外 (本追記より前の記述、definition decode 昇格時点のもの)
 
 - ~~`Outcome.Success` が運ぶ `Array[Binding]` を `result` オブジェクト (CONFORMANCE.md §2 の

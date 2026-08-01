@@ -90,14 +90,14 @@ pub(all) enum ResolvedOutcome {
 pub struct ValueSources {
   priv env_ : (String) -> String?
   priv config_ : (String) -> @abi.ConfigVal?
-  priv tty_ : (String) -> TtyObs?
+  priv tty_ : (String) -> Bool?
 }
 
 ///|
 pub fn value_sources(
   env? : (String) -> String? = fn(_) { None },
   config? : (String) -> @abi.ConfigVal? = fn(_) { None },
-  tty? : (String) -> TtyObs? = fn(_) { None },
+  tty? : (String) -> Bool? = fn(_) { None },
 ) -> ValueSources {
   { env_: env, config_: config, tty_: tty }
 }
