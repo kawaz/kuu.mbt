@@ -2177,7 +2177,7 @@ priv enum LinkPathResolution {
     ObservationAddress?,
     Int
   )
-  Residual
+  Residual(TypeOutputShape)
   Missing
 }
 
@@ -2284,7 +2284,7 @@ fn resolve_link_path(def : Definition, path : LinkPath) -> LinkPathResolution {
               }
               None => return Missing
             }
-          Cell | Enum(_) => return Residual
+          Cell | Enum(_) => return Residual(current.ty.output_shape())
         }
       Index(target_index) =>
         match indexed_structural_child(current, target_index) {
@@ -2307,7 +2307,7 @@ fn resolve_link_path(def : Definition, path : LinkPath) -> LinkPathResolution {
           }
           None =>
             match current.body {
-              Cell | Enum(_) => return Residual
+              Cell | Enum(_) => return Residual(current.ty.output_shape())
               Group(_) | Or(_) => return Missing
             }
         }
@@ -2359,7 +2359,7 @@ fn link_route_fields(
                   bound_levels,
                 ),
               )
-            Residual | Missing =>
+            Residual(_) | Missing =>
               match bound_named_route(path) {
                 Some((target, target_scope)) =>
                   Some((Some(target), target_scope, [], None, bound_levels))
@@ -2390,7 +2390,7 @@ fn link_route_fields(
                 ),
               )
             }
-            Residual | Missing => None
+            Residual(_) | Missing => None
           }
       }
   }
@@ -3935,15 +3935,17 @@ fn collect_link_path_errors(def : Definition, out : Array[DefError]) -> Unit {
           ),
         )
       Some(Valid(path)) =>
-        if resolve_link_path(def, path) is Residual {
-          out.push(
-            def_err(
-              element.name,
-              Unsupported,
-              "this link path reaches a segment kind not supported by this implementation",
-              "use a path that resolves completely through declared cells",
-            ),
-          )
+        match resolve_link_path(def, path) {
+          Residual(Opaque) =>
+            out.push(
+              def_err(
+                element.name,
+                Unsupported,
+                "this link path reaches an opaque value structure",
+                "declare a structural output shape before linking into the value",
+              ),
+            )
+          Resolved(_, _, _, _, _) | Residual(Primitive) | Missing => ()
         }
       None => ()
     }
@@ -4028,17 +4030,22 @@ fn check_element_absent_link(
     return
   }
   match element.link_path {
-    Some(Valid(path)) =>
-      if resolve_link_path(def, path) is Missing {
+    Some(Valid(path)) => {
+      let absent = match resolve_link_path(def, path) {
+        Missing | Residual(Primitive) => true
+        Resolved(_, _, _, _, _) | Residual(Opaque) => false
+      }
+      if absent {
         out.push(
           def_err(
             element.name,
             AbsentRef,
-            "link path from '\{path.root}' does not resolve to a declared value cell",
-            "define every named child in the target declaration scope",
+            "link path from '\{path.root}' does not resolve to a declared value seat",
+            "target a declared child cell or a value type that exposes structure",
           ),
         )
       }
+    }
     Some(Invalid(_)) | None => ()
   }
 }

@@ -1470,24 +1470,28 @@ test "front_door.parse_definition: absent named link child is absent-ref" {
 }
 
 ///|
-/// A path that has already reached a primitive cell cannot reinterpret its remaining name as another
-/// declaration cell. The residual remains behind the value-shape implementation gate.
-test "front_door.parse_definition: primitive link residual is explicitly unsupported" {
-  let src =
-    #|{"options":[{"name":"target","type":"string"},{"name":"entry","type":"string","long":true,"link":"target.child"}]}
-  match parse_definition(@json.parse(src)) {
-    Err(Rejected(errors)) => {
-      let mut found = false
-      for error in errors {
-        if error.element == "entry" && error.kind == @abi.Unsupported {
-          found = true
+/// DR-127 §2.2 makes every residual segment on a primitive output structurally impossible. This is
+/// independent of whether the type consumes an operand, so value-slot, presence, and update residents
+/// all fail at definition time with absent-ref.
+test "front_door.parse_definition: primitive link residual is absent-ref" {
+  for type_name in ["string", "flag", "count"] {
+    let src = "{\"options\":[{\"name\":\"target\",\"type\":\"" +
+      type_name +
+      "\"},{\"name\":\"entry\",\"type\":\"string\",\"long\":true,\"link\":\"target.child\"}]}"
+    match parse_definition(@json.parse(src)) {
+      Err(Rejected(errors)) => {
+        let mut found = false
+        for error in errors {
+          if error.element == "entry" && error.kind == @abi.AbsentRef {
+            found = true
+          }
         }
+        assert_true(found)
       }
-      assert_true(found)
+      Err(Malformed(message)) =>
+        fail("expected absent-ref, got malformed: " + message)
+      Ok(_) => fail("primitive residual must fail definition validation")
     }
-    Err(Malformed(message)) =>
-      fail("expected unsupported, got malformed: " + message)
-    Ok(_) => fail("non-bare path must remain gated during Stage A")
   }
 }
 

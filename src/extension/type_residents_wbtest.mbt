@@ -1,6 +1,29 @@
 // type_residents_wbtest.mbt — TypeExt contract and builtin resident behavior.
 
 ///|
+priv struct OpaqueTestType {}
+
+///|
+impl TypeExt for OpaqueTestType with fn name(_self) {
+  "opaque_test"
+}
+
+///|
+impl TypeExt for OpaqueTestType with fn has_value_slot(_self) {
+  true
+}
+
+///|
+impl TypeExt for OpaqueTestType with fn parse_token(_self, token) {
+  Ok(@abi.String(token))
+}
+
+///|
+impl TypeExt for OpaqueTestType with fn default_seat_resolver(_self, ctx) {
+  ctx.declared()
+}
+
+///|
 test "TypeExt names preserve the eight registry identities" {
   // Registry lookup and wire decode use these exact spellings; changing one would disconnect that resident.
   assert_eq(
@@ -34,6 +57,27 @@ test "TypeExt value-slot capability separates value types from presence presets"
     ],
     [true, true, true, true, true, false, false, false],
   )
+}
+
+///|
+test "TypeExt output shape identifies builtin primitives without assuming external residents" {
+  let builtins : Array[&TypeExt] = [
+    string_type(),
+    number_type(),
+    int_type(),
+    float_type(),
+    bool_type(),
+    flag_type(),
+    count_type(),
+    tty_type(Some("stdin")),
+    completion_script_type(),
+    none_type(),
+  ]
+  for resident in builtins {
+    assert_eq(resident.output_shape(), Primitive)
+  }
+  let external = OpaqueTestType::{  } as &TypeExt
+  assert_eq(external.output_shape(), Opaque)
 }
 
 ///|

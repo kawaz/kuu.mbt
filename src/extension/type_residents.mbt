@@ -19,6 +19,11 @@ impl TypeExt for StringTypeExt with fn has_value_slot(_self) {
 }
 
 ///|
+impl TypeExt for StringTypeExt with fn output_shape(_self) {
+  Primitive
+}
+
+///|
 impl TypeExt for StringTypeExt with fn parse_token(_self, token) {
   Ok(@abi.String(token))
 }
@@ -51,6 +56,11 @@ impl TypeExt for NumberTypeExt with fn encode(self) {
 ///|
 impl TypeExt for NumberTypeExt with fn has_value_slot(_self) {
   true
+}
+
+///|
+impl TypeExt for NumberTypeExt with fn output_shape(_self) {
+  Primitive
 }
 
 ///|
@@ -90,6 +100,11 @@ impl TypeExt for IntTypeExt with fn encode(self) {
 ///|
 impl TypeExt for IntTypeExt with fn has_value_slot(_self) {
   true
+}
+
+///|
+impl TypeExt for IntTypeExt with fn output_shape(_self) {
+  Primitive
 }
 
 ///|
@@ -133,6 +148,11 @@ impl TypeExt for FloatTypeExt with fn has_value_slot(_self) {
 }
 
 ///|
+impl TypeExt for FloatTypeExt with fn output_shape(_self) {
+  Primitive
+}
+
+///|
 impl TypeExt for FloatTypeExt with fn parse_token(_self, token) {
   match parse_float(token) {
     Some(value) => Ok(@abi.Number(value))
@@ -169,6 +189,11 @@ impl TypeExt for BoolTypeExt with fn encode(self) {
 ///|
 impl TypeExt for BoolTypeExt with fn has_value_slot(self) {
   self.value_slot
+}
+
+///|
+impl TypeExt for BoolTypeExt with fn output_shape(_self) {
+  Primitive
 }
 
 ///|
@@ -210,6 +235,11 @@ impl TypeExt for FlagTypeExt with fn encode(self) {
 ///|
 impl TypeExt for FlagTypeExt with fn has_value_slot(_self) {
   false
+}
+
+///|
+impl TypeExt for FlagTypeExt with fn output_shape(_self) {
+  Primitive
 }
 
 ///|
@@ -256,6 +286,11 @@ impl TypeExt for CountTypeExt with fn has_value_slot(_self) {
 }
 
 ///|
+impl TypeExt for CountTypeExt with fn output_shape(_self) {
+  Primitive
+}
+
+///|
 impl TypeExt for CountTypeExt with fn parse_token(self, token) {
   match parse_number(token, allow_base_prefix=self.allow_base_prefix) {
     Some(value) => Ok(@abi.Number(value))
@@ -294,6 +329,11 @@ impl TypeExt for TtyTypeExt with fn encode(self) {
 ///|
 impl TypeExt for TtyTypeExt with fn has_value_slot(_self) {
   true
+}
+
+///|
+impl TypeExt for TtyTypeExt with fn output_shape(_self) {
+  Primitive
 }
 
 ///|
@@ -346,6 +386,11 @@ impl TypeExt for CompletionScriptTypeExt with fn has_value_slot(_self) {
 }
 
 ///|
+impl TypeExt for CompletionScriptTypeExt with fn output_shape(_self) {
+  Primitive
+}
+
+///|
 impl TypeExt for CompletionScriptTypeExt with fn parse_token(_self, token) {
   Ok(@abi.String(token))
 }
@@ -384,6 +429,11 @@ impl TypeExt for NoneTypeExt with fn encode(_self) {
 ///|
 impl TypeExt for NoneTypeExt with fn has_value_slot(_self) {
   false
+}
+
+///|
+impl TypeExt for NoneTypeExt with fn output_shape(_self) {
+  Primitive
 }
 
 ///|

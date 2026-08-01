@@ -57,6 +57,7 @@ pub using @abi {
 ///|
 pub using @extension {
   trait TypeExt,
+  type TypeOutputShape,
   trait NodeExt,
   trait MatcherExt,
   trait AccumulatorExt,
