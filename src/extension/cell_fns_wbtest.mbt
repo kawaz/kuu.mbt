@@ -44,7 +44,7 @@ test "builtin cell_fns inventory matches DR-114 descriptor contracts" {
   )
   let unset = registry.lookup_cell_fn("unset").unwrap()
   assert_eq(unset.parameters(), [])
-  assert_eq(unset.output(), CellFnOutput::Sentinel(CellSentinel::Unset))
+  assert_eq(unset.output(), CellFnOutput::Value)
   let empty = registry.lookup_cell_fn("empty").unwrap()
   assert_eq(empty.parameters(), [])
   assert_eq(empty.output(), CellFnOutput::Sentinel(CellSentinel::Empty))

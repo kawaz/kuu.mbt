@@ -56,7 +56,6 @@ pub(all) enum FnFallibility {
 ///|
 pub(all) enum CellSentinel {
   UseDefault
-  Unset
   Empty
 } derive(Eq, Debug)
 

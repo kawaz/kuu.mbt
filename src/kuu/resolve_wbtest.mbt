@@ -173,7 +173,7 @@ test "build_result folds scalar last-wins, accumulate array, and default seat" {
     },
   ]
   let defaults : Array[DefaultCell] = [
-    { path: [], name: "verbose", value: @abi.Bool(false) },
+    { path: [], name: "verbose", value: Some(@abi.Value::Bool(false)) },
   ]
   let r = build_result(binds, cells, defaults, [])
   assert_eq(

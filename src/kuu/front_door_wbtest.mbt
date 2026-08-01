@@ -1053,7 +1053,7 @@ test "front_door.output: 露出キーの解決は結果スコープ・軸ごと 
   let option_and_command =
     #|{"options":[{"name":"x","type":"flag","long":true,"export_key":"ox"}],
     #| "commands":[{"name":"x","type":"command","options":[{"name":"inner","type":"flag","long":true}]}]}
-  assert_eq(result_of(option_and_command, ["--x"]), "{ox=true}")
+  assert_eq(result_of(option_and_command, ["--x"]), "{ox=true,x=null}")
   // 同じ定義で command 側を選ぶと scope label は identity の `x` (option の export_key に
   // 引きずられない)。`inner` は未発火の flag なので preset default が入る。
   assert_eq(result_of(option_and_command, ["x"]), "{ox=false,x={inner=false}}")
@@ -1061,7 +1061,7 @@ test "front_door.output: 露出キーの解決は結果スコープ・軸ごと 
   let same_name_across_scopes =
     #|{"options":[{"name":"p","type":"flag","long":true}],
     #| "commands":[{"name":"sub","type":"command","options":[{"name":"p","type":"flag","long":true,"export_key":"sp"}]}]}
-  assert_eq(result_of(same_name_across_scopes, ["--p"]), "{p=true}")
+  assert_eq(result_of(same_name_across_scopes, ["--p"]), "{p=true,sub=null}")
   // 子 scope 側の `--p` は子の export_key `sp` の下に入る (root の `p` は preset default)。
   assert_eq(
     result_of(same_name_across_scopes, ["sub", "--p"]),
@@ -1403,7 +1403,7 @@ test "front_door.output: copied global link ignores descendant same-name target 
     #| ]}]}]}
   assert_eq(
     wbtest_view_of(src, ["mid", "sub", "--legacy", "value", "--quiet"]),
-    "result={mid={sub={quiet=true}},target=value} sources={mid={sub={quiet=cli}},target=link} effects=quiet,target",
+    "result={mid={sub={quiet=true,target=null}},target=value} sources={mid={sub={quiet=cli,target=null}},target=link} effects=quiet,target",
   )
 }
 
@@ -1581,10 +1581,9 @@ test "front_door.output: selected structural branch keeps a later named link wri
 }
 
 ///|
-/// DR-127 §1 resolves a cell-space index against value-bearing transparent children. LNK2-Q1=a
-/// keeps a nameless tuple absent from result/sources until every value seat exists, because compressing
-/// a partial array would erase the written coordinate. Effects still expose the routed write.
-test "front_door.output: indexed link path keeps an incomplete nameless tuple absent" {
+/// A fixed nameless tuple keeps every declared coordinate. A write to the first seat produces
+/// `[x,null]`; the null source seat is null as well, while effects expose only the routed write.
+test "front_door.output: indexed link path fills the unwritten coordinate with null" {
   let src =
     #|{"options":[
     #|  {"name":"pair","long":true,"seq":[
@@ -1593,16 +1592,16 @@ test "front_door.output: indexed link path keeps an incomplete nameless tuple ab
     #|  ]},
     #|  {"name":"legacy","type":"string","long":true,"short":"l","link":"pair[0]"}
     #|]}
-  let expected = "result={} sources={} effects=pair[0]"
+  let expected = "result={pair=[x,null]} sources={pair=[link,null]} effects=pair[0]"
   assert_eq(wbtest_view_of(src, ["--legacy", "x"]), expected)
   assert_eq(wbtest_view_of(src, ["--legacy=x"]), expected)
   assert_eq(wbtest_view_of(src, ["-l", "x"]), expected)
 }
 
 ///|
-/// Writing only the second seat must not compress it to array position zero. The tuple key stays
-/// absent from both value and source trees while the effect address preserves pair[1].
-test "front_door.output: second indexed link alone does not lose its tuple coordinate" {
+/// Writing only the second seat preserves its coordinate by filling the first seat with null.
+/// Result and source trees remain coordinate-isomorphic and the effect address stays pair[1].
+test "front_door.output: second indexed link fills the first coordinate with null" {
   let src =
     #|{"options":[
     #|  {"name":"pair","long":true,"seq":[
@@ -1613,7 +1612,7 @@ test "front_door.output: second indexed link alone does not lose its tuple coord
     #|]}
   assert_eq(
     wbtest_view_of(src, ["--second", "b"]),
-    "result={} sources={} effects=pair[1]",
+    "result={pair=[null,b]} sources={pair=[null,link]} effects=pair[1]",
   )
 }
 
@@ -1820,7 +1819,7 @@ test "front_door.output: command 木でも値セル rename が sources に効く
   let src =
     #|{"options":[{"name":"verbose","type":"flag","long":true,"export_key":"v"}],
     #| "commands":[{"type":"command","name":"serve"}]}
-  assert_eq(wbtest_sources_of(src, ["--verbose"]), "{v=cli}")
+  assert_eq(wbtest_sources_of(src, ["--verbose"]), "{serve=null,v=cli}")
 }
 
 ///|
@@ -1851,7 +1850,10 @@ test "front_door.output: command 木でも透過値セルは sources に現れ�
     #|{"options":[{"name":"opt","type":"number","long":true,"export_key":null},
     #|            {"name":"keep","type":"number","long":true}],
     #| "commands":[{"type":"command","name":"serve"}]}
-  assert_eq(wbtest_sources_of(src, ["--opt", "1", "--keep", "2"]), "{keep=cli}")
+  assert_eq(
+    wbtest_sources_of(src, ["--opt", "1", "--keep", "2"]),
+    "{keep=cli,serve=null}",
+  )
 }
 
 ///|
@@ -1866,7 +1868,10 @@ test "front_door.output: command 木でも 0 回発火の accum セルが defaul
     #|            {"name":"ttl","type":"number","long":true,"default":30},
     #|            {"name":"tags","type":"string","long":true,"multiple":"append"}],
     #| "commands":[{"type":"command","name":"serve"}]}
-  assert_eq(wbtest_sources_of(src, []), "{a=default,tags=[],ttl=default}")
+  assert_eq(
+    wbtest_sources_of(src, []),
+    "{a=default,serve=null,tags=[],ttl=default}",
+  )
 }
 
 ///|
@@ -1883,9 +1888,14 @@ test "front_door.output: named seq の結果スコープ path は command 無し
   let with_command = "{" +
     body +
     ",\"commands\":[{\"type\":\"command\",\"name\":\"dummy\"}]}"
-  let want = "{pr={path=cli,value=cli}}"
-  assert_eq(wbtest_sources_of(no_command, ["--pr", "x", "y"]), want)
-  assert_eq(wbtest_sources_of(with_command, ["--pr", "x", "y"]), want)
+  assert_eq(
+    wbtest_sources_of(no_command, ["--pr", "x", "y"]),
+    "{pr={path=cli,value=cli}}",
+  )
+  assert_eq(
+    wbtest_sources_of(with_command, ["--pr", "x", "y"]),
+    "{dummy=null,pr={path=cli,value=cli}}",
+  )
 }
 
 ///|
@@ -1901,9 +1911,11 @@ test "front_door.output: named or の結果スコープ path は command 無し�
   let with_command = "{" +
     body +
     ",\"commands\":[{\"type\":\"command\",\"name\":\"dummy\"}]}"
-  let want = "{mode={num=cli}}"
-  assert_eq(wbtest_sources_of(no_command, ["--mode", "7"]), want)
-  assert_eq(wbtest_sources_of(with_command, ["--mode", "7"]), want)
+  assert_eq(wbtest_sources_of(no_command, ["--mode", "7"]), "{mode={num=cli}}")
+  assert_eq(
+    wbtest_sources_of(with_command, ["--mode", "7"]),
+    "{dummy=null,mode={num=cli}}",
+  )
 }
 
 ///|
@@ -1932,7 +1944,7 @@ test "front_door.output: unset 発火の値源は default (parse-only 経路、D
     }
   }
   let view = output_legacy(ast, effects=binds)
-  assert_eq(render_rval_sorted(view.sources), "{color=default}")
+  assert_eq(render_rval_sorted(view.sources), "{color=cli}")
 }
 
 ///|

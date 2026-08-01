@@ -202,7 +202,6 @@ pub(all) enum CellFnRepetition {
 
 pub(all) enum CellSentinel {
   UseDefault
-  Unset
   Empty
 } derive(Eq, @debug.Debug)
 

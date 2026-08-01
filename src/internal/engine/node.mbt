@@ -68,6 +68,8 @@ fn resolved_export_key(name : String, key : ExportKey) -> String? {
 pub struct ExportScopeMap {
   priv cells_ : Map[String, ExportKey]
   priv scopes_ : Map[String, ExportKey]
+  priv occupied_cells_ : Map[String, Bool]
+  priv occupied_scopes_ : Map[String, Bool]
   priv children_ : Map[String, ExportScopeMap]
 }
 
@@ -79,6 +81,8 @@ pub fn ExportScopeMap::empty() -> ExportScopeMap {
   {
     cells_: Map([], capacity=0),
     scopes_: Map([], capacity=0),
+    occupied_cells_: Map([], capacity=0),
+    occupied_scopes_: Map([], capacity=0),
     children_: Map([], capacity=0),
   }
 }
@@ -136,6 +140,43 @@ fn ExportScopeMap::child_node(
 ///|
 /// この結果スコープにおける値セル `name` の露出キー。`None` = 結果キー軸なし (透過)。
 /// 宣言に無い名前 (sentinel `"[]"`/`"{}"`/`"@act:"`、`"#row"` 等の内部セル) は identity。
+pub fn ExportScopeMap::occupy_cell(
+  self : ExportScopeMap,
+  name : String,
+) -> Unit {
+  self.occupied_cells_.set(name, true)
+}
+
+///|
+pub fn ExportScopeMap::occupy_scope(
+  self : ExportScopeMap,
+  name : String,
+) -> Unit {
+  self.occupied_scopes_.set(name, true)
+}
+
+///|
+pub fn ExportScopeMap::has_occupancy(self : ExportScopeMap) -> Bool {
+  self.occupied_cells_.length() > 0 || self.occupied_scopes_.length() > 0
+}
+
+///|
+pub fn ExportScopeMap::cell_is_occupied(
+  self : ExportScopeMap,
+  name : String,
+) -> Bool {
+  self.occupied_cells_.contains(name)
+}
+
+///|
+pub fn ExportScopeMap::scope_is_occupied(
+  self : ExportScopeMap,
+  name : String,
+) -> Bool {
+  self.occupied_scopes_.contains(name)
+}
+
+///|
 pub fn ExportScopeMap::exposed_cell(
   self : ExportScopeMap,
   name : String,

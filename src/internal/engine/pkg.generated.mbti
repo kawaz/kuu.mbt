@@ -349,12 +349,17 @@ pub fn ExportKey::unset() -> Self
 pub struct ExportScopeMap {
   // private fields
 }
+pub fn ExportScopeMap::cell_is_occupied(Self, String) -> Bool
 pub fn ExportScopeMap::child(Self, String) -> Self
 pub fn ExportScopeMap::declare_element(Self, String, ExportKey) -> Unit
 pub fn ExportScopeMap::declare_scope(Self, String, ExportKey) -> Self
 pub fn ExportScopeMap::empty() -> Self
 pub fn ExportScopeMap::exposed_cell(Self, String) -> String?
 pub fn ExportScopeMap::exposed_scope(Self, String) -> String?
+pub fn ExportScopeMap::has_occupancy(Self) -> Bool
+pub fn ExportScopeMap::occupy_cell(Self, String) -> Unit
+pub fn ExportScopeMap::occupy_scope(Self, String) -> Unit
+pub fn ExportScopeMap::scope_is_occupied(Self, String) -> Bool
 
 pub(all) enum FailDef {
   AcceptsOnly

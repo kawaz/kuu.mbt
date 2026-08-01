@@ -83,7 +83,7 @@ fn borrow_fn(args : Array[@abi.FnArg], ctx : FnCtx) -> FnResult {
   }
   match value {
     Some(value) => Ok(FnOutput::Value(value))
-    None => absent_source("option", source)
+    None => Ok(FnOutput::Value(@abi.Null))
   }
 }
 
@@ -195,13 +195,12 @@ pub fn cell_fn_descriptors() -> Array[CellFnDescriptor] {
       FnFallibility::Total,
       run=sentinel_fn(CellSentinel::UseDefault),
     ),
-    cell_fn_descriptor(
-      "unset",
-      [],
-      CellFnOutput::Sentinel(CellSentinel::Unset),
-      FnFallibility::Total,
-      run=sentinel_fn(CellSentinel::Unset),
-    ),
+    cell_fn_descriptor("unset", [], CellFnOutput::Value, FnFallibility::Total, run=fn(
+      _,
+      _,
+    ) {
+      Ok(FnOutput::Value(@abi.Null))
+    }),
     cell_fn_descriptor(
       "empty",
       [],

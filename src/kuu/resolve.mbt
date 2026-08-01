@@ -225,14 +225,6 @@ fn fixed_tuple_arity(binds : Array[@abi.Binding]) -> Int? {
 }
 
 ///|
-fn fixed_tuple_complete(binds : Array[@abi.Binding]) -> Bool {
-  match fixed_tuple_arity(binds) {
-    Some(arity) => ordered_indices(binds).length() == arity
-    None => true
-  }
-}
-
-///|
 fn seg_num(seg : String) -> Int {
   // parse the integer after '#'
   let mut n = 0
@@ -313,11 +305,18 @@ fn apply_export_to_defaults(
   let out : Array[DefaultCell] = []
   for d in defaults {
     let (new_path, node) = walk_export_path(d.path, ek)
-    match node.exposed_cell(d.name) {
-      // 透過: the value has no result key → not injected
-      None => ()
-      Some(new_name) =>
-        out.push({ path: new_path, name: new_name, value: d.value })
+    if !node.has_occupancy() || node.cell_is_occupied(d.name) {
+      match node.exposed_cell(d.name) {
+        None | Some("") => ()
+        Some(new_name) =>
+          out.push({ path: new_path, name: new_name, value: d.value })
+      }
+    } else if node.scope_is_occupied(d.name) {
+      match node.exposed_scope(d.name) {
+        None | Some("") => ()
+        Some(new_name) =>
+          out.push({ path: new_path, name: new_name, value: d.value })
+      }
     }
   }
   out
@@ -612,24 +611,40 @@ fn build_result(
   // ARRAY: a "[]" sentinel at this level => build one element per "#k" child. Elements keep the
   // array's path (an indexed repeat element is not a named result-scope segment cells key on).
   if has_direct_key(binds, "[]") {
-    // LNK2-Q1=a: a fixed nameless tuple is one result seat, not a sparse array. Until every
-    // declared coordinate exists, its caller must treat the whole tuple as absent; returning an
-    // empty object here also gives the root-projection case an absent representation.
-    if !fixed_tuple_complete(binds) {
-      return @abi.Object([])
-    }
     let elems : Array[@abi.ResultValue] = []
-    for idx in ordered_indices(binds) {
-      elems.push(
-        build_result(
-          sub_under(binds, idx),
-          cells,
-          defaults,
-          path,
-          nones~,
-          extensions~,
-        ),
-      )
+    match fixed_tuple_arity(binds) {
+      Some(arity) => {
+        let indices = ordered_indices(binds)
+        let compact = indices.length() > 0 &&
+          seg_num(indices[indices.length() - 1]) >= arity
+        for index in 0..<arity {
+          let indexed = if compact && index < indices.length() {
+            sub_under(binds, indices[index])
+          } else {
+            sub_under(binds, "#" + index.to_string())
+          }
+          if indexed.length() == 0 {
+            elems.push(@abi.Scalar(@abi.Null))
+          } else {
+            elems.push(
+              build_result(indexed, cells, defaults, path, nones~, extensions~),
+            )
+          }
+        }
+      }
+      None =>
+        for idx in ordered_indices(binds) {
+          elems.push(
+            build_result(
+              sub_under(binds, idx),
+              cells,
+              defaults,
+              path,
+              nones~,
+              extensions~,
+            ),
+          )
+        }
     }
     return @abi.Array(elems)
   }
@@ -778,8 +793,6 @@ fn build_result(
     // fired >=1 time (a real "#row" present) still recurses normally, unaffected.
     let seg_binds = sub_under(binds, seg)
     let is_accum = cell_here(cells, path, seg)
-    let incomplete_fixed_tuple = has_direct_key(seg_binds, "[]") &&
-      !fixed_tuple_complete(seg_binds)
     let unfired_ref_accum_seg = is_accum && !has_direct_key(seg_binds, "#row")
     // DR-084 §2 (issue multiple-ref-accum-gap): a ref+repeat element that is ALSO `multiple`
     // fires "#fire" per firing (`inst_long`'s repeat-bearing ref branch — unconditional, a
@@ -841,7 +854,7 @@ fn build_result(
         None => accumulated
       }
       obj.push((seg, collected))
-    } else if !unfired_ref_accum_seg && !incomplete_fixed_tuple {
+    } else if !unfired_ref_accum_seg {
       let accumulated = build_result(
         sub_under(binds, seg),
         cells,
@@ -898,8 +911,14 @@ fn build_result(
   // path that received no winning binding renders its default (the flag preset default:false rides
   // here — an unfired flag shows `false`, never absent). Skip names already present as a bound leaf.
   for d in defaults {
-    if path_eq(d.path, path) && !str_contains(named, d.name) {
-      obj.push((d.name, @abi.Scalar(d.value)))
+    if path_eq(d.path, path) &&
+      !str_contains(named, d.name) &&
+      !str_contains(segs, d.name) {
+      let value = match d.value {
+        Some(value) => value
+        None => @abi.Null
+      }
+      obj.push((d.name, @abi.Scalar(value)))
     }
   }
   @abi.Object(obj)
@@ -1211,7 +1230,7 @@ fn drop_index_segments(path : Array[String]) -> Array[String] {
 priv struct DefaultCell {
   path : Array[String]
   name : String
-  value : @abi.Value
+  value : @abi.Value?
 }
 
 ///|
@@ -1252,20 +1271,11 @@ fn collect_defaults(
   out : Array[DefaultCell],
 ) -> Unit {
   for e in sc.entities {
-    // FLAG/BOOL cells only (LOWERING §A.5 / DR-051 §2): a flag (or DR-074 value-typed bool) carries
-    // the preset default:false (or an explicit bool default) and is never absent, so it renders in
-    // the result-object projection even where the value-source ladder is not run. A NON-flag cell's
-    // default is deliberately NOT injected here — its true value depends on the full ladder (env /
-    // config seats can override the default, and a `borrow` default_fn resolves against another
-    // cell), which this projection does not run; injecting the raw default would surface a
-    // wrong value. Those cells stay ladder-resolved.
     if e.declaring_path.length() == 0 &&
-      (e.ty.name() == "flag" || e.ty.name() == "bool") &&
+      e.ty.name() != "none" &&
+      !e.is_config_file &&
       e.accum is None {
-      match default_scalar(e) {
-        Some(v) => out.push({ path, name: e.name, value: v })
-        None => ()
-      }
+      out.push({ path, name: e.name, value: default_scalar(e) })
     }
   }
   for g in sc.greedy {
@@ -1307,6 +1317,53 @@ fn collect_defaults(
 /// CLI binds を渡しても動く (runner が「default ladder 不要な fixture は resolve をスキップする」
 /// 最適化で未解決 binds をそのまま渡す既存経路があり、それを壊さないための性質 — 呼び出し側の
 /// 資格を型で強制することはしない)。
+fn command_projection_bindings(
+  sc : @engine.Scope,
+  binds : Array[@abi.Binding],
+  declaration_path : Array[String],
+  result_path : Array[String],
+  export_map : @engine.ExportScopeMap,
+  out : Array[@abi.Binding],
+) -> Unit {
+  for greedy in sc.greedy {
+    match greedy {
+      @engine.CommandSatisfied(name, child) => {
+        let child_declaration_path = path_push(declaration_path, name)
+        let child_export_map = export_map.child(name)
+        let exposed = export_map.exposed_scope(name)
+        if @engine.scope_selected(binds, child_declaration_path) {
+          let child_result_path = match exposed {
+            Some(key) => path_push(result_path, key)
+            None => result_path
+          }
+          command_projection_bindings(
+            child, binds, child_declaration_path, child_result_path, child_export_map,
+            out,
+          )
+        } else {
+          match exposed {
+            Some(key) =>
+              out.push({
+                key,
+                op: @abi.Set,
+                value: @abi.Null,
+                source: @abi.Default,
+                scope: result_path.copy(),
+                link_selections: [],
+                observation: None,
+                levels_to_declaring_scope: 0,
+                at_pos: None,
+              })
+            None => ()
+          }
+        }
+      }
+      _ => ()
+    }
+  }
+}
+
+///|
 fn build_result_export(
   sc : @engine.Scope,
   binds : Array[@abi.Binding],
@@ -1314,8 +1371,10 @@ fn build_result_export(
   extensions? : @node.Registry = canonical_registry(),
   templates? : Map[String, @engine.Node] = Map([]),
 ) -> @abi.ResultValue {
+  let projected = apply_export_keys(active_link_bindings(binds), ek)
+  command_projection_bindings(sc, binds, [], [], ek, projected)
   build_result(
-    apply_export_keys(active_link_bindings(binds), ek),
+    projected,
     accum_cells(sc, ek, binds),
     apply_export_to_defaults(default_cells(sc, binds), ek),
     [],
@@ -1413,7 +1472,7 @@ fn source_default_here(
   key : String,
 ) -> Bool {
   for cell in defaults {
-    if cell.name == key && path_eq(cell.path, path) {
+    if cell.name == key && path_eq(cell.path, path) && cell.value is Some(_) {
       return true
     }
   }
@@ -1690,11 +1749,27 @@ fn source_shadow(
         }
       } else if has_direct_key(binds, "[]") {
         let indices = ordered_indices(binds)
+        let arity = fixed_tuple_arity(binds)
+        let compact = match arity {
+          Some(count) =>
+            indices.length() > 0 &&
+            seg_num(indices[indices.length() - 1]) >= count
+          None => false
+        }
         for i, value in values {
-          let child = if i < indices.length() {
-            sub_under(binds, indices[i])
-          } else {
-            []
+          let child = match arity {
+            Some(_) =>
+              if compact && i < indices.length() {
+                sub_under(binds, indices[i])
+              } else {
+                sub_under(binds, "#" + i.to_string())
+              }
+            None =>
+              if i < indices.length() {
+                sub_under(binds, indices[i])
+              } else {
+                []
+              }
           }
           out.push(
             source_shadow(
@@ -1721,6 +1796,7 @@ fn source_shadow(
       }
       @abi.Array(out)
     }
+    @abi.Scalar(@abi.Null) => @abi.Scalar(@abi.Null)
     @abi.Scalar(_) =>
       match source_seat(seats, path, "") {
         Some(seat) =>
@@ -3043,10 +3119,14 @@ fn resolve_entity_raw(
           match descriptor.invoke(invocation.to_call(), ctx) {
             Err({ reason, message, .. }) =>
               return Err(ladder_err(e.name, at_pos, reason, message, epath))
-            Ok(@extension.FnOutput::Value(value)) => {
-              current = Some({ ..b, op: @abi.Set, value })
-              committed_now = true
-            }
+            Ok(@extension.FnOutput::Value(value)) =>
+              if value is @abi.Null {
+                current = None
+                committed_now = false
+              } else {
+                current = Some({ ..b, op: @abi.Set, value })
+                committed_now = true
+              }
             Ok(@extension.FnOutput::Sentinel(@extension.UseDefault)) =>
               match
                 resolve_ladder_below_cli(
@@ -3066,14 +3146,6 @@ fn resolve_entity_raw(
                 }
                 Err(error) => return Err(error)
               }
-            Ok(@extension.FnOutput::Sentinel(@extension.CellSentinel::Unset)) => {
-              current = match default_scalar(e) {
-                Some(value) =>
-                  Some(@abi.Binding::new(e.name, value, @abi.Default))
-                None => None
-              }
-              committed_now = false
-            }
             Ok(@extension.FnOutput::Sentinel(@extension.CellSentinel::Empty)) => {
               current = Some({ ..b, op: @abi.Empty })
               committed_now = true
@@ -3619,6 +3691,7 @@ fn resolve_default_fn(
           epath,
         ),
       )
+    Ok(@extension.FnOutput::Value(@abi.Null)) => Ok([])
     Ok(@extension.FnOutput::Value(value)) =>
       match
         @builtins.config_to_value(

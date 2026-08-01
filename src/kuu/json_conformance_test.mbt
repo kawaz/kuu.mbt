@@ -622,6 +622,7 @@ fn exp_effects(eff : Json) -> Array[ComparableEffect] raise DecodeSkip {
     }
     let payload = match eo.get("operand") {
       Some(j) => "\{op_str}(\{render_val(json_to_value(j))})@\{source}"
+      None if op == "set" => raise DecodeSkip("set effect missing 'operand'")
       None => "\{op_str}@\{source}"
     }
     items.push({ entity, path, payload })

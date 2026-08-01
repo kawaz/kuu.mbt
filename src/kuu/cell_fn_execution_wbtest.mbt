@@ -52,16 +52,15 @@ test "default_fn observes dependency evaluates before its declaration-order pred
 }
 
 ///|
-test "default_fn static failures classify unknown arity and sentinel output" {
+test "default_fn static failures classify unknown names and invalid arity" {
   let json = @json.parse(
-    "{\"options\":[{\"name\":\"unknown\",\"type\":\"bool\",\"default_fn\":\"no_such_fn\"},{\"name\":\"arity\",\"type\":\"bool\",\"default_fn\":\"borrow\"},{\"name\":\"sentinel\",\"type\":\"bool\",\"default_fn\":\"unset\"}]}",
+    "{\"options\":[{\"name\":\"unknown\",\"type\":\"bool\",\"default_fn\":\"no_such_fn\"},{\"name\":\"arity\",\"type\":\"bool\",\"default_fn\":\"borrow\"}]}",
   )
   match parse_definition(json) {
     Err(Rejected(errors)) => {
       let kinds = def_error_kinds(errors)
       assert_eq(kinds.get("unknown"), Some(@abi.UnknownVocab))
       assert_eq(kinds.get("arity"), Some(@abi.InvalidArgument))
-      assert_eq(kinds.get("sentinel"), Some(@abi.InvalidRange))
     }
     _ => fail("invalid default_fn declarations must be definition errors")
   }

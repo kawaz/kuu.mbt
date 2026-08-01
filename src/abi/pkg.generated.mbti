@@ -347,6 +347,7 @@ pub(all) struct TypeParseFail {
 } derive(Eq, @debug.Debug)
 
 pub(all) enum Value {
+  Null
   String(String)
   Number(Double)
   Bool(Bool)

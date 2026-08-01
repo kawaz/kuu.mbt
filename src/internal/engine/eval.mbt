@@ -4262,7 +4262,6 @@ pub fn is_committed(
   for b in bindings {
     if b.key == name && scope_path_eq(b.scope, path) {
       match b.op {
-        Unset => committed = false
         Set if b.value is Null => committed = false
         _ => committed = true
       }
@@ -4282,7 +4281,6 @@ pub fn element_value(
   for b in bindings {
     if b.key == name && scope_path_eq(b.scope, path) {
       match b.op {
-        Unset => ()
         Set if b.value is Null => v = None
         _ => v = Some(value_str(b.value))
       }
@@ -4358,7 +4356,6 @@ pub fn is_committed_in_subtree(
   for b in bindings {
     if b.key == name && scope_in_wrapped_subtree(b.scope, path, wrapper) {
       match b.op {
-        Unset => committed = false
         Set if b.value is Null => committed = false
         _ => committed = true
       }
@@ -4380,7 +4377,6 @@ pub fn element_value_in_subtree(
   for b in bindings {
     if b.key == name && scope_in_wrapped_subtree(b.scope, path, wrapper) {
       match b.op {
-        Unset => ()
         Set if b.value is Null => v = None
         _ => v = Some(value_str(b.value))
       }

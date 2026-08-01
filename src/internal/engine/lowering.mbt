@@ -132,7 +132,7 @@ fn classify_long_form(
           Invalid(original, InvalidArgument)
       }
     "default" => Variant({ trigger, op: Default, operand: None })
-    "unset" => Variant({ trigger, op: Unset, operand: None })
+    "unset" => Variant({ trigger, op: Invoke(invocation), operand: None })
     "empty" => Variant({ trigger, op: Empty, operand: None })
     _ => Variant({ trigger, op: Invoke(invocation), operand: None })
   }
@@ -5678,6 +5678,7 @@ fn gather_export_seats(
       // スコープ生成要素は結果キーを占有する 1 セル (DR-120 §4 / DESIGN §2.6 — 選ばれたら子が
       // 全部 absent でも空 kv `{}` を持つ)。子は 1 段ネストした別の結果スコープ。
       Some(key) => {
+        node.occupy_scope(c.name)
         seats.push({ element: c.name, key, space: scope_value_space() })
         gather_export_scope(c.body, child, out)
       }
@@ -5717,6 +5718,7 @@ fn gather_element_seats(
     Cell | Enum(_) => {
       node.declare_element(e.name, e.export_key)
       if element_occupies_seat(e) {
+        node.occupy_cell(e.name)
         match resolved_export_key(e.name, e.export_key) {
           Some(key) =>
             seats.push({ element: e.name, key, space: export_value_space(e) })
@@ -5744,6 +5746,7 @@ fn gather_element_seats(
       }
       match seat_key {
         Some(key) => {
+          node.occupy_cell(e.name)
           seats.push({ element: e.name, key, space: group_value_space() })
           let inner : Array[ExportSeat] = []
           for br in branches {
@@ -5771,6 +5774,7 @@ fn gather_element_seats(
       }
       match seat_key {
         Some(key) => {
+          node.occupy_cell(e.name)
           seats.push({ element: e.name, key, space: group_value_space() })
           let inner : Array[ExportSeat] = []
           for it in items {

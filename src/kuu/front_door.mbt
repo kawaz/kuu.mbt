@@ -481,6 +481,7 @@ fn filter_interpretation_result(
       for field in fields {
         let source = source_field(sources, field.0)
         match field.1 {
+          @abi.Scalar(@abi.Null) => ()
           @abi.Scalar(_) =>
             match source {
               Some(value) if !source_is_default(value) => kept.push(field)
@@ -632,7 +633,6 @@ fn projected_effect(
             Ok(@extension.FnOutput::Sentinel(sentinel)) => {
               let op = match sentinel {
                 @extension.CellSentinel::UseDefault => @abi.EffectOp::Default
-                @extension.CellSentinel::Unset => @abi.EffectOp::Unset
                 @extension.CellSentinel::Empty => @abi.EffectOp::Empty
               }
               return {

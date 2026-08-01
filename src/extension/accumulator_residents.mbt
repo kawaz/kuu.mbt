@@ -35,6 +35,10 @@ fn append_resolve_cli(
             }
             Err(error) => return Err(error)
           }
+        @abi.Set if binding.value is @abi.Null => {
+          resolved.push(binding)
+          committed = false
+        }
         @abi.Unset => {
           resolved.push(binding)
           committed = false
@@ -183,6 +187,14 @@ fn merge_resolve_cli(
   for binding in cli {
     if binding.key == name {
       match binding.op {
+        @abi.Set if binding.value is @abi.Null => {
+          if fire.length() > 0 {
+            groups.push(Fire(fire))
+            fire = []
+            fire_pos = None
+          }
+          groups.push(Cell(binding))
+        }
         @abi.Set | @abi.Remove | @abi.Splice => {
           if fire.length() > 0 && fire_pos != binding.at_pos {
             groups.push(Fire(fire))
@@ -230,6 +242,11 @@ fn merge_resolve_cli(
               }
               Err(error) => return Err(error)
             }
+          @abi.Set if binding.value is @abi.Null => {
+            result = [binding]
+            old_bindings = None
+            committed = false
+          }
           @abi.Unset => {
             result = [binding]
             old_bindings = None

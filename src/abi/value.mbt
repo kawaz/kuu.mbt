@@ -261,7 +261,7 @@ pub fn value_to_configval(v : Value) -> ConfigVal {
 pub(all) enum EffectOp {
   Set // write the operand; committed (the degenerate form of a plain value bind)
   Default // reset to the default value; committed (the user explicitly wants default)
-  Unset // reset to the default; NOT committed — later ladder seats (env/config) may override
+  Unset // legacy internal form; lowering emits Invoke(unset), never public effects
   Empty // clear a collection (array / map) to empty; committed
   // DR-114 §6.1: a lowered cell-fn invocation. The name and string args remain pure data until
   // the CLI-seat fold invokes the registered resident with an effect-mode FnCtx and the current
