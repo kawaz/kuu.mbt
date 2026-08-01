@@ -353,6 +353,19 @@ pub(all) enum Value {
   Bool(Bool)
 } derive(Eq, @debug.Debug)
 
+pub(all) enum ValueType {
+  String
+  Number
+  Bool
+  Null
+  Value
+  Array(ValueType)
+  Map(ValueType)
+  Record(Array[(String, String)])
+  Union(Array[ValueType])
+} derive(Eq, @debug.Debug)
+pub fn ValueType::declaration_violations(Self) -> Array[String]
+
 pub(all) struct Warning {
   element : String
   kind : WarningKind

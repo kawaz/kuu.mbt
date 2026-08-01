@@ -646,11 +646,11 @@ pub using @abi {type Source}
 
 pub using @abi {type TermHint}
 
-pub using @extension {type TypeOutputShape}
-
 pub using @abi {type TypeParseFail}
 
 pub using @abi {type Value}
+
+pub using @abi {type ValueType}
 
 pub using @abi {type Warning}
 

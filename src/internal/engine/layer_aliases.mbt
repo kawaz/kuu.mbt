@@ -3,6 +3,7 @@
 ///|
 pub using @abi {
   type Value,
+  type ValueType,
   type ConfigVal,
   type Source,
   type RoundMode,
@@ -57,7 +58,6 @@ pub using @abi {
 ///|
 pub using @extension {
   trait TypeExt,
-  type TypeOutputShape,
   trait NodeExt,
   trait MatcherExt,
   trait AccumulatorExt,

@@ -333,6 +333,7 @@ pub fn Registry::register_filter(Self, FilterDescriptor) -> Bool
 pub fn Registry::register_matcher(Self, &MatcherExt) -> Bool
 pub fn Registry::register_node(Self, &NodeExt) -> Bool
 pub fn Registry::register_type(Self, &TypeExt) -> Bool
+pub fn Registry::resolve_type_reference(Self, String) -> &TypeExt?
 
 pub struct SeatCtx {
   // private fields
@@ -344,11 +345,6 @@ pub fn SeatCtx::observed(Self) -> Json?
 pub struct ShortEntry {
   // private fields
 }
-
-pub(all) enum TypeOutputShape {
-  Primitive
-  Opaque
-} derive(Eq, @debug.Debug)
 
 // Type aliases
 pub using @abi {type AliasDef}
@@ -433,6 +429,8 @@ pub using @abi {type TypeParseFail}
 
 pub using @abi {type Value}
 
+pub using @abi {type ValueType}
+
 pub using @abi {type Warning}
 
 pub using @abi {type WarningKind}
@@ -499,7 +497,8 @@ pub(open) trait TypeExt {
   fn name(Self) -> String
   fn encode(Self) -> Json = _
   fn has_value_slot(Self) -> Bool
-  fn output_shape(Self) -> TypeOutputShape = _
+  fn output_type(Self) -> @abi.ValueType? = _
+  fn input_type(Self) -> @abi.ValueType = _
   fn parse_token(Self, String) -> Result[@abi.Value, @abi.TypeParseFail]
   fn completion_values(Self) -> Array[String] = _
   fn default_seat_observation_key(Self) -> String? = _

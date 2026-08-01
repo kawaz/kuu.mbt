@@ -2183,8 +2183,35 @@ priv enum LinkPathResolution {
     ObservationAddress?,
     Int
   )
-  Residual(TypeOutputShape)
+  Residual(ValueType?)
   Missing
+}
+
+///|
+/// Temporary W2-2 classification that preserves the former primitive/opaque
+/// behavior until W2-6 implements value-space descent.
+fn residual_is_primitive_only(declared : ValueType?) -> Bool {
+  match declared {
+    None => false
+    Some(value_type) => value_type_primitive_only(value_type)
+  }
+}
+
+///|
+fn value_type_primitive_only(value_type : ValueType) -> Bool {
+  match value_type {
+    String | Number | Bool | Null => true
+    Union(members) => members.iter().all(value_type_primitive_only)
+    Array(_) | Map(_) | Record(_) | Value => false
+  }
+}
+
+///|
+fn residual_declaration_is_well_formed(declared : ValueType?) -> Bool {
+  match declared {
+    None => true
+    Some(value_type) => value_type.declaration_violations().length() == 0
+  }
 }
 
 ///|
@@ -2355,7 +2382,7 @@ fn resolve_link_path(def : Definition, path : LinkPath) -> LinkPathResolution {
               }
               None => return Missing
             }
-          Cell | Enum(_) => return Residual(current.ty.output_shape())
+          Cell | Enum(_) => return Residual(current.ty.output_type())
         }
       Index(target_index) =>
         match indexed_structural_child(current, target_index) {
@@ -2379,7 +2406,7 @@ fn resolve_link_path(def : Definition, path : LinkPath) -> LinkPathResolution {
           }
           None =>
             match current.body {
-              Cell | Enum(_) => return Residual(current.ty.output_shape())
+              Cell | Enum(_) => return Residual(current.ty.output_type())
               Group(_) | Or(_) => return Missing
             }
         }
@@ -4023,6 +4050,312 @@ fn check_elem_absent_ref(
 }
 
 ///|
+fn canonical_type_reference(spelling : String) -> String {
+  if spelling.has_prefix("builtin/") {
+    spelling[8:].to_owned()
+  } else {
+    spelling
+  }
+}
+
+///|
+fn type_reference_cycle_path(stack : Array[String], target : String) -> String {
+  let mut start = 0
+  while start < stack.length() && stack[start] != target {
+    start += 1
+  }
+  let builder = StringBuilder::new()
+  for index in start..<stack.length() {
+    if index > start {
+      builder.write_string(" -> ")
+    }
+    builder.write_string(stack[index])
+  }
+  if stack.length() > start {
+    builder.write_string(" -> ")
+  }
+  builder.write_string(target)
+  builder.to_string()
+}
+
+///|
+/// Walks one declared value-type graph. Traversal state is intentionally local
+/// to this seed so every definition element receives its own diagnostics.
+fn validate_value_type_references(
+  root : ValueType,
+  root_type : String,
+  extensions : Registry,
+  element : String,
+  out : Array[DefError],
+  diagnostic_keys : Map[String, Bool],
+) -> Unit {
+  let visited : Map[String, Bool] = Map([])
+  let stack : Array[String] = [canonical_type_reference(root_type)]
+  fn emit(
+    element : String,
+    kind : DefErrorKind,
+    kind_key : String,
+    target : String,
+    message : String,
+    hint : String,
+    out : Array[DefError],
+    diagnostic_keys : Map[String, Bool],
+  ) -> Unit {
+    let key = element + "\u{0}" + kind_key + "\u{0}" + target
+    if diagnostic_keys.get(key) is None {
+      diagnostic_keys.set(key, true)
+      out.push(def_err(element, kind, message, hint))
+    }
+  }
+  fn walk(
+    value_type : ValueType,
+    owner : String,
+    extensions : Registry,
+    element : String,
+    out : Array[DefError],
+    diagnostic_keys : Map[String, Bool],
+    visited : Map[String, Bool],
+    stack : Array[String],
+  ) -> Unit {
+    let violations = value_type.declaration_violations()
+    if violations.length() > 0 {
+      emit(
+        element,
+        InvalidRange,
+        "invalid-range",
+        owner,
+        "type '" +
+        owner +
+        "' has an invalid value_type declaration: " +
+        violations[0],
+        "fix the value_type declaration",
+        out,
+        diagnostic_keys,
+      )
+      return
+    }
+    match value_type {
+      Record(fields) =>
+        for entry in fields {
+          let (field, spelling) = entry
+          let canonical = canonical_type_reference(spelling)
+          match extensions.resolve_type_reference(spelling) {
+            None =>
+              emit(
+                element,
+                UnknownVocab,
+                "unknown-vocab",
+                spelling,
+                "type '" +
+                owner +
+                "' field '" +
+                field +
+                "' references unregistered type '" +
+                spelling +
+                "'",
+                "register the type or fix the reference spelling",
+                out,
+                diagnostic_keys,
+              )
+            Some(resident) => {
+              let mut cycle = false
+              for stacked in stack {
+                if stacked == canonical {
+                  cycle = true
+                  break
+                }
+              }
+              if cycle {
+                emit(
+                  element,
+                  CircularRef,
+                  "circular-ref",
+                  canonical,
+                  "type dependency cycle: " +
+                  type_reference_cycle_path(stack, canonical),
+                  "break the type dependency cycle",
+                  out,
+                  diagnostic_keys,
+                )
+              } else if visited.get(canonical) is None {
+                match resident.output_type() {
+                  None => visited.set(canonical, true)
+                  Some(nested) => {
+                    stack.push(canonical)
+                    walk(
+                      nested,
+                      resident.name(),
+                      extensions,
+                      element,
+                      out,
+                      diagnostic_keys,
+                      visited,
+                      stack,
+                    )
+                    ignore(stack.pop())
+                    visited.set(canonical, true)
+                  }
+                }
+              }
+            }
+          }
+        }
+      Array(item_type) | Map(item_type) =>
+        walk(
+          item_type, owner, extensions, element, out, diagnostic_keys, visited, stack,
+        )
+      Union(members) =>
+        for item_type in members {
+          walk(
+            item_type, owner, extensions, element, out, diagnostic_keys, visited,
+            stack,
+          )
+        }
+      String | Number | Bool | Null | Value => ()
+    }
+  }
+  walk(
+    root, root_type, extensions, element, out, diagnostic_keys, visited, stack,
+  )
+}
+
+///|
+fn collect_type_reference_errors(
+  def : Definition,
+  extensions : Registry,
+  template_declarations : Map[String, ElementDef],
+  out : Array[DefError],
+) -> Unit {
+  let diagnostic_keys : Map[String, Bool] = Map([])
+  fn collect_element(
+    element : ElementDef,
+    inherited_element : String,
+    fixed_attribution : Bool,
+    extensions : Registry,
+    template_declarations : Map[String, ElementDef],
+    template_stack : Array[String],
+    out : Array[DefError],
+    diagnostic_keys : Map[String, Bool],
+  ) -> Unit {
+    let attribution = if fixed_attribution || element.name == "" {
+      inherited_element
+    } else {
+      element.name
+    }
+    match element.ref_target {
+      Some(target) => {
+        let mut circular = false
+        for active in template_stack {
+          if active == target {
+            circular = true
+            break
+          }
+        }
+        if !circular {
+          match template_declarations.get(target) {
+            None => ()
+            Some(template) => {
+              template_stack.push(target)
+              collect_element(
+                template, attribution, true, extensions, template_declarations, template_stack,
+                out, diagnostic_keys,
+              )
+              ignore(template_stack.pop())
+            }
+          }
+        }
+      }
+      None =>
+        match element.body {
+          Cell | Enum(_) =>
+            match element.ty.output_type() {
+              None => ()
+              Some(root) =>
+                validate_value_type_references(
+                  root,
+                  element.ty.name(),
+                  extensions,
+                  attribution,
+                  out,
+                  diagnostic_keys,
+                )
+            }
+          Group(items) =>
+            for item in items {
+              collect_element(
+                item, attribution, fixed_attribution, extensions, template_declarations,
+                template_stack, out, diagnostic_keys,
+              )
+            }
+          Or(branches) =>
+            for branch in branches {
+              for item in branch.items {
+                collect_element(
+                  item, attribution, fixed_attribution, extensions, template_declarations,
+                  template_stack, out, diagnostic_keys,
+                )
+              }
+            }
+        }
+    }
+  }
+  fn collect_elements(
+    elements : Array[ElementDef],
+    extensions : Registry,
+    template_declarations : Map[String, ElementDef],
+    out : Array[DefError],
+    diagnostic_keys : Map[String, Bool],
+  ) -> Unit {
+    for element in elements {
+      collect_element(
+        element,
+        element.name,
+        false,
+        extensions,
+        template_declarations,
+        [],
+        out,
+        diagnostic_keys,
+      )
+    }
+  }
+  fn collect_definition(
+    def : Definition,
+    extensions : Registry,
+    template_declarations : Map[String, ElementDef],
+    out : Array[DefError],
+    diagnostic_keys : Map[String, Bool],
+  ) -> Unit {
+    collect_elements(
+      def.options,
+      extensions,
+      template_declarations,
+      out,
+      diagnostic_keys,
+    )
+    collect_elements(
+      def.positionals,
+      extensions,
+      template_declarations,
+      out,
+      diagnostic_keys,
+    )
+    for command in def.commands {
+      collect_definition(
+        command.body,
+        extensions,
+        template_declarations,
+        out,
+        diagnostic_keys,
+      )
+    }
+  }
+  collect_definition(
+    def, extensions, template_declarations, out, diagnostic_keys,
+  )
+}
+
+///|
 fn collect_link_path_errors(def : Definition, out : Array[DefError]) -> Unit {
   fn check(
     def : Definition,
@@ -4062,16 +4395,19 @@ fn collect_link_path_errors(def : Definition, out : Array[DefError]) -> Unit {
           )
         } else {
           match resolve_link_path(def, path) {
-            Residual(Opaque) =>
-              out.push(
-                def_err(
-                  element.name,
-                  Unsupported,
-                  "this link path reaches an opaque value structure",
-                  "declare a structural output shape before linking into the value",
-                ),
-              )
-            Resolved(_, _, _, _, _, _) | Residual(Primitive) | Missing => ()
+            Residual(declared) =>
+              if residual_declaration_is_well_formed(declared) &&
+                !residual_is_primitive_only(declared) {
+                out.push(
+                  def_err(
+                    element.name,
+                    Unsupported,
+                    "this link path reaches an opaque value structure",
+                    "declare a structural output shape before linking into the value",
+                  ),
+                )
+              }
+            Resolved(_, _, _, _, _, _) | Missing => ()
           }
         }
       None => ()
@@ -4159,8 +4495,11 @@ fn check_element_absent_link(
   match element.link_path {
     Some(Valid(path)) => {
       let absent = match resolve_link_path(def, path) {
-        Missing | Residual(Primitive) => true
-        Resolved(_, _, _, _, _, _) | Residual(Opaque) => false
+        Missing => true
+        Residual(declared) =>
+          residual_declaration_is_well_formed(declared) &&
+          residual_is_primitive_only(declared)
+        Resolved(_, _, _, _, _, _) => false
       }
       if absent {
         out.push(
@@ -5984,6 +6323,7 @@ fn lower_definition_snapshot_impl(
   collect_completion_script_errors(def, errs)
   collect_link_path_errors(def, errs)
   collect_unsupported_link_shape(def, errs)
+  collect_type_reference_errors(def, extensions, template_declarations, errs)
   if errs.length() > 0 {
     return Err(errs) // ALL definition-error 列挙
   }

@@ -3,6 +3,7 @@
 ///|
 pub using @abi {
   type Value,
+  type ValueType,
   type ConfigVal,
   type Source,
   type RoundMode,

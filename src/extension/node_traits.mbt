@@ -25,21 +25,16 @@ pub fn SeatCtx::observed(self : SeatCtx) -> Json? {
 }
 
 ///|
-pub(all) enum TypeOutputShape {
-  Primitive
-  Opaque
-} derive(Eq, Debug)
-
-///|
-/// Open type-category contract. Value lexicons and preset defaults belong to
-/// residents; the evaluator sees only this capability surface. A resident may
-/// request one provider observation by opaque key and interpret its JSON payload
-/// inside `default_seat_resolver`.
+/// Open type-category contract. Value lexicons, declared input/output value
+/// spaces, and preset defaults belong to residents; the evaluator sees only this
+/// capability surface. A resident may request one provider observation by opaque
+/// key and interpret its JSON payload inside `default_seat_resolver`.
 pub(open) trait TypeExt {
   fn name(Self) -> String
   fn encode(Self) -> Json = _
   fn has_value_slot(Self) -> Bool
-  fn output_shape(Self) -> TypeOutputShape = _
+  fn output_type(Self) -> ValueType? = _
+  fn input_type(Self) -> ValueType = _
   fn parse_token(Self, String) -> Result[Value, TypeParseFail]
   fn completion_values(Self) -> Array[String] = _
   fn default_seat_observation_key(Self) -> String? = _
@@ -52,8 +47,15 @@ impl TypeExt with fn encode(_self) {
 }
 
 ///|
-impl TypeExt with fn output_shape(_self) {
-  Opaque
+/// The default makes no promise about the resident's output structure.
+impl TypeExt with fn output_type(_self) {
+  None
+}
+
+///|
+/// Types without an input-structure declaration consume one string token.
+impl TypeExt with fn input_type(_self) {
+  ValueType::String
 }
 
 ///|

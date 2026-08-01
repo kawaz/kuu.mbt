@@ -19,8 +19,8 @@ impl TypeExt for StringTypeExt with fn has_value_slot(_self) {
 }
 
 ///|
-impl TypeExt for StringTypeExt with fn output_shape(_self) {
-  Primitive
+impl TypeExt for StringTypeExt with fn output_type(_self) {
+  Some(ValueType::String)
 }
 
 ///|
@@ -59,8 +59,8 @@ impl TypeExt for NumberTypeExt with fn has_value_slot(_self) {
 }
 
 ///|
-impl TypeExt for NumberTypeExt with fn output_shape(_self) {
-  Primitive
+impl TypeExt for NumberTypeExt with fn output_type(_self) {
+  Some(ValueType::Number)
 }
 
 ///|
@@ -103,8 +103,8 @@ impl TypeExt for IntTypeExt with fn has_value_slot(_self) {
 }
 
 ///|
-impl TypeExt for IntTypeExt with fn output_shape(_self) {
-  Primitive
+impl TypeExt for IntTypeExt with fn output_type(_self) {
+  Some(ValueType::Number)
 }
 
 ///|
@@ -148,8 +148,8 @@ impl TypeExt for FloatTypeExt with fn has_value_slot(_self) {
 }
 
 ///|
-impl TypeExt for FloatTypeExt with fn output_shape(_self) {
-  Primitive
+impl TypeExt for FloatTypeExt with fn output_type(_self) {
+  Some(ValueType::Number)
 }
 
 ///|
@@ -192,8 +192,8 @@ impl TypeExt for BoolTypeExt with fn has_value_slot(self) {
 }
 
 ///|
-impl TypeExt for BoolTypeExt with fn output_shape(_self) {
-  Primitive
+impl TypeExt for BoolTypeExt with fn output_type(_self) {
+  Some(ValueType::Bool)
 }
 
 ///|
@@ -238,8 +238,8 @@ impl TypeExt for FlagTypeExt with fn has_value_slot(_self) {
 }
 
 ///|
-impl TypeExt for FlagTypeExt with fn output_shape(_self) {
-  Primitive
+impl TypeExt for FlagTypeExt with fn output_type(_self) {
+  Some(ValueType::Bool)
 }
 
 ///|
@@ -286,8 +286,8 @@ impl TypeExt for CountTypeExt with fn has_value_slot(_self) {
 }
 
 ///|
-impl TypeExt for CountTypeExt with fn output_shape(_self) {
-  Primitive
+impl TypeExt for CountTypeExt with fn output_type(_self) {
+  Some(ValueType::Number)
 }
 
 ///|
@@ -332,8 +332,8 @@ impl TypeExt for TtyTypeExt with fn has_value_slot(_self) {
 }
 
 ///|
-impl TypeExt for TtyTypeExt with fn output_shape(_self) {
-  Primitive
+impl TypeExt for TtyTypeExt with fn output_type(_self) {
+  Some(ValueType::Bool)
 }
 
 ///|
@@ -386,8 +386,8 @@ impl TypeExt for CompletionScriptTypeExt with fn has_value_slot(_self) {
 }
 
 ///|
-impl TypeExt for CompletionScriptTypeExt with fn output_shape(_self) {
-  Primitive
+impl TypeExt for CompletionScriptTypeExt with fn output_type(_self) {
+  Some(ValueType::String)
 }
 
 ///|
@@ -432,8 +432,8 @@ impl TypeExt for NoneTypeExt with fn has_value_slot(_self) {
 }
 
 ///|
-impl TypeExt for NoneTypeExt with fn output_shape(_self) {
-  Primitive
+impl TypeExt for NoneTypeExt with fn output_type(_self) {
+  Some(ValueType::Null)
 }
 
 ///|
