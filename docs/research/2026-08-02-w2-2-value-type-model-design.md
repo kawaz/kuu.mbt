@@ -483,22 +483,19 @@ wbtest に 2〜3 表明を足してもよい (b/d1 が実質カバーするの�
 - `moon info` で `pkg.generated.mbti` 再生成 (extension の公開面から `TypeOutputShape` が
   消え `ValueType` / `output_type` / `input_type` が載る)
 
-## 7. 裁定候補 (実装前に統括の裁定が要る点)
+## 7. 裁定 (統括確定済み 2026-08-02 — 実装 worker は再検討不要)
 
-### 7.1 `none` type の名乗り — 推し: `Some(Null)`
+### 7.1 `none` type の名乗り — **案 A `Some(Null)` で確定**
 
-- **案 A (推し): `Some(Null)`** — none は値スロットを持たない mark で、その「値」は null しか
-  ありえない。primitive-only 分類に入り現行挙動 (残余 link は absent-ref) を保存する
-- 案 B: `None` (名乗らない) — 「none に output は無い」という読み。ただし残余 link のエラーが
-  absent-ref → Unsupported へ**変わる** (挙動変化)。挙動保存の観点で不利
-- spec に none type の io_type.output を明記した箇所は見つけていない (builtin-descriptors.json の
-  `/types` に none は居ない)。裁定が B に出る場合は spec 側の追記も要る
+none は値スロットを持たない mark で、その「値」は null しかありえない。primitive-only 分類に
+入り現行挙動 (残余 link は absent-ref) を保存する。DR-130 で null は値空間の正規住人なので
+名乗りとしても矛盾しない。spec の builtin-descriptors.json `/types` に none は居ないため
+spec 追記は不要 (挙動保存のため)。
 
-### 7.2 e3 (record 名乗り + 残余) の暫定挙動を wbtest で pin するか — 推し: pin する
+### 7.2 e3 (record 名乗り + 残余) の暫定挙動 — **wbtest で pin するで確定**
 
-- 推し: pin する (W2-6 着手時に RED になり、置換漏れを検出する網になる)。テストコメントで
-  暫定である旨を明示
-- 対案: pin しない (W2-6 でのテスト書き換えを省く)。silent hole を許すので不利
+W2-6 着手時に RED になり、置換漏れを検出する網になる。テストコメントで
+「W2-6 で record 降下 (静的成功) へ置換される暫定 pin」と明示する。
 
 ### 7.3 §2.1 well-formedness を definition-error にすること自体 — **採用で確定**
 
