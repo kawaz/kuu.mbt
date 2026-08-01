@@ -281,6 +281,15 @@ pub(all) enum EffectOp {
 } derive(Eq, Debug)
 
 ///|
+/// A structural-or branch whose selection controls whether a linked child value is projected.
+/// `scope` is the declaration-name path of the structural wrapper and `marker` is emitted only by
+/// the branch's own consuming grammar.
+pub(all) struct LinkSelection {
+  scope : Array[String]
+  marker : String
+} derive(Eq, Debug)
+
+///|
 /// One EFFECT written onto a result path: `key`'s cell gets operation `op` with operand
 /// `value`, from `source` (DR-045). `key` is the leaf name; same-key bindings from
 /// different entries (e.g. `--port` satellite and `-p` matcher) merge onto one cell =
@@ -297,6 +306,7 @@ pub(all) struct Binding {
   value : Value // the operand (a placeholder for default/unset/empty, which carry none)
   source : Source
   scope : Array[String]
+  link_selections : Array[LinkSelection]
   levels_to_declaring_scope : Int // a global-copy binding (DR-042/007): the number of result-nesting
   //           levels it still ESCAPES before settling at its declaring scope. 0 = a normal binding
   //           (every CommandSatisfied/Scoped level prepends its label). N>0 = a global copied N scopes
@@ -334,6 +344,7 @@ pub fn Binding::new(
     value,
     source,
     scope: [],
+    link_selections: [],
     levels_to_declaring_scope: 0,
     at_pos,
   }
@@ -348,15 +359,23 @@ pub fn bindings_through_link(
   bindings : Array[Binding],
   from : String,
   target : String,
+  target_scope : Array[String],
+  target_selections : Array[LinkSelection],
   levels_to_target : Int,
 ) -> Array[Binding] {
   let routed : Array[Binding] = []
   for binding in bindings {
     if binding.key == from {
+      let scope = target_scope.copy()
+      for segment in binding.scope {
+        scope.push(segment)
+      }
       routed.push({
         ..binding,
         key: target,
         source: Link,
+        scope,
+        link_selections: target_selections.copy(),
         levels_to_declaring_scope: binding.levels_to_declaring_scope +
         levels_to_target,
       })
@@ -397,6 +416,7 @@ pub fn Binding::deprecation_mark(element : String) -> Binding {
     value: Bool(false),
     source: Cli,
     scope: [],
+    link_selections: [],
     levels_to_declaring_scope: 0,
     at_pos: None,
   }

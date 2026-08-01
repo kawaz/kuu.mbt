@@ -499,6 +499,38 @@ fn path_push(path : Array[String], seg : String) -> Array[String] {
 }
 
 ///|
+fn link_binding_active(
+  all : Array[@abi.Binding],
+  binding : @abi.Binding,
+) -> Bool {
+  for selection in binding.link_selections {
+    let mut selected = false
+    for candidate in all {
+      if candidate.key == selection.marker &&
+        path_eq(candidate.scope, selection.scope) {
+        selected = true
+        break
+      }
+    }
+    if !selected {
+      return false
+    }
+  }
+  true
+}
+
+///|
+fn active_link_bindings(binds : Array[@abi.Binding]) -> Array[@abi.Binding] {
+  let out : Array[@abi.Binding] = []
+  for binding in binds {
+    if link_binding_active(binds, binding) {
+      out.push(binding)
+    }
+  }
+  out
+}
+
+///|
 /// Build the nested result value from the winning flat bindings. `cells` locates every
 /// accumulate cell by result path (so an empty cell still renders `[]`, DR-044 uniform array);
 /// `path` is the current result-scope path.
@@ -510,6 +542,7 @@ fn build_result(
   nones? : Array[InternalCell] = [],
   extensions? : @node.Registry = canonical_registry(),
 ) -> @abi.ResultValue {
+  let binds = active_link_bindings(binds)
   // ROW-GROUP (DR-078 §1 ref テンプレ result 写像, issue 2026-07-09-ref-template-result-shape):
   // a "#row" sentinel at this level (installer.mbt's `ref_row_head`) marks one repetition's row
   // boundary for a ref-template repeat cell — build one row (recursive build_result over that

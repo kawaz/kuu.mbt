@@ -722,11 +722,12 @@ fn ref_row_head(name : String, head : Node) -> Node {
 /// positional 直下の `seq` と同じ `seq_child_nodes` を通す。1 item の枝は退化 (DR-067 §2
 /// 「1 個は単体と等価」) で素のノード。
 pub fn or_branch_node(br : OrBranch) -> Node {
-  if br.items.length() == 1 {
+  let body = if br.items.length() == 1 {
     child_head(br.items[0])
   } else {
     seq_body_node(br.items)
   }
+  Seq([Bind("#branch:" + br.id, Bool(false)), body])
 }
 
 ///|
@@ -1760,10 +1761,14 @@ fn inst_long(
   let eq_prefixes : Array[String] = []
   let eq_groups : Array[Array[EqEntry]] = []
   for e in def.options {
-    let (link_target, link_additional_levels) = match
-      link_route_fields(def, e) {
+    let (
+      link_target,
+      link_target_scope,
+      link_target_selections,
+      link_additional_levels,
+    ) = match link_route_fields(def, e) {
       Some(fields) => fields
-      None => (None, 0)
+      None => (None, [], [], 0)
     }
     let matcher_link_levels = if link_target is Some(_) {
       link_additional_levels + e.link_depth
@@ -2081,6 +2086,8 @@ fn inst_long(
                 merge=e.accumulator == Some("merge"),
                 deprecated=e.deprecated,
                 link_target~,
+                link_target_scope~,
+                link_target_selections~,
                 link_additional_levels=matcher_link_levels,
                 extension=link_extension,
               ),
@@ -2143,9 +2150,9 @@ fn inst_long(
 }
 
 ///|
-/// Whether this declaration contributes or denotes a reachable Entity in its lexical scope.
-/// `link_depth > 0` is a global entry copy: its Entity lives in an ancestor, but a local link may
-/// still resolve to it and must carry that escape depth.
+/// Whether this declaration owns a value cell that can be the final destination of a link route.
+/// Structural wrappers are traversable by a fixed path, but remain non-cells unless their existing
+/// accumulator semantics already give the wrapper a value seat.
 fn element_is_link_target(e : ElementDef) -> Bool {
   if e.link_path is Some(_) || e.is_dd || e.is_exact || e.is_literal {
     return false
@@ -2158,53 +2165,146 @@ fn element_is_link_target(e : ElementDef) -> Bool {
 }
 
 ///|
-/// Resolve a bare link target in the declaration's current lexical scope. The declaration snapshot
-/// gains global copies during the installer fixpoint; using their `link_depth` preserves
-/// the existing lexical routing instead of inventing a second scope-resolution model.
-fn link_target_depth(def : Definition, target : String) -> Int? {
-  for element in def.options {
-    if element.name == target && element_is_link_target(element) {
-      return Some(element.link_depth)
-    }
-  }
-  for element in def.positionals {
-    if element.name == target && element_is_link_target(element) {
-      return Some(element.link_depth)
-    }
+priv enum LinkPathResolution {
+  Resolved(String, Array[String], Array[LinkSelection], Int)
+  Residual
+  Missing
+}
+
+///|
+fn named_structural_child(
+  element : ElementDef,
+  name : String,
+) -> (ElementDef, String?)? {
+  match element.body {
+    Group(items) =>
+      for item in items {
+        if item.name == name {
+          return Some((item, None))
+        }
+      }
+    Or(branches) =>
+      for branch in branches {
+        for item in branch.items {
+          if item.name == name {
+            return Some((item, Some("#branch:" + branch.id)))
+          }
+        }
+      }
+    Cell | Enum(_) => ()
   }
   None
 }
 
 ///|
-fn link_route_fields(def : Definition, e : ElementDef) -> (String?, Int)? {
+/// Resolve the declaration-cell prefix of a link path in the declaration's current lexical scope.
+/// The declaration snapshot gains global copies during the installer fixpoint; the root copy's
+/// `link_depth` remains the lexical escape depth while each traversed structural wrapper contributes
+/// one pre-seeded result scope.
+fn resolve_link_path(def : Definition, path : LinkPath) -> LinkPathResolution {
+  let mut root : ElementDef? = None
+  for element in def.options {
+    if element.name == path.root {
+      root = Some(element)
+      break
+    }
+  }
+  if root is None {
+    for element in def.positionals {
+      if element.name == path.root {
+        root = Some(element)
+        break
+      }
+    }
+  }
+  guard root is Some(root_element) else { return Missing }
+  let root_depth = root_element.link_depth
+  let mut current = root_element
+  let scope : Array[String] = []
+  let selections : Array[LinkSelection] = []
+  let mut index = 0
+  while index < path.segments.length() {
+    match path.segments[index] {
+      Name(name) =>
+        match current.body {
+          Group(_) | Or(_) =>
+            match named_structural_child(current, name) {
+              Some((child, branch_marker)) => {
+                if current.name != "" {
+                  scope.push(current.name)
+                }
+                match branch_marker {
+                  Some(marker) =>
+                    selections.push({ scope: scope.copy(), marker })
+                  None => ()
+                }
+                current = child
+              }
+              None => return Missing
+            }
+          Cell | Enum(_) => return Residual
+        }
+      Index(_) => return Residual
+    }
+    index += 1
+  }
+  if element_is_link_target(current) {
+    Resolved(current.name, scope, selections, root_depth)
+  } else {
+    Missing
+  }
+}
+
+///|
+fn bound_named_route(path : LinkPath) -> (String, Array[String])? {
+  let scope : Array[String] = []
+  let mut target = path.root
+  for segment in path.segments {
+    match segment {
+      Name(name) => {
+        scope.push(target)
+        target = name
+      }
+      Index(_) => return None
+    }
+  }
+  Some((target, scope))
+}
+
+///|
+fn link_route_fields(
+  def : Definition,
+  e : ElementDef,
+) -> (String?, Array[String], Array[LinkSelection], Int)? {
   match e.link_path {
-    None => Some((None, 0))
+    None => Some((None, [], [], 0))
     Some(Invalid(_)) => None
-    Some(Valid(path)) => {
-      let target = path.root
+    Some(Valid(path)) =>
       match e.link_additional_levels {
-        Some(bound_levels) => Some((Some(target), bound_levels))
+        Some(bound_levels) =>
+          match resolve_link_path(def, path) {
+            Resolved(target, target_scope, selections, _) =>
+              Some((Some(target), target_scope, selections, bound_levels))
+            Residual | Missing =>
+              match bound_named_route(path) {
+                Some((target, target_scope)) =>
+                  Some((Some(target), target_scope, [], bound_levels))
+                None => None
+              }
+          }
         None =>
-          match link_target_depth(def, target) {
-            Some(target_depth) => {
+          match resolve_link_path(def, path) {
+            Resolved(target, target_scope, selections, target_depth) => {
               let additional_levels = if target_depth > e.link_depth {
                 target_depth - e.link_depth
               } else {
                 0
               }
-              Some((Some(target), additional_levels))
+              Some((Some(target), target_scope, selections, additional_levels))
             }
-            None =>
-              if e.link_depth > 0 {
-                // Defensive fallback for a copied declaration produced outside the canonical global
-                // installer. Canonical copies always carry link_additional_levels and never reach here.
-                Some((Some(target), 0))
-              } else {
-                None
-              }
+            Residual | Missing => None
           }
       }
-    }
   }
 }
 
@@ -2214,17 +2314,19 @@ fn link_route_fields(def : Definition, e : ElementDef) -> (String?, Int)? {
 /// the same `bindings_through_link` ABI helper used by this wrapper.
 fn route_link_entry(def : Definition, e : ElementDef, node : Node) -> Node? {
   match link_route_fields(def, e) {
-    Some((Some(target), levels)) =>
+    Some((Some(target), target_scope, target_selections, levels)) =>
       Some(
         LinkTarget(
           e.name,
           target,
+          target_scope,
+          target_selections,
           levels,
           entity_ext(hidden=e.hidden, completer=e.completer),
           node,
         ),
       )
-    Some((None, _)) => Some(node)
+    Some((None, _, _, _)) => Some(node)
     None => None
   }
 }
@@ -2300,10 +2402,14 @@ fn inst_short(def : Definition, build : InstallOutput) -> Unit {
   let sh_combines : Array[Bool] = []
   let sh_groups : Array[Array[ShortEntry]] = []
   for e in def.options {
-    let (link_target, link_additional_levels) = match
-      link_route_fields(def, e) {
+    let (
+      link_target,
+      link_target_scope,
+      link_target_selections,
+      link_additional_levels,
+    ) = match link_route_fields(def, e) {
       Some(fields) => fields
-      None => (None, 0)
+      None => (None, [], [], 0)
     }
     let matcher_link_levels = if link_target is Some(_) {
       link_additional_levels + e.link_depth
@@ -2341,6 +2447,8 @@ fn inst_short(def : Definition, build : InstallOutput) -> Unit {
           short_attached_value=e.short_attached_value,
           is_alias=e.is_alias,
           link_target~,
+          link_target_scope~,
+          link_target_selections~,
           link_additional_levels=matcher_link_levels,
           extension=link_extension,
         ),
@@ -2445,7 +2553,7 @@ fn inst_global(sb : InstallBuilder) -> Unit {
         None => None
         Some(_) =>
           match link_route_fields(sb.definition(), opt) {
-            Some((Some(_), levels)) => Some(levels)
+            Some((Some(_), _, _, levels)) => Some(levels)
             _ => opt.link_additional_levels
           }
       }
@@ -2654,7 +2762,7 @@ fn collect_value_names(
     Many(inner, _) => collect_value_names(inner, registry, visiting, out)
     BoundedTail(inner, _, _) =>
       collect_value_names(inner, registry, visiting, out)
-    LinkTarget(_, _, _, _, inner) =>
+    LinkTarget(_, _, _, _, _, _, inner) =>
       collect_value_names(inner, registry, visiting, out)
     Rooted(inner, _) => collect_value_names(inner, registry, visiting, out)
     Scoped(_, inner) => collect_value_names(inner, registry, visiting, out)
@@ -3461,7 +3569,8 @@ fn head_progresses(
     IndexedRepeat(_, _, _, _) => true // 名前付き indexed repeat は head を消費
     BoundedTail(head, budget, _) =>
       budget >= 1 && head_progresses(head, registry, visiting)
-    LinkTarget(_, _, _, _, inner) => head_progresses(inner, registry, visiting)
+    LinkTarget(_, _, _, _, _, _, inner) =>
+      head_progresses(inner, registry, visiting)
     Rooted(inner, _) => head_progresses(inner, registry, visiting)
     Bind(_, _) | ChildDefault(_, _, _) => false // a child-default fallback may consume 0 tokens
     Ref(r) => {
@@ -3716,7 +3825,11 @@ fn check_elem_absent_ref(
 
 ///|
 fn collect_link_path_errors(def : Definition, out : Array[DefError]) -> Unit {
-  fn check(element : ElementDef, out : Array[DefError]) -> Unit {
+  fn check(
+    def : Definition,
+    element : ElementDef,
+    out : Array[DefError],
+  ) -> Unit {
     match element.link_path {
       Some(Invalid(raw)) =>
         out.push(
@@ -3727,25 +3840,33 @@ fn collect_link_path_errors(def : Definition, out : Array[DefError]) -> Unit {
             "use name followed only by .name or [integer] segments",
           ),
         )
-      Some(Valid(path)) =>
-        if path.segments.length() > 0 {
+      Some(Valid(path)) => {
+        let mut has_index = false
+        for segment in path.segments {
+          if segment is Index(_) {
+            has_index = true
+          }
+        }
+        let unsupported = has_index || resolve_link_path(def, path) is Residual
+        if unsupported {
           out.push(
             def_err(
               element.name,
               Unsupported,
-              "link path segments are not supported by this implementation",
-              "use a bare target name until fixed-path routing is implemented",
+              "this link path reaches a segment kind not supported by this implementation",
+              "use a path whose declaration-cell prefix consists only of named children",
             ),
           )
         }
+      }
       None => ()
     }
   }
   for element in def.options {
-    check(element, out)
+    check(def, element, out)
   }
   for element in def.positionals {
-    check(element, out)
+    check(def, element, out)
   }
   for command in def.commands {
     collect_link_path_errors(command.body, out)
@@ -3795,9 +3916,9 @@ fn collect_unsupported_link_shape(
 }
 
 ///|
-/// DR-067 §1 reference-layer validation for bare-name value links. The fixpoint declaration
-/// snapshot already contains global contributions, so `link_target_depth` is the same
-/// lexical view lowering uses. Global link entry copies are skipped: their declaring entry is
+/// DR-067 §1 / DR-127 §2.1 reference-layer validation for link declaration-cell paths. The
+/// fixpoint declaration snapshot already contains global contributions, so validation and lowering
+/// use the same declaration view. Global link entry copies are skipped: their declaring entry is
 /// validated once in its own scope and the copy only transports that already-valid route.
 fn collect_absent_link(def : Definition, out : Array[DefError]) -> Unit {
   for element in def.options {
@@ -3822,13 +3943,13 @@ fn check_element_absent_link(
   }
   match element.link_path {
     Some(Valid(path)) =>
-      if link_target_depth(def, path.root) is None {
+      if resolve_link_path(def, path) is Missing {
         out.push(
           def_err(
             element.name,
             AbsentRef,
-            "link target '\{path.root}' is not defined as a value cell in this scope",
-            "define '\{path.root}' as a value element in the same scope",
+            "link path from '\{path.root}' does not resolve to a declared value cell",
+            "define every named child in the target declaration scope",
           ),
         )
       }

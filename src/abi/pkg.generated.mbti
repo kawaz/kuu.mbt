@@ -8,7 +8,7 @@ import {
 // Values
 pub fn attach_mode_of(String) -> AttachMode?
 
-pub fn bindings_through_link(Array[Binding], String, String, Int) -> Array[Binding]
+pub fn bindings_through_link(Array[Binding], String, String, Array[String], Array[LinkSelection], Int) -> Array[Binding]
 
 pub fn config_from_json(Json) -> ConfigVal
 
@@ -47,6 +47,7 @@ pub(all) struct Binding {
   value : Value
   source : Source
   scope : Array[String]
+  link_selections : Array[LinkSelection]
   levels_to_declaring_scope : Int
   at_pos : Int?
 } derive(Eq, @debug.Debug)
@@ -244,6 +245,11 @@ pub(all) enum HelpValueStructure {
   Or(Array[HelpValueStructure])
   Repeat(HelpRepeatSpec)
   TypeRef(HelpTypeRef)
+} derive(Eq, @debug.Debug)
+
+pub(all) struct LinkSelection {
+  scope : Array[String]
+  marker : String
 } derive(Eq, @debug.Debug)
 
 pub(all) enum LongDeclaration {

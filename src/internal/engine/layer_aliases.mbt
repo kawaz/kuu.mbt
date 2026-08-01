@@ -14,6 +14,7 @@ pub using @abi {
   type ParseError,
   type EffectOp,
   type Binding,
+  type LinkSelection,
   type Candidate,
   type TermHint,
   type Branch,

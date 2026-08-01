@@ -248,7 +248,15 @@ pub(all) enum Node {
   /// key equals `from` to `target`, tags them Source::Link, and makes them escape
   /// `levels_to_target` lexical levels. This is the single evaluator funnel shared by every
   /// ordinary long/positional entry shape; native short/eq matchers call the same ABI binding helper.
-  LinkTarget(String, String, Int, &EntityExt, Node)
+  LinkTarget(
+    String,
+    String,
+    Array[String],
+    Array[LinkSelection],
+    Int,
+    &EntityExt,
+    Node
+  )
   /// link/scope-targeted wrapper (DR-042 global link-sync). Evaluates its inner
   /// node but marks every binding it produces as a global copy that escapes `Int` result-nesting levels
   /// (= the scopes this copied satellite sits BELOW its declaration). Those bindings climb out of
@@ -306,8 +314,17 @@ pub impl Eq for Node with fn equal(self, other) {
     (DdMatchSatisfied(as_, ap, ak, an), DdMatchSatisfied(bs, bp, bk, bn)) =>
       as_ == bs && ap == bp && ak == bk && an == bn
     (CommandSatisfied(an, ac), CommandSatisfied(bn, bc)) => an == bn && ac == bc
-    (LinkTarget(af, at, al, ae, an), LinkTarget(bf, bt, bl, be, bn)) =>
-      af == bf && at == bt && al == bl && ae == be && an == bn
+    (
+      LinkTarget(af, at, as_, ax, al, ae, an),
+      LinkTarget(bf, bt, bs, bx, bl, be, bn),
+    ) =>
+      af == bf &&
+      at == bt &&
+      as_ == bs &&
+      ax == bx &&
+      al == bl &&
+      ae == be &&
+      an == bn
     (Rooted(an, ad), Rooted(bn, bd)) => an == bn && ad == bd
     (BoundedTail(an, ab, al), BoundedTail(bn, bb, bl)) =>
       an == bn && ab == bb && al == bl
@@ -370,13 +387,15 @@ pub impl Debug for Node with fn to_repr(self) {
         (None, Debug::to_repr(a)),
         (None, Debug::to_repr(b)),
       ])
-    LinkTarget(a, b, c, d, e) =>
+    LinkTarget(a, b, c, d, e, f, g) =>
       @debug.Repr::ctor("LinkTarget", [
         (None, Debug::to_repr(a)),
         (None, Debug::to_repr(b)),
         (None, Debug::to_repr(c)),
-        (None, Debug::to_repr(d.encode())),
+        (None, Debug::to_repr(d)),
         (None, Debug::to_repr(e)),
+        (None, Debug::to_repr(f.encode())),
+        (None, Debug::to_repr(g)),
       ])
     Rooted(a, b) =>
       @debug.Repr::ctor("Rooted", [

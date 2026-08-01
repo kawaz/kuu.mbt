@@ -41,6 +41,7 @@ pub fn Binding::effect(key : String, op : EffectOp, source : Source) -> Binding 
     value: Bool(false),
     source,
     scope: [],
+    link_selections: [],
     levels_to_declaring_scope: 0,
     at_pos: None,
   }
@@ -56,6 +57,7 @@ pub fn Binding::action_marker(name : String, pos : Int) -> Binding {
     value: Number(pos.to_double()),
     source: Cli,
     scope: [],
+    link_selections: [],
     levels_to_declaring_scope: 0,
     at_pos: None,
   }

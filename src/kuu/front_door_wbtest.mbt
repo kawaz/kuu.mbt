@@ -1416,9 +1416,34 @@ test "front_door.parse_definition: an absent bare link target is @abi.AbsentRef 
 }
 
 ///|
-/// DR-127 Stage A keeps legal non-bare paths behind an explicit implementation gate. The syntax is
-/// accepted into the AST, but lowering must not reinterpret `a.b` as a single bare declaration name.
-test "front_door.parse_definition: non-bare link path is explicitly unsupported during Stage A" {
+/// DR-127 §2.1 makes every declaration-cell segment static: a root scope that exists does not make a
+/// missing named child valid, so the unresolved child is an absent-ref definition error.
+test "front_door.parse_definition: absent named link child is absent-ref" {
+  let src =
+    #|{"options":[
+    #|  {"name":"target","long":true,"seq":[{"name":"present","type":"string"}]},
+    #|  {"name":"entry","type":"string","long":true,"link":"target.missing"}
+    #|]}
+  match parse_definition(@json.parse(src)) {
+    Err(Rejected(errors)) => {
+      let mut found = false
+      for error in errors {
+        if error.element == "entry" && error.kind == @abi.AbsentRef {
+          found = true
+        }
+      }
+      assert_true(found)
+    }
+    Err(Malformed(message)) =>
+      fail("expected absent-ref, got malformed: " + message)
+    Ok(_) => fail("missing named child must fail definition validation")
+  }
+}
+
+///|
+/// A path that has already reached a primitive cell cannot reinterpret its remaining name as another
+/// declaration cell. The residual remains behind the value-shape implementation gate.
+test "front_door.parse_definition: primitive link residual is explicitly unsupported" {
   let src =
     #|{"options":[{"name":"target","type":"string"},{"name":"entry","type":"string","long":true,"link":"target.child"}]}
   match parse_definition(@json.parse(src)) {
@@ -1435,6 +1460,80 @@ test "front_door.parse_definition: non-bare link path is explicitly unsupported 
       fail("expected unsupported, got malformed: " + message)
     Ok(_) => fail("non-bare path must remain gated during Stage A")
   }
+}
+
+///|
+/// DR-127 §2.1 resolves a named child through the target declaration scope before routing the
+/// entry's value. Long space, long eq, and native short forms must all pre-seed the same target scope.
+test "front_door.output: named link path descends into a sibling scope child" {
+  let src =
+    #|{"options":[
+    #|  {"name":"timerange","long":true,"seq":[
+    #|    {"name":"since","type":"string"},
+    #|    {"name":"until","type":"string"}
+    #|  ]},
+    #|  {"name":"legacy","type":"string","long":true,"short":"l","link":"timerange.since"}
+    #|]}
+  let expected = "result={timerange={since=x}} sources={timerange={since=link}} effects=since"
+  assert_eq(wbtest_view_of(src, ["--legacy", "x"]), expected)
+  assert_eq(wbtest_view_of(src, ["--legacy=x"]), expected)
+  assert_eq(wbtest_view_of(src, ["-l", "x"]), expected)
+}
+
+///|
+/// A copied global link preserves both axes of its declaring route: lexical escape returns to the
+/// root declaration and the pre-seeded named path still descends into that root scope's child.
+test "front_door.output: global named link path keeps target scope across a command" {
+  let src =
+    #|{"options":[
+    #|  {"name":"timerange","long":true,"global":true,"seq":[
+    #|    {"name":"since","type":"string"},
+    #|    {"name":"until","type":"string"}
+    #|  ]},
+    #|  {"name":"legacy","type":"string","long":true,"short":"l","global":true,"link":"timerange.since"}
+    #|],"commands":[{"type":"command","name":"sub","options":[
+    #|  {"name":"quiet","type":"flag","long":true}
+    #|]}]}
+  let expected = "result={sub={quiet=true},timerange={since=x}} sources={sub={quiet=cli},timerange={since=link}} effects=quiet,since"
+  assert_eq(wbtest_view_of(src, ["sub", "--legacy", "x", "--quiet"]), expected)
+  assert_eq(wbtest_view_of(src, ["sub", "--legacy=x", "--quiet"]), expected)
+  assert_eq(wbtest_view_of(src, ["sub", "-l", "x", "--quiet"]), expected)
+}
+
+///|
+/// Link path lookup stays on declaration names while result/source projection independently applies
+/// each target declaration's export_key. Effects therefore retain the leaf declaration name.
+test "front_door.output: named link path crosses export_key projection without changing lookup" {
+  let src =
+    #|{"options":[
+    #|  {"name":"timerange","long":true,"export_key":"range","seq":[
+    #|    {"name":"since","type":"string","export_key":"start"},
+    #|    {"name":"until","type":"string"}
+    #|  ]},
+    #|  {"name":"legacy","type":"string","long":true,"link":"timerange.since"}
+    #|]}
+  assert_eq(
+    wbtest_view_of(src, ["--legacy", "x"]),
+    "result={range={start=x}} sources={range={start=link}} effects=since",
+  )
+}
+
+///|
+/// DR-127 §4.1b keeps consumption choice separate from cell writes. A link may route to a cell in an
+/// unselected structural-or branch, but that branch's value remains absent from result and sources.
+test "front_door.output: named link path does not select the target structural branch" {
+  let src =
+    #|{"options":[
+    #|  {"name":"choice","long":true,"or":[
+    #|    {"name":"left","type":"string"},
+    #|    {"name":"right","type":"string"}
+    #|  ]},
+    #|  {"name":"legacy","type":"string","long":true,"link":"choice.right"}
+    #|]}
+  assert_eq(
+    wbtest_view_of(src, ["--legacy", "x"]),
+    "result={} sources={} effects=right",
+  )
 }
 
 ///|
