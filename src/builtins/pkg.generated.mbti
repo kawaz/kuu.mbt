@@ -49,7 +49,7 @@ pub fn enum_value_node(String, ty~ : &@extension.TypeExt, values~ : Array[String
 
 pub fn env_installer() -> &@kuu-node.InstallerExt
 
-pub fn eq_entry(String, String, &@extension.TypeExt, Array[@abi.FnInvocation], String?, merge? : Bool, deprecated? : Bool, link_target? : String?, link_target_scope? : Array[String], link_target_selections? : Array[@abi.LinkSelection], link_additional_levels? : Int, extension? : &@extension.EntityExt) -> @extension.EqEntry
+pub fn eq_entry(String, String, &@extension.TypeExt, Array[@abi.FnInvocation], String?, merge? : Bool, deprecated? : Bool, link_target? : String?, link_target_scope? : Array[String], link_target_selections? : Array[@abi.LinkSelection], link_target_observation? : @abi.ObservationAddress?, link_additional_levels? : Int, extension? : &@extension.EntityExt) -> @extension.EqEntry
 
 pub fn eq_split(String, Array[@extension.EqEntry]) -> &@extension.MatcherExt
 
@@ -111,7 +111,7 @@ pub fn separated_arg(String, separator~ : String?, ty~ : &@extension.TypeExt, in
 
 pub fn short_combine(String, Array[@extension.ShortEntry], combine? : Bool) -> &@extension.MatcherExt
 
-pub fn short_entry(Char, String, &@extension.TypeExt, Array[@abi.FnInvocation], String?, deprecated? : Bool, merge? : Bool, short_attached_value? : @abi.AttachMode, is_alias? : Bool, link_target? : String?, link_target_scope? : Array[String], link_target_selections? : Array[@abi.LinkSelection], link_additional_levels? : Int, extension? : &@extension.EntityExt) -> @extension.ShortEntry
+pub fn short_entry(Char, String, &@extension.TypeExt, Array[@abi.FnInvocation], String?, deprecated? : Bool, merge? : Bool, short_attached_value? : @abi.AttachMode, is_alias? : Bool, link_target? : String?, link_target_scope? : Array[String], link_target_selections? : Array[@abi.LinkSelection], link_target_observation? : @abi.ObservationAddress?, link_additional_levels? : Int, extension? : &@extension.EntityExt) -> @extension.ShortEntry
 
 pub fn short_installer() -> &@kuu-node.InstallerExt
 

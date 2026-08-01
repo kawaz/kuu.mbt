@@ -1217,12 +1217,41 @@ fn wbtest_sources_of(src : String, args : Array[String]) -> String raise {
 }
 
 ///|
+fn wbtest_effect_address(effect : OutputEffect) -> String {
+  let out = StringBuilder::new()
+  out.write_string(effect.entity)
+  for segment in effect.path {
+    match segment {
+      @abi.ObservationName(name) => {
+        out.write_char('.')
+        out.write_string(name)
+      }
+      @abi.ObservationIndex(index) => {
+        out.write_char('[')
+        out.write_string(index.to_string())
+        out.write_char(']')
+      }
+    }
+  }
+  out.to_string()
+}
+
+///|
 /// OutputView の 3 面 (`result` / `sources` / `effects`) を 1 本の文字列へ整形する。
 fn wbtest_view_of(src : String, args : Array[String]) -> String raise {
   let ast = match parse_definition(@json.parse(src)) {
     Ok(value) => value
-    Err(_) => {
-      fail("parse_definition should accept the definition")
+    Err(Rejected(errors)) => {
+      let detail = if errors.length() > 0 {
+        errors[0].message
+      } else {
+        "no definition error detail"
+      }
+      fail("parse_definition should accept the definition: " + detail)
+      panic()
+    }
+    Err(Malformed(message)) => {
+      fail("parse_definition should accept the definition: " + message)
       panic()
     }
   }
@@ -1238,7 +1267,7 @@ fn wbtest_view_of(src : String, args : Array[String]) -> String raise {
   let view = output_legacy(ast, effects~)
   let eff_items : Array[String] = []
   for effect in view.effects {
-    eff_items.push(effect.entity)
+    eff_items.push(wbtest_effect_address(effect))
   }
   test_sort_items(eff_items)
   "result=" +
@@ -1537,6 +1566,68 @@ test "front_door.output: named link path does not select the target structural b
 }
 
 ///|
+/// DR-127 §1 resolves a cell-space index against value-bearing transparent children. The actual
+/// engine seat may use a synthetic scope id, but result/sources keep tuple position and effects expose
+/// the nearest named ancestor plus the resolved non-negative index.
+test "front_door.output: indexed link path descends into a nameless transparent child" {
+  let src =
+    #|{"options":[
+    #|  {"name":"pair","long":true,"seq":[
+    #|    {"type":"string"},
+    #|    {"type":"string"}
+    #|  ]},
+    #|  {"name":"legacy","type":"string","long":true,"short":"l","link":"pair[0]"}
+    #|]}
+  let expected = "result={pair=[x]} sources={pair=[link]} effects=pair[0]"
+  assert_eq(wbtest_view_of(src, ["--legacy", "x"]), expected)
+  assert_eq(wbtest_view_of(src, ["--legacy=x"]), expected)
+  assert_eq(wbtest_view_of(src, ["-l", "x"]), expected)
+}
+
+///|
+/// Position counting excludes transparent children that own no value seat. The first value child
+/// therefore has observed path [0] even when its engine scope follows a none child.
+test "front_door.output: indexed link path counts only value-bearing transparent children" {
+  let src =
+    #|{"options":[
+    #|  {"name":"pair","long":true,"seq":[
+    #|    {"type":"none"},
+    #|    {"type":"string"}
+    #|  ]},
+    #|  {"name":"legacy","type":"string","long":true,"link":"pair[0]"}
+    #|]}
+  assert_eq(
+    wbtest_view_of(src, ["--legacy", "x"]),
+    "result={pair=[x]} sources={pair=[link]} effects=pair[0]",
+  )
+}
+
+///|
+/// Cell-space indices are declaration-time positions, so negative and out-of-range positions cannot
+/// be deferred to runtime and both fail with absent-ref.
+test "front_door.parse_definition: invalid cell-space link indices are absent-ref" {
+  for link in ["pair[-1]", "pair[2]"] {
+    let src = "{\"options\":[{\"name\":\"pair\",\"long\":true,\"seq\":[{\"type\":\"string\"},{\"type\":\"string\"}]},{\"name\":\"legacy\",\"type\":\"string\",\"long\":true,\"link\":\"" +
+      link +
+      "\"}]}"
+    match parse_definition(@json.parse(src)) {
+      Err(Rejected(errors)) => {
+        let mut found = false
+        for error in errors {
+          if error.element == "legacy" && error.kind == @abi.AbsentRef {
+            found = true
+          }
+        }
+        assert_true(found)
+      }
+      Err(Malformed(message)) =>
+        fail("expected absent-ref, got malformed: " + message)
+      Ok(_) => fail("invalid cell-space index must fail definition validation")
+    }
+  }
+}
+
+///|
 /// DR-127 §1 classifies malformed fixed-path syntax as invalid-argument rather than absent-ref: the
 /// spelling itself is invalid before any target lookup can occur.
 test "front_door.parse_definition: malformed link path is invalid-argument" {
@@ -1776,7 +1867,7 @@ fn wbtest_view_keys_of(src : String, args : Array[String]) -> String raise {
   test_sort_items(src_items)
   let eff_items : Array[String] = []
   for effect in view.effects {
-    eff_items.push(effect.entity)
+    eff_items.push(wbtest_effect_address(effect))
   }
   test_sort_items(eff_items)
   "result=" +

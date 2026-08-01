@@ -229,6 +229,7 @@ pub struct Interpretation {
 
 pub struct OutputEffect {
   entity : String
+  path : Array[@abi.ObservationSegment]
   op : @abi.EffectOp
   operand : @abi.Value?
   source : @abi.Source

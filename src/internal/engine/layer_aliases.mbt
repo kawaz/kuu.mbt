@@ -15,6 +15,8 @@ pub using @abi {
   type EffectOp,
   type Binding,
   type LinkSelection,
+  type ObservationSegment,
+  type ObservationAddress,
   type Candidate,
   type TermHint,
   type Branch,

@@ -253,6 +253,7 @@ pub(all) enum Node {
     String,
     Array[String],
     Array[LinkSelection],
+    ObservationAddress?,
     Int,
     &EntityExt,
     Node
@@ -315,13 +316,14 @@ pub impl Eq for Node with fn equal(self, other) {
       as_ == bs && ap == bp && ak == bk && an == bn
     (CommandSatisfied(an, ac), CommandSatisfied(bn, bc)) => an == bn && ac == bc
     (
-      LinkTarget(af, at, as_, ax, al, ae, an),
-      LinkTarget(bf, bt, bs, bx, bl, be, bn),
+      LinkTarget(af, at, as_, ax, ao, al, ae, an),
+      LinkTarget(bf, bt, bs, bx, bo, bl, be, bn),
     ) =>
       af == bf &&
       at == bt &&
       as_ == bs &&
       ax == bx &&
+      ao == bo &&
       al == bl &&
       ae == be &&
       an == bn
@@ -387,15 +389,16 @@ pub impl Debug for Node with fn to_repr(self) {
         (None, Debug::to_repr(a)),
         (None, Debug::to_repr(b)),
       ])
-    LinkTarget(a, b, c, d, e, f, g) =>
+    LinkTarget(a, b, c, d, e, f, g, h) =>
       @debug.Repr::ctor("LinkTarget", [
         (None, Debug::to_repr(a)),
         (None, Debug::to_repr(b)),
         (None, Debug::to_repr(c)),
         (None, Debug::to_repr(d)),
         (None, Debug::to_repr(e)),
-        (None, Debug::to_repr(f.encode())),
-        (None, Debug::to_repr(g)),
+        (None, Debug::to_repr(f)),
+        (None, Debug::to_repr(g.encode())),
+        (None, Debug::to_repr(h)),
       ])
     Rooted(a, b) =>
       @debug.Repr::ctor("Rooted", [

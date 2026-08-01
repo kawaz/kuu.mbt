@@ -52,6 +52,7 @@ pub struct EqEntry {
   priv link_target : String?
   priv link_target_scope : Array[String]
   priv link_target_selections : Array[@abi.LinkSelection]
+  priv link_target_observation : @abi.ObservationAddress?
   priv link_additional_levels : Int
   priv extension : &EntityExt
 }
@@ -68,6 +69,7 @@ pub fn eq_entry(
   link_target? : String? = None,
   link_target_scope? : Array[String] = [],
   link_target_selections? : Array[@abi.LinkSelection] = [],
+  link_target_observation? : @abi.ObservationAddress? = None,
   link_additional_levels? : Int = 0,
   extension? : &EntityExt = entity_ext(),
 ) -> EqEntry {
@@ -82,6 +84,7 @@ pub fn eq_entry(
     link_target,
     link_target_scope,
     link_target_selections,
+    link_target_observation,
     link_additional_levels,
     extension,
   }
@@ -102,6 +105,7 @@ pub struct ShortEntry {
   priv link_target : String?
   priv link_target_scope : Array[String]
   priv link_target_selections : Array[@abi.LinkSelection]
+  priv link_target_observation : @abi.ObservationAddress?
   priv link_additional_levels : Int
   priv extension : &EntityExt
 }
@@ -120,6 +124,7 @@ pub fn short_entry(
   link_target? : String? = None,
   link_target_scope? : Array[String] = [],
   link_target_selections? : Array[@abi.LinkSelection] = [],
+  link_target_observation? : @abi.ObservationAddress? = None,
   link_additional_levels? : Int = 0,
   extension? : &EntityExt = entity_ext(),
 ) -> ShortEntry {
@@ -136,6 +141,7 @@ pub fn short_entry(
     link_target,
     link_target_scope,
     link_target_selections,
+    link_target_observation,
     link_additional_levels,
     extension,
   }
@@ -215,6 +221,23 @@ fn link_selections_json(selections : Array[@abi.LinkSelection]) -> Json {
 }
 
 ///|
+fn observation_json(observation : @abi.ObservationAddress?) -> Json {
+  match observation {
+    None => ([] : Array[Json]).to_json()
+    Some(address) => {
+      let path : Array[Json] = []
+      for segment in address.path {
+        match segment {
+          @abi.ObservationName(name) => path.push(name.to_json())
+          @abi.ObservationIndex(index) => path.push(index.to_json())
+        }
+      }
+      [address.entity.to_json(), path.to_json()].to_json()
+    }
+  }
+}
+
+///|
 fn eq_entry_json(entry : EqEntry) -> Json {
   let fields : Array[Json] = [
     entry.key.to_json(),
@@ -230,6 +253,7 @@ fn eq_entry_json(entry : EqEntry) -> Json {
       fields.push(target.to_json())
       fields.push(entry.link_target_scope.to_json())
       fields.push(link_selections_json(entry.link_target_selections))
+      fields.push(observation_json(entry.link_target_observation))
       fields.push(entry.link_additional_levels.to_json())
       fields.push(entry.extension.encode())
     }
@@ -256,6 +280,7 @@ fn short_entry_json(entry : ShortEntry) -> Json {
       fields.push(target.to_json())
       fields.push(entry.link_target_scope.to_json())
       fields.push(link_selections_json(entry.link_target_selections))
+      fields.push(observation_json(entry.link_target_observation))
       fields.push(entry.link_additional_levels.to_json())
       fields.push(entry.extension.encode())
     }
@@ -347,13 +372,15 @@ fn route_entry_bindings(
   target : String?,
   target_scope : Array[String],
   target_selections : Array[@abi.LinkSelection],
+  target_observation : @abi.ObservationAddress?,
   levels : Int,
   bindings : Array[@abi.Binding],
 ) -> Array[@abi.Binding] {
   match target {
     Some(target_name) =>
       @abi.bindings_through_link(
-        bindings, name, target_name, target_scope, target_selections, levels,
+        bindings, name, target_name, target_scope, target_selections, target_observation,
+        levels,
       )
     None => bindings
   }
@@ -427,6 +454,7 @@ fn run_eq_split(
                   e.link_target,
                   e.link_target_scope,
                   e.link_target_selections,
+                  e.link_target_observation,
                   e.link_additional_levels,
                   bs,
                 ) +
@@ -465,6 +493,7 @@ fn run_eq_split(
                 e.link_target,
                 e.link_target_scope,
                 e.link_target_selections,
+                e.link_target_observation,
                 e.link_additional_levels,
                 [@abi.Binding::new(e.name, value, @abi.Cli, at_pos=Some(pos))],
               ) +
@@ -569,6 +598,7 @@ fn short_val(
             e.link_target,
             e.link_target_scope,
             e.link_target_selections,
+            e.link_target_observation,
             e.link_additional_levels,
             bindings,
           ),
@@ -598,6 +628,7 @@ fn short_val(
             e.link_target,
             e.link_target_scope,
             e.link_target_selections,
+            e.link_target_observation,
             e.link_additional_levels,
             [@abi.Binding::new(e.name, value, @abi.Cli, at_pos=Some(pos))],
           ),
@@ -673,6 +704,7 @@ fn walk_short(
             e.link_target,
             e.link_target_scope,
             e.link_target_selections,
+            e.link_target_observation,
             e.link_additional_levels,
             [presence],
           )[0]

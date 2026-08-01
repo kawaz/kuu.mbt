@@ -69,6 +69,7 @@ pub(all) enum DefLoadError {
 /// `operand` は値を伴う `set` / `remove` のみ `Some`、それ以外の op は `None`。
 pub struct OutputEffect {
   entity : String
+  path : Array[@abi.ObservationSegment]
   op : @abi.EffectOp
   operand : @abi.Value?
   source : @abi.Source
@@ -587,6 +588,10 @@ fn projected_effect(
   current : Map[String, @abi.Value],
 ) -> OutputEffect {
   let key = effect_cell_key(binding)
+  let (entity, path) = match binding.observation {
+    Some(address) => (address.entity, address.path)
+    None => (binding.key, [])
+  }
   match binding.op {
     @abi.Invoke(invocation) => {
       let old = match current.get(key) {
@@ -617,7 +622,8 @@ fn projected_effect(
             Ok(@extension.FnOutput::Value(value)) => {
               current.set(key, value)
               return {
-                entity: binding.key,
+                entity,
+                path: path.copy(),
                 op: @abi.Set,
                 operand: Some(value),
                 source: binding.source,
@@ -630,7 +636,8 @@ fn projected_effect(
                 @extension.CellSentinel::Empty => @abi.EffectOp::Empty
               }
               return {
-                entity: binding.key,
+                entity,
+                path: path.copy(),
                 op,
                 operand: None,
                 source: binding.source,
@@ -642,7 +649,8 @@ fn projected_effect(
         None => ()
       }
       {
-        entity: binding.key,
+        entity,
+        path: path.copy(),
         op: binding.op,
         operand: None,
         source: binding.source,
@@ -651,7 +659,8 @@ fn projected_effect(
     @abi.Set | @abi.Remove => {
       current.set(key, binding.value)
       {
-        entity: binding.key,
+        entity,
+        path: path.copy(),
         op: binding.op,
         operand: Some(binding.value),
         source: binding.source,
@@ -659,7 +668,8 @@ fn projected_effect(
     }
     _ =>
       {
-        entity: binding.key,
+        entity,
+        path: path.copy(),
         op: binding.op,
         operand: None,
         source: binding.source,
@@ -678,7 +688,7 @@ fn project_effects(
   let effects : Array[OutputEffect] = []
   let current : Map[String, @abi.Value] = Map([])
   for binding in binds {
-    if is_sentinel(binding.key) ||
+    if (is_sentinel(binding.key) && binding.observation is None) ||
       output_internal_cell(
         binding.scope,
         binding.key,

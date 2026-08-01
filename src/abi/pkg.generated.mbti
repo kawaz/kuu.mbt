@@ -8,7 +8,7 @@ import {
 // Values
 pub fn attach_mode_of(String) -> AttachMode?
 
-pub fn bindings_through_link(Array[Binding], String, String, Array[String], Array[LinkSelection], Int) -> Array[Binding]
+pub fn bindings_through_link(Array[Binding], String, String, Array[String], Array[LinkSelection], ObservationAddress?, Int) -> Array[Binding]
 
 pub fn config_from_json(Json) -> ConfigVal
 
@@ -48,6 +48,7 @@ pub(all) struct Binding {
   source : Source
   scope : Array[String]
   link_selections : Array[LinkSelection]
+  observation : ObservationAddress?
   levels_to_declaring_scope : Int
   at_pos : Int?
 } derive(Eq, @debug.Debug)
@@ -256,6 +257,16 @@ pub(all) enum LongDeclaration {
   Bool(Bool)
   List(Array[String])
   Forms(Array[FnInvocationForm])
+} derive(Eq, @debug.Debug)
+
+pub(all) struct ObservationAddress {
+  entity : String
+  path : Array[ObservationSegment]
+} derive(Eq, @debug.Debug)
+
+pub(all) enum ObservationSegment {
+  ObservationName(String)
+  ObservationIndex(Int)
 } derive(Eq, @debug.Debug)
 
 pub(all) enum OwnedDeclaration {

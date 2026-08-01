@@ -281,6 +281,18 @@ pub(all) enum EffectOp {
 } derive(Eq, Debug)
 
 ///|
+pub(all) enum ObservationSegment {
+  ObservationName(String)
+  ObservationIndex(Int)
+} derive(Eq, Debug)
+
+///|
+pub(all) struct ObservationAddress {
+  entity : String
+  path : Array[ObservationSegment]
+} derive(Eq, Debug)
+
+///|
 /// A structural-or branch whose selection controls whether a linked child value is projected.
 /// `scope` is the declaration-name path of the structural wrapper and `marker` is emitted only by
 /// the branch's own consuming grammar.
@@ -307,6 +319,7 @@ pub(all) struct Binding {
   source : Source
   scope : Array[String]
   link_selections : Array[LinkSelection]
+  observation : ObservationAddress?
   levels_to_declaring_scope : Int // a global-copy binding (DR-042/007): the number of result-nesting
   //           levels it still ESCAPES before settling at its declaring scope. 0 = a normal binding
   //           (every CommandSatisfied/Scoped level prepends its label). N>0 = a global copied N scopes
@@ -345,6 +358,7 @@ pub fn Binding::new(
     source,
     scope: [],
     link_selections: [],
+    observation: None,
     levels_to_declaring_scope: 0,
     at_pos,
   }
@@ -361,11 +375,33 @@ pub fn bindings_through_link(
   target : String,
   target_scope : Array[String],
   target_selections : Array[LinkSelection],
+  target_observation : ObservationAddress?,
   levels_to_target : Int,
 ) -> Array[Binding] {
   let routed : Array[Binding] = []
+  let mut shape_seeded = false
   for binding in bindings {
     if binding.key == from {
+      if !shape_seeded {
+        let prefix : Array[String] = []
+        for segment in target_scope {
+          if segment.length() > 0 && segment[0:1].to_owned() == "#" {
+            routed.push({
+              key: "[]",
+              op: Set,
+              value: Bool(false),
+              source: Link,
+              scope: prefix.copy(),
+              link_selections: target_selections.copy(),
+              observation: None,
+              levels_to_declaring_scope: levels_to_target,
+              at_pos: None,
+            })
+          }
+          prefix.push(segment)
+        }
+        shape_seeded = true
+      }
       let scope = target_scope.copy()
       for segment in binding.scope {
         scope.push(segment)
@@ -376,6 +412,7 @@ pub fn bindings_through_link(
         source: Link,
         scope,
         link_selections: target_selections.copy(),
+        observation: target_observation,
         levels_to_declaring_scope: binding.levels_to_declaring_scope +
         levels_to_target,
       })
@@ -417,6 +454,7 @@ pub fn Binding::deprecation_mark(element : String) -> Binding {
     source: Cli,
     scope: [],
     link_selections: [],
+    observation: None,
     levels_to_declaring_scope: 0,
     at_pos: None,
   }

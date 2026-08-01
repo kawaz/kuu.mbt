@@ -61,6 +61,7 @@ pub fn sep_binds(
           source: @abi.Cli,
           scope: [],
           link_selections: [],
+          observation: None,
           levels_to_declaring_scope: 0,
           at_pos: Some(pos),
         })
@@ -75,6 +76,7 @@ pub fn sep_binds(
               source: @abi.Cli,
               scope: [],
               link_selections: [],
+              observation: None,
               levels_to_declaring_scope: 0,
               at_pos: Some(pos),
             })

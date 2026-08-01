@@ -373,6 +373,26 @@ fn render_success(ast : @kuu.AtomicAST, args : Array[String]) -> String {
 }
 
 ///|
+fn render_effect_address(effect : @kuu.OutputEffect) -> String {
+  let out = StringBuilder::new()
+  out.write_string(effect.entity)
+  for segment in effect.path {
+    match segment {
+      @abi.ObservationName(name) => {
+        out.write_char('.')
+        out.write_string(name)
+      }
+      @abi.ObservationIndex(index) => {
+        out.write_char('[')
+        out.write_string(index.to_string())
+        out.write_char(']')
+      }
+    }
+  }
+  out.to_string()
+}
+
+///|
 /// `OutputView.effects` の構造化射影を fixture 比較文字列へ変換する。sentinel・config_file・
 /// none・dd の除外は玄関が完了済みであり、runner は内部 Scope/Node を走査しない。
 fn render_effects(effects : Array[@kuu.OutputEffect]) -> String {
@@ -381,11 +401,11 @@ fn render_effects(effects : Array[@kuu.OutputEffect]) -> String {
     match effect.operand {
       Some(operand) =>
         items.push(
-          "\{effect.entity}:\{eff_op(effect.op)}(\{render_val(operand)})@\{render_src(effect.source)}",
+          "\{render_effect_address(effect)}:\{eff_op(effect.op)}(\{render_val(operand)})@\{render_src(effect.source)}",
         )
       None =>
         items.push(
-          "\{effect.entity}:\{eff_op(effect.op)}@\{render_src(effect.source)}",
+          "\{render_effect_address(effect)}:\{eff_op(effect.op)}@\{render_src(effect.source)}",
         )
     }
   }
@@ -548,6 +568,44 @@ fn json_to_rval(j : Json) -> @abi.ResultValue raise DecodeSkip {
 }
 
 ///|
+fn exp_effect_address(
+  entity : String,
+  object : Map[String, Json],
+) -> String raise DecodeSkip {
+  let out = StringBuilder::new()
+  out.write_string(entity)
+  match object.get("path") {
+    Some(value) =>
+      match value.j_arr() {
+        Some(path) =>
+          for segment in path {
+            match segment.j_str() {
+              Some(name) => {
+                out.write_char('.')
+                out.write_string(name)
+              }
+              None =>
+                match segment.j_num() {
+                  Some(index) => {
+                    out.write_char('[')
+                    out.write_string(index.to_int().to_string())
+                    out.write_char(']')
+                  }
+                  None =>
+                    raise DecodeSkip(
+                      "effect path segment is not string or integer",
+                    )
+                }
+            }
+          }
+        None => raise DecodeSkip("effect path is not an array")
+      }
+    None => ()
+  }
+  out.to_string()
+}
+
+///|
 fn exp_effects_str(eff : Json) -> String raise DecodeSkip {
   let a = match eff.j_arr() {
     Some(x) => x
@@ -563,6 +621,7 @@ fn exp_effects_str(eff : Json) -> String raise DecodeSkip {
       Some(s) => s
       None => raise DecodeSkip("effect missing 'entity'")
     }
+    let address = exp_effect_address(entity, eo)
     let op = match jf_str(eo, "op") {
       Some(s) => s
       None => raise DecodeSkip("effect missing 'op'")
@@ -582,9 +641,9 @@ fn exp_effects_str(eff : Json) -> String raise DecodeSkip {
     match eo.get("operand") {
       Some(j) =>
         items.push(
-          "\{entity}:\{op_str}(\{render_val(json_to_value(j))})@\{source}",
+          "\{address}:\{op_str}(\{render_val(json_to_value(j))})@\{source}",
         )
-      None => items.push("\{entity}:\{op_str}@\{source}")
+      None => items.push("\{address}:\{op_str}@\{source}")
     }
   }
   join_comma(items)
