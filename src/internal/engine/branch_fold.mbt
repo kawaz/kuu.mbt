@@ -243,11 +243,19 @@ fn scope_matches(binding : Binding, address : Array[String]) -> Bool {
 /// 判定対象の効果は Set の operand と Value fn の戻り値の両方 (`b.op` に依らず、座へ座る
 /// 非 null 値すべて — DR-127 §3.2「保証は値を運んだ経路で変わらない」)。fold が実行しない
 /// もの (畳んでいないセルの fn 等) はここでは判明しないので落とさず、resolve 相が持ち主。
+///
+/// `ledger` (DR-114 §6.1 の一本化): 枝内で実行した発火の結果を FiringRecord として記録する。
+/// 枝が落ちれば ledger は枝ごと捨てられ、勝ち枝の ledger は裁定後にそのまま配達される —
+/// 値残余セルの fn を勝ち枝で**再実行しない**ための引き継ぎ席。`ladder` は明示 `default`
+/// 効果の落ち先 (DR-081 §2 の書き換え済み default)。未供給 (None) は従来どおり宣言 default
+/// 止まり (W2-4 findings §3.2 の既知残差) で、供給時は resolve 相と同じ full ladder に揃う。
 fn branch_fold_reject(
   eff : Array[Binding],
   consumed_pos : Int,
   decls : Map[String, Array[SeatDecl]],
   extensions : Registry,
+  ladder : ((Entity, Array[String], Array[Binding]) -> Value?)?,
+  ledger : @fold.FiringLedger?,
 ) -> ParseError? {
   // 値残余を持つセルだけ畳む (このセル集合以外の効果は値状態に関与させる必要がない —
   // 値残余の解決素材はそのセル自身の容器の中身だけである)。出現順を保つ。
@@ -294,7 +302,20 @@ fn branch_fold_reject(
           continue
         }
         let old = seats.old(key, declared_default)
-        let (transition, _) = @fold.fold_seat_effect(b, old, key, extensions)
+        let (transition, old_consulted) = @fold.fold_seat_effect(
+          b, old, key, extensions,
+        )
+        // record 対象は `records_firing` (= Invoke) のみ — 消費者の出現順カウントと揃える。
+        match ledger {
+          Some(records) if b.op is Invoke(_) =>
+            records.push(b.scope, b.key, {
+              transition,
+              old_used: old,
+              old_consulted,
+              resolved_residual: None,
+            })
+          _ => ()
+        }
         // fold が実行して判明した fn の失敗は Error 位相の除外素材 (resolve 相と同じ語彙)。
         match transition {
           @fold.FnMissing(name) =>
@@ -319,9 +340,18 @@ fn branch_fold_reject(
             )
           _ => ()
         }
-        // 明示 `default` 効果の落ち先は resolve 相ではラダー (DR-081 §2) だが、parse 相は
-        // env / config を引けないので宣言 default 止まり (ヘッダの既知の残差)。
-        match @fold.seat_after(transition, declared_default) {
+        // 明示 `default` 効果の落ち先: `ladder` 供給時は resolve 相と同じ full ladder
+        // (DR-081 §2 の書き換え済み default)、未供給は従来どおり宣言 default 止まり
+        // (ヘッダの既知の残差)。
+        let default_fall : Value? = if transition is @fold.ToDefault {
+          match ladder {
+            Some(query) => query(decl.entity, decl.scope_path, eff)
+            None => declared_default
+          }
+        } else {
+          declared_default
+        }
+        match @fold.seat_after(transition, default_fall) {
           Some(state) => seats.put(key, state)
           None => ()
         }
@@ -341,6 +371,17 @@ fn branch_fold_reject(
       let (transition, old_consulted) = @fold.fold_seat_effect(
         b, old, key, extensions,
       )
+      match ledger {
+        Some(records) =>
+          records.push(b.scope, b.key, {
+            transition,
+            old_used: old,
+            old_consulted,
+            // 発火時点 (書き込み前) の座の現在長で解決した観測アドレス片 (DR-127 §6)。
+            resolved_residual: seats.resolved_residual(key, b.value_residual),
+          })
+        None => ()
+      }
       match transition {
         @fold.NoChange => ()
         // fold が実行して判明した fn の失敗は Error 位相の除外素材 (resolve 相と同じ語彙)。
@@ -490,4 +531,120 @@ fn binding_has_value_residual(bs : Array[Binding]) -> Bool {
     }
   }
   false
+}
+
+///|
+fn binding_has_plain_invoke(bs : Array[Binding]) -> Bool {
+  for b in bs {
+    if b.op is Invoke(_) && b.value_residual.length() == 0 {
+      return true
+    }
+  }
+  false
+}
+
+///|
+/// 裁定後の 1 回の fold (DR-114 §6.1 の一本化): 値残余 binding を持たないセルの Invoke 発火を
+/// 勝ち経路上で 1 回実行し、FiringRecord として記録する。値残余セル分は枝ローカル fold
+/// (`branch_fold_reject`) の枝内実行結果が ledger ごと引き継がれるので対象外。枝選別に参加しない
+/// 発火を全枝で実行するのは DR-114 が禁じる方向の悪化なので、per-branch には広げず勝ち経路
+/// 確定後に置く (W2-9 findings「実行一本化の設計」2)。
+///
+/// 裁定は済んでいるので失敗 (fn 未登録 / 実行失敗) でも経路は落とさず record に残す —
+/// resolve 相の消費者が従来と同じ Err を合成し、effects 射影は従来と同じ生 `invoke` を観測する。
+/// 保守的スキップ (宣言を特定できない / 候補が食い違う / accum セル) は record を作らない =
+/// resolve 相の残余分岐が従来どおり実行する (最終防衛線)。
+fn branch_fold_plain_records(
+  eff : Array[Binding],
+  decls : Map[String, Array[SeatDecl]],
+  extensions : Registry,
+  ladder : ((Entity, Array[String], Array[Binding]) -> Value?)?,
+  ledger : @fold.FiringLedger,
+) -> Unit {
+  // 値残余 binding を 1 件でも持つセルは枝ローカル fold の領分 (record は引き継ぎ済み)。
+  let residual_cells : Array[(Array[String], String)] = []
+  for b in eff {
+    if b.value_residual.length() > 0 {
+      let mut seen = false
+      for cell in residual_cells {
+        if cell.1 == b.key && scope_matches(b, cell.0) {
+          seen = true
+          break
+        }
+      }
+      if !seen {
+        residual_cells.push((b.scope, b.key))
+      }
+    }
+  }
+  let plain_cells : Array[(Array[String], String)] = []
+  for b in eff {
+    if b.op is Invoke(_) && b.value_residual.length() == 0 {
+      let mut excluded = false
+      for cell in residual_cells {
+        if cell.1 == b.key && scope_matches(b, cell.0) {
+          excluded = true
+          break
+        }
+      }
+      if excluded {
+        continue
+      }
+      let mut seen = false
+      for cell in plain_cells {
+        if cell.1 == b.key && scope_matches(b, cell.0) {
+          seen = true
+          break
+        }
+      }
+      if !seen {
+        plain_cells.push((b.scope, b.key))
+      }
+    }
+  }
+  for cell in plain_cells {
+    let (scope, key) = cell
+    let decl = match seat_decl_lookup(decls, seat_decl_key(scope, key)) {
+      Some(decl) => decl
+      None => continue
+    }
+    if decl.entity.accum is Some(_) {
+      continue
+    }
+    let declared_default = branch_fold_declared_default(decl.entity)
+    let seats = @fold.CellSeats::new()
+    for b in eff {
+      if b.key != key || !scope_matches(b, scope) {
+        continue
+      }
+      if b.op is (Remove | Splice) {
+        continue
+      }
+      let old = seats.old(key, declared_default)
+      let (transition, old_consulted) = @fold.fold_seat_effect(
+        b, old, key, extensions,
+      )
+      if b.op is Invoke(_) {
+        ledger.push(b.scope, b.key, {
+          transition,
+          old_used: old,
+          old_consulted,
+          resolved_residual: None,
+        })
+      }
+      // 明示 `default` 効果の落ち先は `branch_fold_reject` と同じ ladder 規則。
+      let default_fall : Value? = if transition is @fold.ToDefault {
+        match ladder {
+          Some(query) => query(decl.entity, decl.scope_path, eff)
+          None => declared_default
+        }
+      } else {
+        declared_default
+      }
+      match @fold.seat_after(transition, default_fall) {
+        Some(state) => seats.put(key, state)
+        None => ()
+      }
+    }
+  }
 }

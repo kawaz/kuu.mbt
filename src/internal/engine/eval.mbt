@@ -4923,6 +4923,14 @@ pub fn parse_tree(
   defs? : Map[String, Node] = Map([]),
   faildef? : FailDef = WithHeld,
   extensions? : Registry = Registry::new(),
+  // DR-114 §6.1 の一本化 (W2-9 findings「実行一本化の設計」): `ladder` は明示 `default` 効果の
+  // 落ち先 (DR-081 §2 の書き換え済み default) を parse 相 fold へ供給する closure (呼び手 =
+  // front_door が値源 provider で実装する)。`firings` は勝ち経路 (dedup 後の完全経路) ごとの
+  // FiringRecord 台帳の配達口 — 値残余セル分は枝ローカル fold の枝内実行結果を引き継ぎ、
+  // 値残余の無い Invoke セルは裁定後に 1 回だけ実行して記録する。未供給 (None) は record を
+  // 作らない従来経路 (fold は枝選別のためだけに走る)。
+  ladder? : (Entity, Array[String], Array[Binding]) -> Value?,
+  firings? : @fold.FiringDeliveries,
 ) -> Outcome {
   let ctx : Ctx = { toks, defs, extensions_: extensions, mode: ModeParse }
   // codex 指摘 (2026-07-12): dedup 判定 (下の `eff`/`dedup_key`) から dd/none の committed
@@ -4955,8 +4963,11 @@ pub fn parse_tree(
   // (DR-037 の帰属原則)。値残余を持たない枝 (= 既存の全経路) は素通しで、fold は走らない。
   // partial Accept (p < toks.length()) は裁定に参加しない (完全経路の系の外) ため畳まない —
   // 落ちる理由は token 残余として既に観測されている。
+  let mut seat_decls : Map[String, Array[SeatDecl]]? = None
+  // 完全枝ごとの枝ローカル fold の実行記録 (folded と並走)。勝ち枝の ledger は裁定後に
+  // firings へ配達され、値残余セルの fn を再実行しない (DR-114 §6.1)。
+  let branch_ledgers : Array[@fold.FiringLedger?] = []
   let branches = {
-    let mut seat_decls : Map[String, Array[SeatDecl]]? = None
     let folded : Array[Branch] = []
     for b in branches {
       match b {
@@ -4970,17 +4981,32 @@ pub fn parse_tree(
             }
           }
           let eff = strip_levels_to_declaring_scope(bs)
-          match branch_fold_reject(eff, p, decls, extensions) {
-            Some(pe) => folded.push(Held(pe, bs))
-            None => folded.push(b)
+          let ledger : @fold.FiringLedger? = match firings {
+            Some(_) => Some(@fold.FiringLedger::new())
+            None => None
+          }
+          match branch_fold_reject(eff, p, decls, extensions, ladder, ledger) {
+            Some(pe) => {
+              folded.push(Held(pe, bs))
+              branch_ledgers.push(None)
+            }
+            None => {
+              folded.push(b)
+              branch_ledgers.push(ledger)
+            }
           }
         }
-        _ => folded.push(b)
+        _ => {
+          folded.push(b)
+          branch_ledgers.push(None)
+        }
       }
     }
     folded
   }
   let full : Array[Array[Binding]] = []
+  // full と並走する勝ち候補ごとの ledger (dedup で残った枝のもの。値残余の無い枝は None)。
+  let full_ledgers : Array[@fold.FiringLedger?] = []
   let errors : Array[ParseError] = []
   let structural_repeat_residuals : Array[Int] = []
   // the deepest args position any branch reached (DeepestOnly candidate set).
@@ -4998,7 +5024,8 @@ pub fn parse_tree(
     }
   }
   let actions : Array[(String, Int)] = []
-  for b in branches {
+  for branch_index in 0..<branches.length() {
+    let b = branches[branch_index]
     match b {
       Accept(p, bs) => {
         // constraint satisfaction is already decided at KTop (a violating
@@ -5024,6 +5051,7 @@ pub fn parse_tree(
           }
           if !dup {
             full.push(eff)
+            full_ledgers.push(branch_ledgers[branch_index])
           }
         }
         let counts = match faildef {
@@ -5156,6 +5184,32 @@ pub fn parse_tree(
     errors2.push(e)
   }
   let errors = errors2
+  // DR-114 §6.1: 勝ち候補ごとの FiringRecord 台帳を配達する。値残余セル分は枝ローカル fold の
+  // 枝内実行結果 (branch_ledgers) を引き継ぎ、値残余の無い Invoke セルは裁定後のこの 1 回の
+  // fold (`branch_fold_plain_records`) で実行・記録する。
+  match firings {
+    Some(deliveries) =>
+      for path_index in 0..<full.length() {
+        let eff = full[path_index]
+        let ledger = match full_ledgers[path_index] {
+          Some(ledger) => ledger
+          None => @fold.FiringLedger::new()
+        }
+        if binding_has_plain_invoke(eff) {
+          let decls = match seat_decls {
+            Some(decls) => decls
+            None => {
+              let decls = collect_seat_decls(root, defs)
+              seat_decls = Some(decls)
+              decls
+            }
+          }
+          branch_fold_plain_records(eff, decls, extensions, ladder, ledger)
+        }
+        deliveries.deliver(eff, ledger)
+      }
+    None => ()
+  }
   match full.length() {
     0 =>
       Failure({
