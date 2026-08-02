@@ -39,4 +39,4 @@ W2-2 実装レビュー時にこれらの問題を発見したが、いずれも
 
 ## 進捗
 
-F6 は `builtin/` 正規化を `extension.Registry::canonical_type_reference` に集約し、`resolve_type_reference` と engine が共用する形にした。F8 は `declaration_violations` の全件を `'; '` 区切りで `DefError` の message に載せ、wbtest の期待値を更新した。`just test` は 713/713 pass、conformance は decoded=400 ran_cases=904 skipped=0 mismatches=0。`moon check --deny-warn` は green。
+F6 は `builtin/` 文字列正規化を `Registry::resolve_type_reference` のみに残し、engine はその解決結果 resident の `name()` を canonical identity として使うため、二重実装が無い形になっている。F8 は `declaration_violations` の全件を `'; '` 区切りで `DefError` の message に載せ、wbtest の期待値を更新した。`just test` は 713/713 pass、conformance は decoded=400 ran_cases=904 skipped=0 mismatches=0。`moon check --deny-warn` は green。
