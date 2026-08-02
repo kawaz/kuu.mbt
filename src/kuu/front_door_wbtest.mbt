@@ -1994,13 +1994,10 @@ test "front_door.output: named or の結果スコープ path は command 無し�
 }
 
 ///|
-/// U5 (DR-045「default 値へ戻す... committed=false」): `unset` variant の発火は CLI 由来だが
-/// 値としては未確定 (ラダーの再着席結果は "as if untouched") なので、`sources` は発火トークン
-/// 自身の `cli` ではなく `default` を報告する。ラダーを走らせない parse-only 経路
-/// (`output_of_interpretation` / `output_legacy` に parse 相 binds を渡す形) でしか観測できない
-/// — resolve を通せばラダーが default 席を解いて binding を差し替えるため。
-/// 射影の統一 (`result_sources` 1 本化) でこの読み替えを落とさないことの pin。
-test "front_door.output: unset 発火の値源は default (parse-only 経路、DR-045)" {
+/// DR-131 §2b / §6: `unset` は通常の Value fn として null を返し、公開 effect は `set(null)` になる。
+/// parse-only 射影でも binding は CLI 発火そのものなので、`sources` は null 値を供給した `cli` を
+/// 報告する。値源ラダーを走らせる resolve 相とは別に、parse 相の観測だけでこの由来を固定する。
+test "front_door.output: unset の set(null) は parse-only 射影でも cli 由来 (DR-131)" {
   let src =
     #|{"options":[{"name":"color","type":"string",
     #|  "long":[":set","no:unset","reset:default"],"default":"auto"}]}
