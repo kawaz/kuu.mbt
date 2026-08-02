@@ -589,10 +589,60 @@ test "scalar_value_json spells composites as plain JSON" {
 }
 
 ///|
+test "scalar_value_json emits object fields in declaration order" {
+  // Compared as `Json`, two objects with the same entries are equal whatever their order, so the
+  // assertions above do not actually pin ordering. The serialized text does.
+  assert_eq(
+    scalar_value_json(
+      @abi.Object([
+        ("b", @abi.Number(2.0)),
+        ("a", @abi.Number(1.0)),
+        ("c", @abi.Number(3.0)),
+      ]),
+    ).stringify(),
+    "{\"b\":2,\"a\":1,\"c\":3}",
+  )
+  // Not sorted, and not reversed — the declared order is carried through verbatim.
+  assert_eq(
+    scalar_value_json(@abi.Object([("z", @abi.Null), ("y", @abi.Null)])).stringify(),
+    "{\"z\":null,\"y\":null}",
+  )
+  assert_eq(
+    scalar_value_json(@abi.Array([@abi.Number(3.0), @abi.Number(1.0)])).stringify(),
+    "[3,1]",
+  )
+}
+
+///|
+test "scalar_value_json collapses duplicate object keys, unlike value_to_configval" {
+  // `Value::Object` is a field LIST and can carry a repeated key; a JSON object cannot. The plain
+  // JSON spelling therefore keeps the last write, which is the right answer for a user-facing
+  // rendering but makes it LOSSY. `value_to_configval` keeps both entries.
+  let duplicated : @abi.Value = @abi.Object([
+    ("k", @abi.Number(1.0)),
+    ("k", @abi.Number(2.0)),
+  ])
+  assert_eq(scalar_value_json(duplicated).stringify(), "{\"k\":2}")
+  // `value_to_configval` keeps both entries: it does not agree with the collapsed single-field
+  // object, which it would if it were dropping the first write like the JSON spelling does.
+  assert_not_eq(
+    @abi.value_to_configval(duplicated),
+    @abi.value_to_configval(@abi.Object([("k", @abi.Number(2.0))])),
+  )
+  // Hence the encode/decode round trip above holds for duplicate-free objects only. This is the
+  // boundary of that claim, pinned so a future producer of duplicate keys trips here first.
+  assert_not_eq(
+    @abi.config_from_json(scalar_value_json(duplicated)),
+    @abi.value_to_configval(duplicated),
+  )
+}
+
+///|
 test "composite values survive a real encode-decode round trip" {
   // Two independent paths meet: `scalar_value_json` encodes a Value to JSON and `config_from_json`
   // decodes JSON back to the JSON-isomorphic type, while `value_to_configval` converts directly.
   // Agreeing on every tree is what says the composite shapes line up 1:1 across the boundary.
+  // Objects here are duplicate-key-free; the test above pins why that is a precondition.
   let cases : Array[@abi.Value] = [
     @abi.Null,
     @abi.String("kuu"),
