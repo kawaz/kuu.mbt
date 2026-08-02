@@ -75,6 +75,11 @@ pub fn completion_script_request(
             best_pos = pos
           }
         }
+        // The cell only receives values from `completion_script`-preset entries, whose resident
+        // parses to a shell-name string. A composite arriving here means that invariant broke, and
+        // silently falling through would turn it into "completion was not requested".
+        @abi.Array(_) | @abi.Object(_) =>
+          abort("the completion_script cell cannot hold a composite value")
         _ => ()
       }
     }
