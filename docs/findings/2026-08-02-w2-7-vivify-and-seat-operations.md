@@ -68,6 +68,9 @@
   先行して要る (issue に追記済み)。
 - **effects 射影 (parse 相) は残余の解決失敗で座を触らず effect をそのまま観測に落とす** —
   parse 相は停止できないため。resolve 相 (と W2-8 の枝 fold) が失敗の持ち主。
+- **effects の operand は補形前の生出力のまま** (統括裁定 2026-08-02、DR-130 §4.1 の「検査は
+  生出力に対して」と同根) — null 補形が効くのは result / sources の射影面だけ。
+  `value_seat_wbtest.mbt` の「effects の operand は null 補形しない (生出力のまま)」が pin。
 - **値空間 segment の負 index の effects 表記** (解決済み非負 index、DR-127 §6) は未着手 —
   binding.observation は lowering 時の字面で、実行時解決値への書き換えは W2-9 (観測面の
   仕上げ) の領分。FieldType 終端の残余は record フィールド名 + 静的 array index しか
@@ -75,11 +78,17 @@
 
 ## W2-8 / W2-9 への申し送り
 
-1. **W2-8 (枝ローカル fold)**: resolve 相の残余 Err (`resolve.mbt` の残余分岐) が発行する
-   Reject 群を、裁定前の枝内判定へ引き上げる。判定素材 (container 有無 / old_consulted /
-   Sentinel 種別) は共有 fold 側に既にあるので、`eval.mbt` に置く fold からも
-   `CellSeats::set_at_declared` / `value_at_declared` を呼べる形にするのが最短。W2-4 §3.3 の
-   「engine から共有 fold を呼べるようにするか」の判断と同着。
+1. **W2-8 (枝ローカル fold)**: W2-7 の Reject は全部 **resolve 相の Err** であり、複数枝で
+   「値残余 Reject の枝が落ちて兄弟枝が勝つ」(DR-127 §4.2) はまだ成立しない — 単枝定義では
+   両者の観測が一致するため wbtest はそれで pin している。RED 化の起点は
+   `src/kuu/value_seat_wbtest.mbt` の「DR-127 §3: 未 vivify の空座への ctx.old 依存 fn は
+   Reject」「DR-127 §4.1: Sentinel (default) は値残余座で Reject」— これらの定義を `or` の
+   2 枝に組み替えて「もう片方の枝が勝つ (ambiguous にも Failure にもならない)」を期待する
+   テストを足せば、現実装で RED になる (現実装は resolve 相まで到達してから Err するため)。
+   実装は resolve 相の残余分岐が発行する Reject 群を裁定前の枝内判定へ引き上げる。判定素材
+   (container 有無 / old_consulted / Sentinel 種別) は共有 fold 側に既にあるので、`eval.mbt`
+   に置く fold からも `CellSeats::set_at_declared` / `value_at_declared` を呼べる形にするのが
+   最短。W2-4 §3.3 の「engine から共有 fold を呼べるようにするか」の判断と同着。
 2. **W2-8 が ElementShape / RuntimeResolved 終端の routing を解禁する** — `residual_route`
    (`lowering.mbt`) の gate を広げ、operand パース実体が実行時に決まる経路 (map/value) の
    扱いを §2.2 表の実行時列どおりに実装する。

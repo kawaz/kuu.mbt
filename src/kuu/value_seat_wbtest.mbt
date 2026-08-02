@@ -324,3 +324,29 @@ test "DR-127 §3.2: variant literal の out 不適合も発火時に乖離 Error
   let failure = seat_failure(src, ["--five"])
   assert_true(failure.contains("output_shape_mismatch"))
 }
+
+///|
+/// 確認的固定 (統括裁定 2026-08-02): effects に載る operand は**補形前の生出力のまま** —
+/// null 補形 (DR-130 §4.1) が効くのは result / sources の射影面だけで、DR-126 §4 の
+/// 「検査は生出力に対して」と同根。parser が until を落として返したら operand でも欠落のまま。
+test "effects の operand は null 補形しない (生出力のまま)" {
+  let ast = seat_ast(SEAT_SRC)
+  let args = ["--tr", "1.."]
+  let parse_binds = match parse_legacy(ast, args) {
+    @engine.Success(bindings) => bindings
+    other => {
+      fail("should parse, got " + render_outcome(other))
+      panic()
+    }
+  }
+  let view = output_legacy(ast, effects=parse_binds)
+  let mut seat_operand : @abi.Value? = None
+  for effect in view.effects {
+    if effect.entity == "tr" {
+      seat_operand = effect.operand
+    }
+  }
+  // operand は {since: 1} のまま — until キーは補形されない。result 側は補形済み。
+  assert_eq(seat_operand, Some(@abi.Object([("since", @abi.Number(1))])))
+  assert_eq(render_rval_sorted(view.result), "{tr={since=1,until=null}}")
+}
