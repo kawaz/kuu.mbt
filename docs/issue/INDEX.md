@@ -25,3 +25,4 @@
 | 2026-08-02 | task | open | [resident-output-contract-generalization](./2026-08-02-resident-output-contract-generalization.md) | resident output contract の一般化 (provider/filter/cell_fns/collector) — DR-126 §4 の適用範囲残余 |
 | 2026-08-02 | bug | open | [cell-fn-multi-fire-unify](./2026-08-02-cell-fn-multi-fire-unify.md) | cell fn の多重実行の一本化 (DR-114「発火時に 1 回」との乖離、W2-8 監査 M2 の段階化) |
 | 2026-08-02 | bug | open | [dup-label-scope-resolve-gap](./2026-08-02-dup-label-scope-resolve-gap.md) | duplicate raw label scope での resolve 相 entity 解決が候補を区別しない gap (W2-8 監査 M3 で露出) |
+| 2026-08-02 | task | open | [dr120-unreachable-default-claim-branches](./2026-08-02-dr120-unreachable-default-claim-branches.md) | DR-120 後に到達不能な default claim 比較分岐 (default_claim_values_equal 等) の dead code 整理 (coverage artifact 30728489791) |
