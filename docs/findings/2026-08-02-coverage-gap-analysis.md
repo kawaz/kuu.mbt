@@ -91,3 +91,5 @@ coverage の未到達には、test 不足ではなく構造的に到達しない
 - spec `docs/decisions/DR-127-link-fixed-path-dsl.md` §3 / §4.2
 - spec `docs/decisions/DR-130-null-result-projection.md` §5
 - spec `docs/decisions/DR-131-sentinel-reduction.md` §2b / §6 / §7
+- `docs/issue/2026-08-02-cell-fn-absent-null-value-unify.md`
+- `docs/issue/2026-08-02-dr120-unreachable-default-claim-branches.md`
