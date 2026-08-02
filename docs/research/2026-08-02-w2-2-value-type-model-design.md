@@ -37,6 +37,7 @@
 | ファイル | 変更 |
 |---|---|
 | `src/abi/value_type.mbt` | **新規**。`ValueType` enum + 宣言 well-formedness 検査 |
+| `src/abi/value_type_wbtest.mbt` | **新規**。schema と等価な宣言制約 (field 名無制約 / field key 重複 / type 参照 pattern / union 入れ子・要素数・重複) の直接 wbtest |
 | `src/extension/node_traits.mbt` | `TypeOutputShape` 削除、`TypeExt::output_shape` → `output_type`、`input_type` 席追加 |
 | `src/extension/type_residents.mbt` | builtin 10 residents の `output_shape` impl を `output_type` へ (§4.2 の表) |
 | `src/extension/registry.mbt` | `Registry::resolve_type_reference` 追加 |
@@ -348,9 +349,12 @@ collect_type_reference_errors(def, extensions, errs) // 追加
 /// の Record 参照) から検査を始めるか」だけを決め、graph の辿り方はここに一本化する。
 fn validate_value_type_references(
   root : ValueType,
+  root_type : String, // root seed resident の registry 名。hop 先では解決した resident.name() へ更新
   extensions : Registry,
-  element : String, // 診断の帰属先 (seed の要素名)
+  element : String, // 診断の表示上の帰属先 (seed の要素名)
+  diagnostic_identity : String, // 同名 leaf を区別する collector 内部 seed identity
   out : Array[DefError],
+  diagnostic_keys : Map[String, Bool],
 ) -> Unit
 ```
 
@@ -368,13 +372,28 @@ edge の辿り方:
 fn collect_type_reference_errors(
   def : Definition,
   extensions : Registry,
+  template_declarations : Map[String, ElementDef],
   out : Array[DefError],
 ) -> Unit
 ```
 
-`def.options` / `def.positionals` の各 `ElementDef.ty` から seed (要素名 + resident の
-`output_type()`) を集め、`def.commands` は `command.body` へ再帰 (walker の形は
-`collect_link_path_errors` (`:4026`) を写す)。seed ごとに層 1 の walker を呼ぶ。
+`def.options` / `def.positionals` から `ElementBody` を再帰し、実際に型を持つ
+`Cell` / `Enum` leaf の `ElementDef.ty` だけを seed (要素名 + resident の `output_type()`)
+として集める。`Group` / `Or` wrapper 自身の `ty` は未使用なので seed にしない。
+`def.commands` は `command.body` へ再帰する。
+
+`ref_target` を持つ要素は `template_declarations` から参照先を辿り、**使用サイトから到達する
+定義だけ**を同じ leaf 規則で seed 化する。template 内の診断は使用側要素へ帰属させる。
+未使用 template は走査しないため、壊れた未使用宣言が無関係の definition を落とさない。
+template の再帰展開は path-local stack で同一 template の再訪を止める。wire の
+`definitions.templates` は `or` / `seq` / bare leaf の 3 形で、template leaf の `ref` は
+`dec_or_leaf` の allowlist 外 (`src/kuu/wire_decode.mbt:1571-1580`, `:1888-1892`) だが、
+コード側 `template_declarations` に対する防御として stack guard を持つ。
+
+各 leaf seed には collector 内で一意な `diagnostic_identity` を付ける。診断表示の
+`DefError.element` は leaf 名 (匿名 leaf は直近の named wrapper、template 内は使用側要素) を
+保ちつつ、同名 leaf が異なる木位置に複数あっても dedup で潰れない。seed ごとに層 1 の
+walker を呼ぶ。
 
 この分離の理由: 将来 `input_type` の Record 参照検査 (DR-128 サイクル) も**同じ層 1 walker を
 別 seed で受ける** — walker が Definition でなく ValueType を root に取ることで、宣言面の追加が
@@ -389,15 +408,17 @@ seed 追加だけで済む。なお DR-128 §8 の `input_structure` DAG は **s
    '<フィールド名>' references unregistered type '<綴り>'", hint: "register the type or fix
    the reference spelling" }`。message 文言は最終的に実装者が整えてよいが、**型名・フィールド名・
    参照綴りの 3 つを必ず含める** (参照は seed から複数 hop 先にありうるため、要素名だけでは
-   位置が特定できない)
+   位置が特定できない)。型名は root では `root_type`、多段 hop 先では直前に解決した
+   `resident.name()` を current owner として更新する
 2. **循環**: DFS の on-stack 集合 (正規化済み綴りで持つ) に既在の型へ edge が向いたら
    `CircularRef`。message には循環路を含める (例: `"type dependency cycle: timerange ->
    timestamp -> timerange"`)。自己参照 (`Node.next -> Node`) も同規則で落ちる (DR-126 §1)
 3. **走査状態と重複抑制**: on-stack / visited 集合は **seed ごと**に独立に持つ (定義単位で
    共有しない — 共有すると element 帰属が最初の seed に固定され、複数要素が同じ壊れた型を
-   使う場合の帰属が欠落する)。診断の dedup だけを `(element, kind, 対象綴り)` の組で行い、
-   同一 definition 内で同組は 1 回にする。型グラフは小さい (builtin 10 + テスト数個規模) ので
-   seed ごとの再走査に性能問題はない
+   使う場合の帰属が欠落する)。診断の dedup は `(diagnostic_identity, element, kind, 対象綴り)`
+   の組で行い、同一 seed 内の同じ対象だけを 1 回にする。表示上同じ `element` を持つ leaf が
+   異なる木位置にあっても `diagnostic_identity` が違うため、各使用箇所の診断を保持する。
+   型グラフは小さい (builtin 10 + テスト数個規模) ので seed ごとの再走査に性能問題はない
 4. **well-formedness**: DFS 中に各型の宣言へ §2.1 の `declaration_violations` を 1 回適用し
    (dedup は 3 と同じ組で効く)、非空なら `InvalidRange` で報告する
 
@@ -456,7 +477,14 @@ kind / message を表明する。ケース:
 | m | 空 record (`Record([])`) を名乗る type を使う定義 | `Ok(_)` — schema 上「常に `{}`」の定まった型で合法 (DR-126 §1) |
 | n | 重複 member の union (`Union([Bool, Bool])`) を名乗る type を使う定義 | `Rejected` `InvalidRange` (§2.1、uniqueItems の等価) |
 | o | pattern 違反の type 参照 (`Record([("x","Bad-Name")])`) を名乗る type を使う定義 | `Rejected` `InvalidRange` (§2.1、lexical 検査。UnknownVocab より前に宣言自体が不正) |
-| p | **2 つの要素** (options 2 本) が同じ brokenref を使う定義 | `Rejected` `UnknownVocab` **2 件** — 両 element へ帰属報告 (§5.2 診断規則 3: 走査状態は seed ごと、dedup は element 込みの組) |
+| p | **2 つの要素** (options 2 本) が同じ brokenref を使う定義 | `Rejected` `UnknownVocab` **2 件** — 両 element へ帰属報告 (§5.2 診断規則 3: 走査状態は seed ごと) |
+| q1 | `seq` の先頭 leaf は string、後続 named leaf が brokenref | `Rejected` `UnknownVocab` 1 件、`element` は後続 leaf 名 — wrapper の未使用 `ty` でなく全 leaf を走査 |
+| q2 | structural `or` の先頭 leaf は string、後続 named leaf が brokenref | q1 と同じ — 全 branch leaf 走査 + leaf 帰属 |
+| q3 | 異なる top-level wrapper 配下に同名 leaf `child` が 2 本あり、両方 brokenref | `Rejected` `UnknownVocab` 2 件 — `diagnostic_identity` が同名 leaf の dedup 衝突を防ぐ |
+| r1 | 使用中 template の bare leaf が brokenref | `Rejected` `UnknownVocab` 1 件、`element` は template 使用側要素 |
+| r2 | brokenref を持つ template を登録するが definition から参照しない | `Ok(_)` — 到達範囲原則 |
+| r3 | 2 要素が同じ broken template を参照 | `Rejected` `UnknownVocab` 2 件 — seed 独立 |
+| r4 | 使用中 template leaf が self-cycle 型 / malformed union | それぞれ `CircularRef` / `InvalidRange` のみ |
 
 `resolve_type_reference` 単体 (糖衣正規化・exact 一致) は `src/extension` 側か registry 系
 wbtest に 2〜3 表明を足してもよい (b/d1 が実質カバーするので任意)。
@@ -522,10 +550,10 @@ DR-126 に「コード側 resident の malformed 宣言」の明文規範は無�
 
 ## 9. 規模見積と作業順
 
-plan §5 の 400〜700 行に対し、本設計の実装は概ね: abi 90〜130 / extension 60〜90 /
-lowering 140〜210 / wbtest 400〜550 = **690〜980 行** (wbtest 込み。plan 見積を明確に超える —
-上振れの主因はレビュー反映で増えた §6.2 の境界ケース h〜p (テスト用 resident と定義 JSON が
-1 ケースごとに嵩む) と §6.3 の分類全域固定。lowering の +10 は §4.4 の malformed ガード分)。
+plan §5 の 400〜700 行に対し、最終実装は概ね **1,200〜1,350 行** (生成 mbti・wbtest 込み)。
+上振れの主因は §6.2 の境界ケース h〜r (テスト用 resident と定義 JSON)、§6.3 の分類全域固定、
+§2.1 の ABI 直接 wbtest、型 graph walker の seed-local DFS/dedup、および Definition 側の
+ElementBody leaf / 使用中 template 到達走査である。
 
 推奨作業順 (各点で `just test` green を維持):
 
@@ -535,7 +563,7 @@ lowering 140〜210 / wbtest 400〜550 = **690〜980 行** (wbtest 込み。plan 
    `moon info` 再生成まで含めて green に戻す
 3. `Registry::resolve_type_reference` + `collect_type_reference_errors` — 消費者が居ないうちに
    collector を入れても既存定義は record を使わないので green のまま
-4. wbtest 2 ファイル (§6) — e3 等の暫定 pin を最後に
+4. wbtest 4 ファイル (§2.1 / §6) — ABI 宣言制約、resident trait、e3、型依存 graph、暫定分類を固定
 5. `jj commit` はパス指定で固定 (触ったファイルのみ列挙)
 
 ## 関連
