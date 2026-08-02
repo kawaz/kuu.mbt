@@ -49,6 +49,24 @@ fn を登録した場合。
   踏み込むため、**W2-9 (観測面の仕上げ) の観測面設計に統合する** (統括承認 2026-08-02 —
   W2-9 委譲時に統括側がスコープへ組み込む。本 issue はその設計入力の正本)。
 
+## W2-9 での設計確定 (実装は後続窓)
+
+W2-9 で一本化設計を確定した。要点:
+
+- **FiringRecord 方式**: 勝ち枝確定後に 1 回だけ fold を実行し、発火ごとに record
+  (`{ 遷移結果 / 解決済み residual segment 列 / 座単位 provenance }`) を残す。effects 射影と
+  resolve 相の CLI seat 解決は、この record の**消費者**になる (= 独立実行をやめる)
+- **値残余セル分**: W2-8 branch fold の枝内実行結果を勝ち枝から引き継ぎ、再実行しない
+- **配達席**: binding への optional stamp として持たせる (op/operand は不変 — DR-045 の綴り保持 /
+  DR-038 の経路同一性を侵さない)。W2-9 の `Binding.source_shadow` と同型の解法
+- **env/config 供給残差** (W2-4 findings §3.2): parse 入口の optional Supplies
+  (env/config provider) で閉じる。未供給呼び出しは現行挙動を維持
+- **resolve 相の残余分岐**: 最終防衛線として保持 (削らない)
+
+設計正本は `docs/findings/2026-08-02-w2-9-observation-finish.md` の「実行一本化の設計」節。
+W2-9 で実装しなかった理由 (公開 API 変更が観測面と独立に切れない、危険域は現 corpus で未発火)
+も同 findings 参照。
+
 ## 受け入れ条件
 
 - [ ] 発火 1 件につき cell fn 実行が 1 回になる引き渡し設計を決める (effects 射影分も含む)
