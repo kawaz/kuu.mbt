@@ -161,7 +161,7 @@ test "CellSeats: 座への部分更新は record 座 / array index / 負 index �
 ///|
 /// 保証 (DR-114 §7 / DR-081 §2 / DR-131 §2b/§7): effects 射影と CLI seat 解決が同じ fold を
 /// 使うので、`ctx.old` に依存する cell fn (`incr`) の結果は effects の operand と result の値で
-/// 一致する。4 行はいずれも一本化前に食い違っていた形 (差異表 F-1〜F-4)。
+/// 一致する。3 行はいずれも一本化前に食い違っていた形 (差異表 F-1 / F-2 / F-4)。
 test "効果 fold の一本化: ctx.old 依存の効果は effects と result で一致する (DR-114 §7)" {
   fn probe(src : String, args : Array[String]) -> String raise {
     let ast = match parse_definition(@json.parse(src)) {
@@ -239,19 +239,6 @@ test "効果 fold の一本化: ctx.old 依存の効果は effects と result �
       ["--n", "--clear-n", "--n"],
     ),
     "n:set(6) n:set(null) n:set(6) | {n=6}",
-  )
-
-  // F-3: `empty` (Sentinel、DR-131 §7) は committed な空なので、次の `old` は absent
-  // (`incr` は 0 起点で 1)。placeholder binding の `value` を `old` として読ませない。
-  assert_eq(
-    probe(
-      (
-        #|{"options": [{"name": "n", "type": "number", "default": 5,
-        #|  "long": [":incr", "clear:empty"]}]}
-      ),
-      ["--n", "--clear-n", "--n"],
-    ),
-    "n:set(6) n:empty(-) n:set(1) | {n=1}",
   )
 
   // F-4: `default` (DR-081 §2) は書き換え済み default をセルへ書くので、次の `old` は

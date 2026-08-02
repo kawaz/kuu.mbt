@@ -17,8 +17,13 @@
 ///
 /// - `Opened` — 席が開いた状態 (`unset` = null Value fn、DR-131 §2b)。値源ラダーが下段まで
 ///   開くので、old は宣言 default へ落ちる (fixture `multiple-parse/unset-opens-ladder-to-declared-default.json`)
-/// - `Emptied` — committed な空 (`empty` Sentinel、DR-131 §7)。セルは「空である」ことが確定して
-///   いるので old は absent
+/// - `Emptied` — committed な空 (`empty` Sentinel、DR-131 §7)。`empty` の target は array / map /
+///   record に限られる (REFERENCE の `cell_fns` 表、scalar 等は definition-error `invalid-range`)
+///   ので、本来この座の old は**型別の空値** (`[]` / `{}`) である。ここが absent を返すのは
+///   **その空値を供給する consumer がまだ居ない**ため — collection セルの値解決は accumulator
+///   resident (`resolve_cli`) が持ち本 fold を通らず、accumulator セルへ `ctx.old` を読む fn を
+///   置く定義 (`multiple` × `update`) は `parse_definition` 時点の definition-error である。
+///   consumer が入る段で型別の空値へ差し替えること
 priv enum SeatState {
   Opened
   Emptied

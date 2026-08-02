@@ -3223,13 +3223,13 @@ fn resolve_entity_raw(
     }
     None => ()
   }
-  // 値状態 (`seat`) と、下流へ返す binding (`current`) は別物である。前者は DR-114 §7 の
-  // `ctx.old` を決め、後者は DR-045 の「@abi.Set/@abi.Default/@abi.Empty は VERBATIM で返す」
-  // 契約を担う (@abi.Empty の `value` は op で解釈される placeholder であり、値ではない)。
-  // 両者を 1 個の `current : Binding?` に兼ねさせると placeholder が `old` として漏れる —
-  // `empty` 済みのセルへ `incr` が来ると「値が無い」ではなく placeholder を見てしまう。
-  // 値状態の遷移計算そのものは `cell_fold.mbt` の `fold_seat_effect` が持ち、effects 射影
-  // (`projected_effect`) と共有する。
+  // 値状態 (`seats`) と、下流へ返す binding (`current`) は別物として持つ。前者は DR-114 §7 の
+  // `ctx.old` を決め、後者は下流 (`build_result` / `proj_sources`) が op と source をそのまま
+  // 読む carrier である。両者を 1 個の `current : Binding?` に兼ねさせない理由は実装上の
+  // 不変条件で、`@abi.Default` の binding の `value` が **op で解釈される placeholder** であり
+  // 値ではないこと (DR-045 が効果を `{op, operand?}` の純データと定めた帰結) — 兼ねさせると
+  // placeholder が `old` として漏れる。値状態の遷移計算そのものは `cell_fold.mbt` の
+  // `fold_seat_effect` が持ち、effects 射影 (`projected_effect`) と共有する。
   let mut current : @abi.Binding? = None
   let seats = CellSeats::new()
   let mut committed_now = false
@@ -3246,6 +3246,17 @@ fn resolve_entity_raw(
       }
       let old = seats.old(e.name, default_scalar(e))
       let transition = fold_seat_effect(b, old, e.name, extensions)
+      // REFERENCE の `cell_fns` 表 (`empty` 行): `Sentinel(Empty)` は **array / map / record を
+      // committed=true で空にする** fn であり、scalar 等を target にした定義は definition-error
+      // `invalid-range` である。collection セルはこの関数の冒頭で `resident.resolve_cli` へ抜けて
+      // いるので、scalar seat の fold へ `ToEmpty` が届くのは `empty` の target 型検査を lowering が
+      // 持っていない場合に限る (docs/issue/2026-08-02-cell-fn-empty-target-type-check-missing.md)。合法な定義からは
+      // 到達しないので、ここで scalar の空セル意味論を発明せず落とす。
+      if transition is ToEmpty {
+        abort(
+          "unreachable: `empty` は array / map / record 専用 (REFERENCE の cell_fns 表) — scalar (非 collection) セルの fold には合法な定義から届かない",
+        )
+      }
       // `@abi.Default` / Sentinel(use_default) の落ち先は値源ラダー (DR-081 §2: op=default は
       // 「その時点の書き換え済み default」をセルへ書く — env/config が下位席として後から勝つのでは
       // なく、発火時点で既にセルの default を書き換えている)。
@@ -3300,7 +3311,6 @@ fn resolve_entity_raw(
                 Some(value) => Some(@abi.Binding::new(e.name, value, b.source))
                 None => Some(b)
               }
-            (@abi.Empty, _) => Some(b)
             // cell fn の出力は、Value なら通常の set 束縛、Sentinel なら対応する直接操作の
             // 束縛へ (DR-114 §2)。
             (@abi.Invoke(_), ToValue(@abi.Null)) => None
@@ -3311,7 +3321,6 @@ fn resolve_entity_raw(
                 Some(value) => Some({ ..b, op: @abi.Set, value })
                 None => Some({ ..b, op: @abi.Default })
               }
-            (@abi.Invoke(_), ToEmpty) => Some({ ..b, op: @abi.Empty })
             _ => current
           }
         }
