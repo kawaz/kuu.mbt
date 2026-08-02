@@ -560,3 +560,83 @@ test "DR-080 merge: first fire (old=[]) a,-a nets to empty (canonical row 12)" {
 test "DR-080 merge: first fire (old=[]) -a,a keeps the trailing add (canonical row 13)" {
   assert_eq(merge_fire([MRemove(vs("a")), MAdd(vs("a"))], []), [vs("a")])
 }
+
+///|
+test "scalar_value_json spells composites as plain JSON" {
+  // This is the encoder `from_entries` key derivation and the merge collector's row rendering
+  // read, so the spelling is the user-facing one: no type tags, containers as containers.
+  assert_eq(scalar_value_json(@abi.Null), ().to_json())
+  assert_eq(scalar_value_json(@abi.Array([])), ([] : Array[Json]).to_json())
+  assert_eq(scalar_value_json(@abi.Object([])), ({} : Json))
+  assert_eq(
+    scalar_value_json(
+      @abi.Object([
+        ("b", @abi.Number(2.0)),
+        ("a", @abi.Array([@abi.String("x"), @abi.Null])),
+      ]),
+    ),
+    { "b": 2.0, "a": ["x", null] },
+  )
+  // Nesting is not depth-limited: an object inside an array inside an object survives intact.
+  assert_eq(
+    scalar_value_json(
+      @abi.Object([
+        ("outer", @abi.Array([@abi.Object([("deep", @abi.Bool(true))])])),
+      ]),
+    ),
+    { "outer": [{ "deep": true }] },
+  )
+}
+
+///|
+test "composite values survive a real encode-decode round trip" {
+  // Two independent paths meet: `scalar_value_json` encodes a Value to JSON and `config_from_json`
+  // decodes JSON back to the JSON-isomorphic type, while `value_to_configval` converts directly.
+  // Agreeing on every tree is what says the composite shapes line up 1:1 across the boundary.
+  let cases : Array[@abi.Value] = [
+    @abi.Null,
+    @abi.String("kuu"),
+    @abi.Number(8080.0),
+    @abi.Bool(false),
+    @abi.Array([]),
+    @abi.Object([]),
+    @abi.Array([@abi.Number(80.0), @abi.Array([@abi.Bool(true), @abi.Null])]),
+    @abi.Object([
+      ("name", @abi.String("kuu")),
+      ("ports", @abi.Array([@abi.Number(80.0), @abi.Number(443.0)])),
+      (
+        "nested",
+        @abi.Object([("deep", @abi.Array([@abi.Bool(false), @abi.Null]))]),
+      ),
+    ]),
+  ]
+  for value in cases {
+    assert_eq(
+      @abi.config_from_json(scalar_value_json(value)),
+      @abi.value_to_configval(value),
+    )
+  }
+}
+
+///|
+test "result_value_json keeps composite Value and composite ResultValue on the same spelling" {
+  // `ResultValue::Array([Scalar(1)])` and `Scalar(Array([1]))` are different types carrying the
+  // same tree. The projection must not make them look different to a `from_entries` key.
+  assert_eq(
+    result_value_json(@abi.Scalar(@abi.Array([@abi.Number(1.0)]))),
+    result_value_json(@abi.Array([@abi.Scalar(@abi.Number(1.0))])),
+  )
+  assert_eq(
+    result_value_json(@abi.Scalar(@abi.Object([("k", @abi.Bool(true))]))),
+    result_value_json(@abi.Object([("k", @abi.Scalar(@abi.Bool(true)))])),
+  )
+  // Empty containers stay distinguishable from each other and from null.
+  assert_not_eq(
+    result_value_json(@abi.Scalar(@abi.Array([]))),
+    result_value_json(@abi.Scalar(@abi.Object([]))),
+  )
+  assert_not_eq(
+    result_value_json(@abi.Scalar(@abi.Array([]))),
+    result_value_json(@abi.Scalar(@abi.Null)),
+  )
+}
