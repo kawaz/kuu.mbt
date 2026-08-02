@@ -590,6 +590,50 @@ test "DR-126 §1: 送信元 type の shadow/config はフィールド type に�
 }
 
 ///|
+/// 監査 M4 の positional 対照 (DR-126 §1 / DR-127 §3.2): positional 入口でもフィールド参照が
+/// 指すのは registry の canonical type 実体であり、送信元 entry の `definitions.types` shadow/config を
+/// 着地座へ再適用しない。shadow された送信元 number は `0x10` を読める一方、同じ positional を
+/// record フィールドへ link すると、着地座の canonical number parser が同じ literal を拒否する。
+test "DR-126 §1: positional 入口でも送信元 type shadow をフィールド type へ再適用しない" {
+  let plain_src =
+    #|{"definitions":{"types":{
+    #|  "number":{"name":"number_parser","config":{"number_allow_base_prefix":true}}
+    #|}},"positionals":[
+    #|  {"name":"plain","type":"number"}
+    #|]}
+  let plain_ast = seat_ast(plain_src)
+  // 送信元世界の sanity: link しない positional は shadow された number で 0x10 を読める。
+  match parse_legacy(plain_ast, ["0x10"]) {
+    @engine.Success(_) => ()
+    other => {
+      fail(
+        "the shadowed positional number must accept 0x10, got " +
+        render_outcome(other),
+      )
+      panic()
+    }
+  }
+
+  let linked_src =
+    #|{"definitions":{"types":{
+    #|  "number":{"name":"number_parser","config":{"number_allow_base_prefix":true}}
+    #|}},"options":[
+    #|  {"name":"tr","type":"trange","long":true}
+    #|],"positionals":[
+    #|  {"name":"hexy","type":"number","link":"tr.until"}
+    #|]}
+  let linked_ast = seat_ast(linked_src)
+  // 値残余の着地座は canonical number。送信元 shadow を引き継がないので 0x10 は拒否される。
+  match parse_legacy(linked_ast, ["0x10"]) {
+    @engine.Success(_) =>
+      fail(
+        "the canonical field number must reject a base-prefixed positional literal",
+      )
+    _ => ()
+  }
+}
+
+///|
 /// 監査 m1 (DR-127 §3.2): eq-split / short cluster 入口でも parser identity の差し替えが
 /// 観測できる — string を宣言する entry の operand が着地座の number として座る。
 test "DR-127 §3.2: eq / short 入口でもフィールド type で読む" {
