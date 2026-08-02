@@ -429,14 +429,22 @@ test "structural group and or leaves contribute their actual types as seeds" {
     "brokenref",
     Some(@abi.ValueType::Record([("x", "nosuch")])),
   )
-  for
-    source in [
+  let cases : Array[(String, String)] = [
+    (
       "{\"options\":[{\"name\":\"group\",\"long\":true,\"seq\":[{\"type\":\"string\"},{\"name\":\"child\",\"type\":\"brokenref\"}]}]}",
+      "child",
+    ),
+    (
       "{\"options\":[{\"name\":\"choice\",\"long\":true,\"or\":[{\"type\":\"string\"},{\"name\":\"branch\",\"type\":\"brokenref\"}]}]}",
-    ] {
+      "branch",
+    ),
+  ]
+  for entry in cases {
+    let (source, expected_element) = entry
     let errors = rejected_type_errors(source, [broken as &@extension.TypeExt])
     assert_eq(errors.length(), 1)
     assert_eq(errors[0].kind, @abi.UnknownVocab)
+    assert_eq(errors[0].element, expected_element)
   }
   // A malformed leaf is reported by itself and never reclassified by a wrapper.
   let malformed = declared_type(
@@ -449,6 +457,23 @@ test "structural group and or leaves contribute their actual types as seeds" {
   )
   assert_eq(malformed_errors.length(), 1)
   assert_eq(malformed_errors[0].kind, @abi.InvalidRange)
+}
+
+///|
+test "same-named leaves under different elements retain separate diagnostics" {
+  // Diagnostic dedup is seed-local in identity even when two structural leaves expose the same name.
+  let broken = declared_type(
+    "brokenref",
+    Some(@abi.ValueType::Record([("x", "nosuch")])),
+  )
+  let errors = rejected_type_errors(
+    "{\"options\":[{\"name\":\"first_group\",\"long\":true,\"seq\":[{\"name\":\"child\",\"type\":\"brokenref\"}]},{\"name\":\"second_group\",\"long\":true,\"seq\":[{\"name\":\"child\",\"type\":\"brokenref\"}]}]}",
+    [broken as &@extension.TypeExt],
+  )
+  assert_eq(errors.length(), 2)
+  assert_eq(count_kind(errors, @abi.UnknownVocab), 2)
+  assert_eq(errors[0].element, "child")
+  assert_eq(errors[1].element, "child")
 }
 
 ///|

@@ -4086,6 +4086,7 @@ fn validate_value_type_references(
   root_type : String,
   extensions : Registry,
   element : String,
+  diagnostic_identity : String,
   out : Array[DefError],
   diagnostic_keys : Map[String, Bool],
 ) -> Unit {
@@ -4101,7 +4102,13 @@ fn validate_value_type_references(
     out : Array[DefError],
     diagnostic_keys : Map[String, Bool],
   ) -> Unit {
-    let key = element + "\u{0}" + kind_key + "\u{0}" + target
+    let key = diagnostic_identity +
+      "\u{0}" +
+      element +
+      "\u{0}" +
+      kind_key +
+      "\u{0}" +
+      target
     if diagnostic_keys.get(key) is None {
       diagnostic_keys.set(key, true)
       out.push(def_err(element, kind, message, hint))
@@ -4227,6 +4234,7 @@ fn collect_type_reference_errors(
   out : Array[DefError],
 ) -> Unit {
   let diagnostic_keys : Map[String, Bool] = Map([])
+  let seed_counter : Array[Int] = [0]
   fn collect_element(
     element : ElementDef,
     inherited_element : String,
@@ -4270,15 +4278,19 @@ fn collect_type_reference_errors(
           Cell | Enum(_) =>
             match element.ty.output_type() {
               None => ()
-              Some(root) =>
+              Some(root) => {
+                let diagnostic_identity = seed_counter[0].to_string()
+                seed_counter[0] += 1
                 validate_value_type_references(
                   root,
                   element.ty.name(),
                   extensions,
                   attribution,
+                  diagnostic_identity,
                   out,
                   diagnostic_keys,
                 )
+              }
             }
           Group(items) =>
             for item in items {
