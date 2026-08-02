@@ -18,6 +18,7 @@
 | 2026-07-27 | bug | open | [command-node-value-unimplemented](./2026-07-27-command-node-value-unimplemented.md) | command node の value: — carrier 不在 + 意味論未規定でスコープ外に切った分 |
 | 2026-07-27 | bug | open | [option-structural-or-group-outer-repeat-not-wired](./2026-07-27-option-structural-or-group-outer-repeat-not-wired.md) | option structural Or/Group の outer repeat が受理されるが消費構造へ配線されない (missing_operand 位相化の実装監査) |
 | 2026-07-27 | design | open | [array-filter-provenance-contract-gap](./2026-07-27-array-filter-provenance-contract-gap.md) | array filter の公開契約に provenance が無く、同値 duplicate 並べ替え・値合成で source 復元が破綻する |
+| 2026-08-02 | bug | open | [cell-fn-absent-null-value-unify](./2026-08-02-cell-fn-absent-null-value-unify.md) | builtin cell fn の値不在が absent-source reason のまま — REFERENCE §7.6/DR-131 §1.1 の null Value 統一に未追随 |
 | 2026-07-29 | bug | open | [head-progresses-scoped-indexed-unconditional-true](./2026-07-29-head-progresses-scoped-indexed-unconditional-true.md) | zero-progress 静的検査の head_progresses が Scoped/ScopeNode/IndexedRepeat を無条件 true にしており消費0 head + 無制限 repeat をすり抜けうる |
 | 2026-08-02 | task | open | [w2-2-deferred-hygiene](./2026-08-02-w2-2-deferred-hygiene.md) | W2-2 実装の据え置きハイジーン 3 件 (F4/F6/F8) — Union uniqueItems 順序盲点 / builtin prefix 二重実装 / DefError 部分可視性 |
 | 2026-08-02 | bug | open | [wire-multiple-bool-decode-divergence](./2026-08-02-wire-multiple-bool-decode-divergence.md) | wire decode が multiple: true (bool) を受けるが spec wire.schema.json は string\|object の二形のみ (裁定要、部外者観測フラグ) |
