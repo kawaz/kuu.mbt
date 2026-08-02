@@ -22,3 +22,4 @@
 | 2026-08-02 | task | open | [w2-2-deferred-hygiene](./2026-08-02-w2-2-deferred-hygiene.md) | W2-2 実装の据え置きハイジーン 3 件 (F4/F6/F8) — Union uniqueItems 順序盲点 / builtin prefix 二重実装 / DefError 部分可視性 |
 | 2026-08-02 | bug | open | [record-null-fill-missing-in-projection](./2026-08-02-record-null-fill-missing-in-projection.md) | record 座の null 補形が結果射影層に無い (DR-130 §4 / DR-126 §3) — 宣言 ValueType を引く経路が build_result に無い |
 | 2026-08-02 | bug | open | [wire-multiple-bool-decode-divergence](./2026-08-02-wire-multiple-bool-decode-divergence.md) | wire decode が multiple: true (bool) を受けるが spec wire.schema.json は string\|object の二形のみ (裁定要、部外者観測フラグ) |
+| 2026-08-02 | task | open | [resident-output-contract-generalization](./2026-08-02-resident-output-contract-generalization.md) | resident output contract の一般化 (provider/filter/cell_fns/collector) — DR-126 §4 の適用範囲残余 |
