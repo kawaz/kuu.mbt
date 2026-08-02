@@ -2363,9 +2363,7 @@ fn classify_value_residual(
                 None => return AlreadyDiagnosed
                 Some(resident) =>
                   if from + 1 == path.segments.length() {
-                    return Terminal(
-                      FieldType(extensions.canonical_type_reference(spelling)),
-                    )
+                    return Terminal(FieldType(resident.name()))
                   } else {
                     match resident.output_type() {
                       None => return OpaqueStructure
@@ -4561,7 +4559,7 @@ fn validate_value_type_references(
   diagnostic_keys : Map[String, Bool],
 ) -> Unit {
   let visited : Map[String, Bool] = Map([])
-  let stack : Array[String] = [extensions.canonical_type_reference(root_type)]
+  let stack : Array[String] = [root_type]
   fn emit(
     element : String,
     kind : DefErrorKind,
@@ -4615,7 +4613,6 @@ fn validate_value_type_references(
       Record(fields) =>
         for entry in fields {
           let (field, spelling) = entry
-          let canonical = extensions.canonical_type_reference(spelling)
           match extensions.resolve_type_reference(spelling) {
             None =>
               emit(
@@ -4635,6 +4632,7 @@ fn validate_value_type_references(
                 diagnostic_keys,
               )
             Some(resident) => {
+              let canonical = resident.name()
               let mut cycle = false
               for stacked in stack {
                 if stacked == canonical {

@@ -91,27 +91,19 @@ pub fn Registry::lookup_type(self : Registry, name : String) -> &TypeExt? {
 }
 
 ///|
-/// Returns the registry identity for a record-field type reference. A `builtin/`
-/// prefix qualifies a builtin resident registered under its bare name; every
-/// other namespace retains its exact spelling.
-pub fn Registry::canonical_type_reference(
-  _self : Registry,
-  spelling : String,
-) -> String {
-  if spelling.has_prefix("builtin/") {
-    spelling[8:].to_owned()
-  } else {
-    spelling
-  }
-}
-
-///|
-/// Resolves a record-field type reference in the registry namespace.
+/// Resolves a record-field type reference in the registry namespace. A
+/// `builtin/` prefix is the qualified spelling of a builtin resident registered
+/// under its bare name; every other namespace is looked up exactly.
 pub fn Registry::resolve_type_reference(
   self : Registry,
   spelling : String,
 ) -> &TypeExt? {
-  self.types.get(self.canonical_type_reference(spelling))
+  let canonical = if spelling.has_prefix("builtin/") {
+    spelling[8:].to_owned()
+  } else {
+    spelling
+  }
+  self.types.get(canonical)
 }
 
 ///|
