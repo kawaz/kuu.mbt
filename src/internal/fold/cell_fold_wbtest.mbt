@@ -185,6 +185,36 @@ fn fold_test_registry() -> @extension.Registry {
       abort("duplicate builtin cell fn: " + descriptor.name())
     }
   }
+  guard registry.register_cell_fn(
+    @extension.cell_fn_descriptor(
+      "test/fail-observes",
+      [@extension.cell_fn_parameter("source")],
+      @extension.CellFnOutput::Value,
+      @extension.Total,
+      observes=["option:<source>"],
+      run=fn(_, _) { Ok(@extension.FnOutput::Value(@abi.Bool(true))) },
+    ),
+  ) else {
+    abort("duplicate test/fail-observes cell fn")
+  }
+  guard registry.register_cell_fn(
+    @extension.cell_fn_descriptor(
+      "test/fail-run",
+      [],
+      @extension.CellFnOutput::Value,
+      @extension.Reject,
+      reasons=["test-failure"],
+      run=fn(_, _) {
+        Err({
+          disposition: @abi.RecognizedButInvalid,
+          reason: "test-failure",
+          message: "test resident rejects",
+        })
+      },
+    ),
+  ) else {
+    abort("duplicate test/fail-run cell fn")
+  }
   registry
 }
 
@@ -299,22 +329,22 @@ test "fold_seat_effect: Invoke の出力・失敗段・old 参照を全分類す
   assert_true(missing is FnMissing("not-registered"))
   assert_false(missing_old)
 
-  // env の必須引数欠落は observes の具体化段で失敗し、resident 本体へ進まない。
+  // 不正 arity は定義検査が先に弾くが、fold の防御 arm は observes 具体化失敗を FnFailed で保持する。
   let (observes_failed, observes_old) = fold_seat_effect(
-    invoke("env", []),
+    invoke("test/fail-observes", []),
     None,
     "cell",
     registry,
   )
   match observes_failed {
     FnFailed(reason) => assert_eq(reason.reason, "invalid-argument")
-    _ => fail("missing env argument must fail while concretizing observes")
+    _ => fail("malformed invocation must fail while concretizing observes")
   }
   assert_false(observes_old)
 
-  // observes が具体化できても供給元が無ければ resident 本体が reject し、理由を保持する。
+  // 規範上 failure を宣言する test resident で、本体 reject が FnFailed として理由を保持することを固定する。
   let (invoke_failed, invoke_old) = fold_seat_effect(
-    invoke("env", ["MISSING"]),
+    invoke("test/fail-run", []),
     None,
     "cell",
     registry,
@@ -322,9 +352,9 @@ test "fold_seat_effect: Invoke の出力・失敗段・old 参照を全分類す
   match invoke_failed {
     FnFailed(reason) => {
       assert_eq(reason.disposition, @abi.RecognizedButInvalid)
-      assert_eq(reason.reason, "absent-source")
+      assert_eq(reason.reason, "test-failure")
     }
-    _ => fail("missing env source must remain a classified FnFailed transition")
+    _ => fail("resident rejection must remain a classified FnFailed transition")
   }
   assert_false(invoke_old)
 }
