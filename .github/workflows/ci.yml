@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [main]
 
+# spec fixtures の pin。test job と coverage job が同じ tree を読むので、bump はここ 1 箇所。
+env:
+  KUU_SPEC_REF: 47e86d66e235674d96f0ef9bc0b4788a0f71f8c0
+
 jobs:
   lint:
     name: Lint
@@ -39,13 +43,11 @@ jobs:
 
       # conformance fixtures の正本 (kawaz/kuu) を SHA-pin で並置 checkout。
       # 追従は本 ref を bump する PR で明示化する (MDR-001 §5)。
-      # ⚠ 同じ pin を下の coverage job も持つ。bump するときは両方を同じ SHA に揃えること
-      # (片方だけ動かすと、そのジョブだけ fixtures 不整合で落ちる)。
       - name: Checkout kuu spec fixtures (SHA-pinned)
         uses: actions/checkout@v7
         with:
           repository: kawaz/kuu
-          ref: d27e4c639a89b4c6061161b51bddd4f62bdbdcff
+          ref: ${{ env.KUU_SPEC_REF }}
           path: _kuu-spec
 
       # 公式 install script で rolling nightly を直取得 (moonup の nightly index は
@@ -75,12 +77,11 @@ jobs:
 
       # conformance runner が fixtures を live 参照するので、test job と同じ SHA-pin で
       # spec を並置 checkout する。
-      # ⚠ 上の test job と同一 SHA を保つこと (pin の bump は 2 箇所同時)。
       - name: Checkout kuu spec fixtures (SHA-pinned)
         uses: actions/checkout@v7
         with:
           repository: kawaz/kuu
-          ref: d27e4c639a89b4c6061161b51bddd4f62bdbdcff
+          ref: ${{ env.KUU_SPEC_REF }}
           path: _kuu-spec
 
       - run: |
