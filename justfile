@@ -73,9 +73,12 @@ test-all:
 
 # ---------- coverage ----------
 #
-# on-demand 計測。push / ci gate には入れない (CI 化の要否は未設計 — 必要になった
-# 時点で kawaz と決める)。計測対象は src/ 配下のみで、moonbitlang/core など
-# .mooncakes の依存は moon 側が自動で除外する。
+# 目的は見逃しの可視化。CI の coverage job (.github/workflows/ci.yml) が同じ手順で
+# 計測し、summary をジョブログへ、HTML を artifact (coverage-html) へ出す。
+# **閾値 gate は置かない** — 数字で落とすのではなく、未到達の行を読むための材料。
+# 下の recipe はそのローカル版で、`just ci` にも push の deps にも入れない。
+# 計測対象は src/ 配下のみで、moonbitlang/core など .mooncakes の依存は moon 側が
+# 自動で除外する。
 
 # native テストを instrumentation 付きで実行し、ファイル別の行カバレッジを表示
 [script]

@@ -39,6 +39,8 @@ jobs:
 
       # conformance fixtures の正本 (kawaz/kuu) を SHA-pin で並置 checkout。
       # 追従は本 ref を bump する PR で明示化する (MDR-001 §5)。
+      # ⚠ 同じ pin を下の coverage job も持つ。bump するときは両方を同じ SHA に揃えること
+      # (片方だけ動かすと、そのジョブだけ fixtures 不整合で落ちる)。
       - name: Checkout kuu spec fixtures (SHA-pinned)
         uses: actions/checkout@v7
         with:
@@ -59,3 +61,49 @@ jobs:
           TARGET: ${{ matrix.target }}
           KUU_FIXTURES: ${{ github.workspace }}/_kuu-spec/fixtures
         run: moon test --target "$TARGET"
+
+  # 見逃しの可視化が目的であって enforcement ではないので、**閾値 gate は置かない**。
+  # 落ちるのはテスト自体が落ちたときだけ。数字はジョブログの summary で、未到達の行は
+  # artifact の HTML で読む。ローカルの同等手順は `just coverage` / `just coverage-html`
+  # (CI では just を入れずに moon を直に叩く — lint / test ジョブと同じ流儀)。
+  coverage:
+    name: Coverage
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v7
+
+      # conformance runner が fixtures を live 参照するので、test job と同じ SHA-pin で
+      # spec を並置 checkout する。
+      # ⚠ 上の test job と同一 SHA を保つこと (pin の bump は 2 箇所同時)。
+      - name: Checkout kuu spec fixtures (SHA-pinned)
+        uses: actions/checkout@v7
+        with:
+          repository: kawaz/kuu
+          ref: d27e4c639a89b4c6061161b51bddd4f62bdbdcff
+          path: _kuu-spec
+
+      - run: |
+          curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash -s
+          echo "$HOME/.moon/bin" >> "$GITHUB_PATH"
+      - run: moon update
+
+      # 前回の trace が残っていると集計に混ざるので必ず落とす (`just coverage` と同じ)。
+      - run: moon coverage clean
+
+      - name: Run tests with coverage instrumentation
+        env:
+          KUU_FIXTURES: ${{ github.workspace }}/_kuu-spec/fixtures
+        run: moon test --target native --enable-coverage
+
+      - name: Coverage summary
+        run: moon coverage report -f summary
+
+      - name: Build HTML report
+        run: moon coverage report -f html
+
+      - name: Upload HTML report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-html
+          path: _coverage/
