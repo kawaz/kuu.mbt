@@ -66,7 +66,7 @@ pub fn deprecation_mark(String) -> Node
 
 pub fn effect_mark(String, @abi.EffectOp) -> Node
 
-pub fn element_head(ElementDef) -> Node
+pub fn element_head(ElementDef, ty_override? : &@extension.TypeExt?) -> Node
 
 pub fn element_value(Array[@abi.Binding], Array[String], String) -> @abi.Value?
 

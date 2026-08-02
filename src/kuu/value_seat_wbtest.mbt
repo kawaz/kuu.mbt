@@ -294,3 +294,33 @@ test "DR-130 §4.1: multiple 要素の record も null 補形" {
     "result={spans=[{since=1,until=null},{since=null,until=2}]} sources={spans=[{since=cli,until=null},{since=null,until=cli}]} effects=spans,spans",
   )
 }
+
+///|
+/// DR-127 §3.2: positional の値残余 entry も operand はフィールド側 type で読む (long / eq /
+/// short と同じ差し替え)。string を宣言する entry でも着地座の number として座る。
+test "DR-127 §3.2: positional residual entry の operand もフィールド type で読む" {
+  let src =
+    #|{"options":[
+    #|  {"name":"tr","type":"trange","long":true}
+    #|],"positionals":[
+    #|  {"name":"deadline","type":"string","link":"tr.until"}
+    #|]}
+  assert_eq(
+    seat_view(src, ["7"]),
+    "result={tr={since=null,until=7}} sources={tr={since=null,until=link}} effects=tr.until",
+  )
+}
+
+///|
+/// DR-127 §3.2 の防衛線: `:set:VALUE` variant の dsl literal は entry 自身の型で decode される
+/// ため、フィールド type の out に合わない値は発火時に乖離 Error になる (variant literal の
+/// decode 自体をフィールド type で行う静的化は未実装 — 現行はこの実行時検査が受け止める)。
+test "DR-127 §3.2: variant literal の out 不適合も発火時に乖離 Error" {
+  let src =
+    #|{"options":[
+    #|  {"name":"tr","type":"trange","long":true},
+    #|  {"name":"five","type":"string","long":[":set:five"],"link":"tr.until"}
+    #|]}
+  let failure = seat_failure(src, ["--five"])
+  assert_true(failure.contains("output_shape_mismatch"))
+}

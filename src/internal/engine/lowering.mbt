@@ -653,7 +653,7 @@ fn clone_def(d : Definition) -> Definition {
 /// token match; binds nothing, consumes 1」(node.mbt) がそのまま欲しい挙動そのもの。この経路は
 /// `Or`/`Group` の内側リーフ (`or_branch_node`/`lower_positional` の Group 分岐が `element_head` を
 /// 共有する) にも自動的に及ぶ — DR-063 A.1 の裸文字列正規化が or 枝内でも成立する形と対称。
-pub fn element_head(e : ElementDef) -> Node {
+pub fn element_head(e : ElementDef, ty_override? : &TypeExt? = None) -> Node {
   if e.is_exact {
     return Exact(e.name)
   }
@@ -669,7 +669,8 @@ pub fn element_head(e : ElementDef) -> Node {
     Some(r) => Ref(r)
     None =>
       value_prim(
-        e.ty,
+        // DR-127 §3.2: 値空間残余 entry の operand はフィールド側 type で読む (lower_positional が渡す)。
+        ty_override.unwrap_or(e.ty),
         e.name,
         e.int_round,
         e.allow_base_prefix,
@@ -1114,6 +1115,12 @@ fn lower_positional(
 ) -> Array[Node] {
   let out : Array[Node] = []
   for e in def.positionals {
+    // DR-127 §3.2: 値空間残余 (FieldType 終端) の positional entry はフィールド側 type で
+    // operand を読む — inst_long / inst_short の entry_ty と同じ差し替え。
+    let residual_ty : &TypeExt? = match link_route_fields(def, e, extensions) {
+      Some(route) => route.parse_ty
+      None => None
+    }
     if not_dd(e) {
       match e.body {
         Or(branches) => {
@@ -1178,12 +1185,18 @@ fn lower_positional(
                 // no repeat: single occurrence, degenerate row (DESIGN §6.1 の逆 — repeat が
                 // 「配列に包む」操作を担う、外すと row がそのまま値になる) — no "#row" marker
                 // needed, `sub_under(binds, e.name)` already yields the row's flat leaves.
-                None => out.push(Scoped(e.name, element_head(e)))
+                None =>
+                  out.push(
+                    Scoped(e.name, element_head(e, ty_override=residual_ty)),
+                  )
                 Some(_) =>
                   lower_repeat_head(
                     def,
                     e,
-                    ref_row_head(e.name, element_head(e)),
+                    ref_row_head(
+                      e.name,
+                      element_head(e, ty_override=residual_ty),
+                    ),
                     registry,
                     extensions,
                     out,
@@ -1210,7 +1223,7 @@ fn lower_positional(
                     lower_repeat_head(
                       def,
                       e,
-                      opt_node(element_head(e)),
+                      opt_node(element_head(e, ty_override=residual_ty)),
                       registry,
                       extensions,
                       out,
@@ -1221,7 +1234,7 @@ fn lower_positional(
                         let consuming_nodes : Array[Node] = []
                         lower_repeat_shape(
                           consuming,
-                          element_head(e),
+                          element_head(e, ty_override=residual_ty),
                           registry,
                           consuming_nodes,
                         )
@@ -1243,7 +1256,7 @@ fn lower_positional(
                 lower_repeat_head(
                   def,
                   e,
-                  element_head(e),
+                  element_head(e, ty_override=residual_ty),
                   registry,
                   extensions,
                   out,

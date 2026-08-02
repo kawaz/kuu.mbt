@@ -3549,18 +3549,21 @@ fn resolve_entity_raw(
               ),
             )
           ToValue(value) => {
-            // DR-127 §3.2: fn 戻り値も座のフィールド type の out への適合検査を通る
-            // (set の operand はフィールド type のパーサを通過済みなので二重検査しない)。
-            if b.op is @abi.Invoke(invocation) && !(value is @abi.Null) {
+            // DR-127 §3.2: 座に座る値の宣言適合は値を運んだ経路で変わらない — fn 戻り値も
+            // set の operand も、フィールド type の out への適合検査を通る。main entry の
+            // operand はフィールド type のパーサを通過済みで恒真だが、`:set:VALUE` variant の
+            // dsl literal は entry 自身の型で decode されるため、ここが唯一の防衛線になる。
+            if !(value is @abi.Null) {
               match
                 residual_terminal_out(declared, b.value_residual, registry) {
-                Some(out) =>
+                Some(out) => {
+                  let producer = match b.op {
+                    @abi.Invoke(invocation) => invocation.name
+                    _ => "set"
+                  }
                   match
                     @extension.seat_fn_output_breach(
-                      value,
-                      out,
-                      invocation.name,
-                      registry,
+                      value, out, producer, registry,
                     ) {
                     Some((reason, message)) =>
                       return Err(
@@ -3568,6 +3571,7 @@ fn resolve_entity_raw(
                       )
                     None => ()
                   }
+                }
                 None => ()
               }
             }
