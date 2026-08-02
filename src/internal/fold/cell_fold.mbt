@@ -677,6 +677,64 @@ pub fn CellSeats::set_at_declared(
 }
 
 ///|
+/// 値空間残余 segment 列の index を、座の現在値の器で解決した観測アドレス片 (DR-127 §6
+/// 「index segment は解決済みの非負 index を載せる」の観測側)。名前 segment は解決を要さず
+/// そのまま通り、非負 index は器が辿れなくても既に解決済みなので保つ。負 index だけは発火
+/// 時点の器の現在長が要る — 器が辿れない / 範囲外で確定できなければ `None` (= 着地座が無い
+/// ので解決済みアドレスも無い。呼び手は字面のままの観測へフォールバックする)。
+pub fn CellSeats::resolved_residual(
+  self : CellSeats,
+  key : String,
+  path : Array[@abi.ObservationSegment],
+) -> Array[@abi.ObservationSegment]? {
+  let current : @abi.Value? = match self.states.get(key) {
+    Some(Seated(value)) => Some(value)
+    _ => None
+  }
+  let out : Array[@abi.ObservationSegment] = []
+  for value = current, remaining = path[:] {
+    guard remaining is [segment, .. rest] else { break Some(out) }
+    match segment {
+      @abi.ObservationName(field) => {
+        out.push(segment)
+        let inner : @abi.Value? = match value {
+          Some(@abi.Object(fields)) => {
+            let mut found : @abi.Value? = None
+            for entry in fields {
+              if entry.0 == field {
+                found = Some(entry.1)
+                break
+              }
+            }
+            found
+          }
+          _ => None
+        }
+        continue inner, rest
+      }
+      @abi.ObservationIndex(index) =>
+        match value {
+          Some(@abi.Array(items)) =>
+            match normalized_index(index, items.length()) {
+              Some(resolved) => {
+                out.push(@abi.ObservationIndex(resolved))
+                continue Some(items[resolved]), rest
+              }
+              None => break None
+            }
+          _ =>
+            if index >= 0 {
+              out.push(segment)
+              continue None, rest
+            } else {
+              break None
+            }
+        }
+    }
+  }
+}
+
+///|
 /// 座の中の segment 列が指す値を読む。空 path は座の値そのもの。値の無い座は `SeatAbsent`。
 pub fn CellSeats::value_at(
   self : CellSeats,

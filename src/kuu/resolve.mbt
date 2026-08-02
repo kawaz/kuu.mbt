@@ -787,6 +787,86 @@ fn value_source_shadow(
 }
 
 ///|
+/// 部分書き 1 件を provenance shadow へ写す (DR-127 §6 / DR-122 §3 の座単位 re-tag)。書き込み後の
+/// 複合値 `value` の構造を mirror し、`path` (解決済み非負 index の segment 列) の座とその内側
+/// だけを書いた発火の `source` で tag し直す。他の座は `prior` (直前までの shadow) のタグを保つ。
+/// 今回の書きが vivify で作った中間器は path 上にしか現れないため、prior に対応の無い座が
+/// path 外に出るのは構造変形 filter 等の防御ケースのみ — そこは書いた発火の tag へ落とす。
+fn reshadow_at(
+  value : @abi.Value,
+  prior : @abi.ResultValue?,
+  path : ArrayView[@abi.ObservationSegment],
+  source : @abi.Source,
+) -> @abi.ResultValue {
+  match path {
+    [] => value_source_shadow(value, source)
+    [segment, .. rest] =>
+      match (segment, value) {
+        (@abi.ObservationName(field), @abi.Object(fields)) => {
+          let prior_fields : Array[(String, @abi.ResultValue)] = match prior {
+            Some(@abi.Object(entries)) => entries
+            _ => []
+          }
+          let out : Array[(String, @abi.ResultValue)] = []
+          for entry in fields {
+            let mut prior_child : @abi.ResultValue? = None
+            for candidate in prior_fields {
+              if candidate.0 == entry.0 {
+                prior_child = Some(candidate.1)
+                break
+              }
+            }
+            if entry.0 == field {
+              out.push(
+                (entry.0, reshadow_at(entry.1, prior_child, rest, source)),
+              )
+            } else {
+              out.push(
+                (
+                  entry.0,
+                  match prior_child {
+                    Some(kept) => kept
+                    None => value_source_shadow(entry.1, source)
+                  },
+                ),
+              )
+            }
+          }
+          @abi.Object(out)
+        }
+        (@abi.ObservationIndex(index), @abi.Array(items)) => {
+          let prior_items : Array[@abi.ResultValue] = match prior {
+            Some(@abi.Array(entries)) => entries
+            _ => []
+          }
+          let out : Array[@abi.ResultValue] = []
+          for offset in 0..<items.length() {
+            let prior_child : @abi.ResultValue? = if offset <
+              prior_items.length() {
+              Some(prior_items[offset])
+            } else {
+              None
+            }
+            if offset == index {
+              out.push(reshadow_at(items[offset], prior_child, rest, source))
+            } else {
+              out.push(
+                match prior_child {
+                  Some(kept) => kept
+                  None => value_source_shadow(items[offset], source)
+                },
+              )
+            }
+          }
+          @abi.Array(out)
+        }
+        // 書けた座と複合値の構造は一致する (set_at_declared 成功後にしか呼ばれない) — 防御。
+        _ => value_source_shadow(value, source)
+      }
+  }
+}
+
+///|
 /// Build the nested result value from the winning flat bindings. `cells` locates every
 /// accumulate cell by result path (so an empty cell still renders `[]`, DR-044 uniform array);
 /// `path` is the current result-scope path. `shape` is the DR-120 declaration occupancy tree;
@@ -1653,6 +1733,7 @@ fn command_projection_bindings(
                   scope: result_path.copy(),
                   link_selections: [],
                   observation: None,
+                  source_shadow: None,
                   value_residual: [],
                   levels_to_declaring_scope: 0,
                   at_pos: None,
@@ -1877,7 +1958,14 @@ fn source_seats(
           abort("source projection failed: scalar seat has no binding")
         }
         let winner = seats[i].bindings[seats[i].bindings.length() - 1]
-        seats[i].shadow = Some(value_source_shadow(winner.value, winner.source))
+        // DR-127 §6: 値残余の部分書きを畳んだ carrier は座単位の shadow を持ち込む — link で
+        // 書いた座だけ link、他は産出発火のタグ。shadow の無い carrier は従来どおり単一 source。
+        seats[i].shadow = Some(
+          match winner.source_shadow {
+            Some(shadow) => shadow
+            None => value_source_shadow(winner.value, winner.source)
+          },
+        )
       }
     }
   }
@@ -3478,6 +3566,10 @@ fn resolve_entity_raw(
   // `fold_seat_effect` が持ち、effects 射影 (`projected_effect`) と共有する。
   let mut current : @abi.Binding? = None
   let seats = @fold.CellSeats::new()
+  // 座単位の provenance shadow (DR-127 §6 / DR-122 §3)。値残余の部分書きが起きた時だけ Some に
+  // なり、carrier の `source_shadow` として下流 (`source_seats`) へ出る。全セル書きは従来どおり
+  // last-winner (carrier の単一 `source` タグ) なので shadow を張らない (= None へ戻す)。
+  let mut seat_shadow : @abi.ResultValue? = None
   let mut committed_now = false
   for b in cli {
     if b.key == e.name {
@@ -3501,6 +3593,20 @@ fn resolve_entity_raw(
         let registry = extensions.extensions()
         let declared = e.ty.output_type()
         let container_present = seats.value_at(e.name, []) is Ok(_)
+        // re-tag の素材は書き込み前に取る: 部分書きは要素を増減しないが、prior shadow の基準は
+        // 「この発火の前」の複合値であり、負 index の解決 (DR-127 §6) も発火時点の現在長で行う。
+        let seat_before : @abi.Value? = if container_present {
+          match seats.value_at(e.name, []) {
+            Ok(seated) => Some(seated)
+            Err(_) => None
+          }
+        } else {
+          None
+        }
+        let residual_resolved = seats.resolved_residual(
+          e.name,
+          b.value_residual,
+        )
         let residual_pos = match b.at_pos {
           Some(pos) => pos
           None => at_pos
@@ -3627,11 +3733,35 @@ fn resolve_entity_raw(
                         "unreachable: set_at_declared succeeded so the seat holds a value",
                       )
                   }
+                  // DR-127 §6: 部分書きした座だけを本発火の source (link 等) で re-tag し、
+                  // 他の座は産出発火のタグ (prior shadow、無ければ直前 carrier の source で
+                  // 起こした shadow) を保つ。
+                  let placed = match residual_resolved {
+                    Some(resolved) => resolved
+                    None => b.value_residual
+                  }
+                  let prior : @abi.ResultValue = match seat_shadow {
+                    Some(shadow) => shadow
+                    None => {
+                      let base_source = match current {
+                        Some(previous) => previous.source
+                        None => b.source
+                      }
+                      match seat_before {
+                        Some(seated) => value_source_shadow(seated, base_source)
+                        None => value_source_shadow(composite, b.source)
+                      }
+                    }
+                  }
+                  seat_shadow = Some(
+                    reshadow_at(composite, Some(prior), placed[:], b.source),
+                  )
                   current = Some({
                     ..b,
                     op: @abi.Set,
                     value: composite,
                     value_residual: [],
+                    source_shadow: seat_shadow,
                   })
                 }
                 Err(fault) => {
@@ -3725,6 +3855,9 @@ fn resolve_entity_raw(
             Some(state) => seats.put(e.name, state)
             None => ()
           }
+          // 全セル書きは座単位の由来を単一タグへ畳み直す (last-winner) — 以降の部分書きは
+          // この書きの carrier source を prior として shadow を起こし直す。
+          seat_shadow = None
           committed_now = !(transition is @fold.ToValue(@abi.Null))
           current = match (b.op, transition) {
             // 値を運ぶ効果 (@abi.Set) は VERBATIM。

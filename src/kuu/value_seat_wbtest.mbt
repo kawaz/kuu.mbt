@@ -369,11 +369,12 @@ test "DR-127 §4 行3: parser 産出の丸ごと置換" {
 }
 
 ///|
-/// DR-127 §4 行 4: parser 産出の上に当該の座だけ更新。
+/// DR-127 §4 行 4: parser 産出の上に当該の座だけ更新。sources は座単位の re-tag (DR-127 §6) —
+/// 部分書きした until だけ link、since は産出発火のタグ (cli) を保つ。
 test "DR-127 §4 行4: 産出の上への座更新" {
   assert_eq(
     seat_view(SEAT_SRC, ["--tr", "1..5", "--until", "9"]),
-    "result={tr={since=1,until=9}} sources={tr={since=link,until=link}} effects=tr,tr.until",
+    "result={tr={since=1,until=9}} sources={tr={since=cli,until=link}} effects=tr,tr.until",
   )
 }
 
@@ -383,7 +384,7 @@ test "DR-127 §4 行4: 産出の上への座更新" {
 test "DR-131 §2b: set(null) は座を null へ戻す (器は保つ)" {
   assert_eq(
     seat_view(SEAT_SRC, ["--tr", "1..5", "--clear"]),
-    "result={tr={since=1,until=null}} sources={tr={since=link,until=null}} effects=tr,tr.until",
+    "result={tr={since=1,until=null}} sources={tr={since=cli,until=null}} effects=tr,tr.until",
   )
 }
 
@@ -402,7 +403,7 @@ test "DR-131 §7: unset は空座でも成立し器を作らない" {
 test "DR-127 §4.1: 器のある座への incr は座の値を old に取る" {
   assert_eq(
     seat_view(SEAT_SRC, ["--tr", "1..5", "--bump"]),
-    "result={tr={since=1,until=6}} sources={tr={since=link,until=link}} effects=tr,tr.until",
+    "result={tr={since=1,until=6}} sources={tr={since=cli,until=link}} effects=tr,tr.until",
   )
 }
 
@@ -515,7 +516,7 @@ test "DR-127 §3: old を読んで null を返す fn も空座では Reject" {
   // 器があれば同じ fn は成立する (null を座へ書く = set(null) と同じ着地)。
   assert_eq(
     seat_view(SEAT_SRC, ["--tr", "1..5", "--peek"]),
-    "result={tr={since=1,until=null}} sources={tr={since=link,until=null}} effects=tr,tr.until",
+    "result={tr={since=1,until=null}} sources={tr={since=cli,until=null}} effects=tr,tr.until",
   )
 }
 
@@ -644,12 +645,27 @@ const ARR_SRC : String =
 
 ///|
 test "DR-127 §1: 負 index は発火時点の現在長で解決される" {
-  // sources は要素ごとの構造分解 (W2-5 M1) だが、座単位の re-tag は W2-9 の領分 —
-  // 現状は whole-cell carrier (最後に書いた binding の source) が全要素へ写る。
-  // effects の値空間 index も字面の -1 のまま (解決済み非負への書き換えは W2-9)。
+  // DR-127 §6: sources は座単位 — 産出発火 (cli) の要素はタグを保ち、部分書きした座だけ link。
+  // effects の `path` の index segment は解決済みの非負値 (`arr[-1]` は現在長 3 で `arr[2]`)。
   assert_eq(
     seat_view(ARR_SRC, ["--arr", "1,2,3", "--last", "9"]),
-    "result={arr=[1,2,9]} sources={arr=[link,link,link]} effects=arr,arr[-1]",
+    "result={arr=[1,2,9]} sources={arr=[cli,cli,link]} effects=arr,arr[2]",
+  )
+}
+
+///|
+/// DR-127 §6: 部分書きが複数回起きても座ごとのタグが積み上がる — link で書いた座だけが link、
+/// 触っていない座は産出発火 (cli) のタグを保つ。非負 index (`arr[0]`) は定義字面が既に解決済み
+/// なので effects でもそのまま、負 index (`arr[-1]`) だけが現在長で非負へ書き換わる。
+test "DR-127 §6: 複数の部分書きは座ごとにタグを積む (非負 index は素通し)" {
+  let src =
+    #|{"options":[
+    #|  {"name":"arr","type":"csv","long":true},
+    #|  {"name":"first","type":"number","long":true,"link":"arr[0]"},
+    #|  {"name":"last","type":"number","long":true,"link":"arr[-1]"}]}
+  assert_eq(
+    seat_view(src, ["--arr", "1,2,3", "--first", "7", "--last", "9"]),
+    "result={arr=[7,2,9]} sources={arr=[link,cli,link]} effects=arr,arr[0],arr[2]",
   )
 }
 

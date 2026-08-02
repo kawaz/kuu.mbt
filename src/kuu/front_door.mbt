@@ -693,6 +693,11 @@ fn projected_effect(
     None => (binding.key, [])
   }
   let declared = declared_default_seat(defaults, binding)
+  // DR-127 §6 統括裁定 3: effects の `path` の index segment は解決済みの非負値を載せる。
+  // 解決は発火時点の座の現在長 (書き込み前 — 部分書きは要素を増減しない) で行い、解決でき
+  // ない形 (器不在の負 index 等 = 勝ち枝では枝ローカル fold (DR-127 §4.2) が既に落とす形の、
+  // 保守的スキップ経路の観測) は字面のままの best-effort に留める。
+  let mut resolved_residual : Array[@abi.ObservationSegment]? = None
   let transition = if binding.value_residual.length() > 0 {
     // DR-127 §4.1 — 値空間残余の座への操作。old は座の内側の現在値 (record の宣言済み欠落は
     // 論理 null、DR-130 §4.1)。成立する書きだけ座へ反映する — Sentinel / 解決失敗で止まる
@@ -700,6 +705,7 @@ fn projected_effect(
     // 失敗で停止できないため effect の綴りをそのまま観測に落とす。
     let registry = extensions.extensions()
     let declared_ty = declared_type_seat(types, binding)
+    resolved_residual = seats.resolved_residual(key, binding.value_residual)
     let container_present = seats.value_at(key, []) is Ok(_)
     let old : @abi.Value? = if container_present {
       match
@@ -767,7 +773,20 @@ fn projected_effect(
     @abi.Set | @abi.Remove => (binding.op, Some(binding.value))
     _ => (binding.op, None)
   }
-  { entity, path: path.copy(), op, operand, source: binding.source }
+  // 観測アドレスの末尾 (= 値空間残余ぶんの segment) を解決済み segment へ差し替える。
+  // observation.path はセル空間の消費済み segment + 値空間残余の連結 (DR-127 §6) なので、
+  // 差し替え対象は末尾の value_residual 長ぶんに限られる。
+  let observed_path = path.copy()
+  match resolved_residual {
+    Some(resolved) if observed_path.length() >= resolved.length() => {
+      let base = observed_path.length() - resolved.length()
+      for offset in 0..<resolved.length() {
+        observed_path[base + offset] = resolved[offset]
+      }
+    }
+    _ => ()
+  }
+  { entity, path: observed_path, op, operand, source: binding.source }
 }
 
 ///|

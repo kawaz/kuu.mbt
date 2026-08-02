@@ -345,6 +345,12 @@ pub(all) struct Binding {
   scope : Array[String]
   link_selections : Array[LinkSelection]
   observation : ObservationAddress?
+  // DR-127 §6 / DR-122 §3 — 座単位の由来。resolve 相の CLI seat fold が値残余の部分書き (link)
+  // を畳んで 1 個の複合 carrier を返すとき、単一の `source` タグでは表せない「部分書きした座だけ
+  // link、他の座は産出発火のタグ」をこの shadow (値と同型のタグ木) が運ぶ。部分書きの起きて
+  // いない carrier と parse 相の効果 binding は常に `None` — DR-038 の効果 identity (経路
+  // counting) に参加するのは従来 field のみ。
+  source_shadow : ResultValue?
   // DR-127 §2.2 の値空間残余: この binding の効果がセルの値**内部**の座に着地するとき、その座を
   // 指す segment 列。`[]` = セルそのものへの着地 (従来の全 binding)。非空はリンク固定パスの
   // 第 2 相 (値空間) を通った binding だけが持ち、効果適用 (`cell_fold.mbt` の `CellSeats`) が
@@ -390,6 +396,7 @@ pub fn Binding::new(
     scope: [],
     link_selections: [],
     observation: None,
+    source_shadow: None,
     value_residual: [],
     levels_to_declaring_scope: 0,
     at_pos,
@@ -433,6 +440,7 @@ pub fn bindings_through_link(
               scope: prefix.copy(),
               link_selections: target_selections.copy(),
               observation: None,
+              source_shadow: None,
               value_residual: [],
               levels_to_declaring_scope: binding.levels_to_declaring_scope +
               levels_to_target,
@@ -501,6 +509,7 @@ pub fn Binding::deprecation_mark(element : String) -> Binding {
     scope: [],
     link_selections: [],
     observation: None,
+    source_shadow: None,
     value_residual: [],
     levels_to_declaring_scope: 0,
     at_pos: None,

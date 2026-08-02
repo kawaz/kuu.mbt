@@ -49,6 +49,7 @@ pub(all) struct Binding {
   scope : Array[String]
   link_selections : Array[LinkSelection]
   observation : ObservationAddress?
+  source_shadow : ResultValue?
   value_residual : Array[ObservationSegment]
   levels_to_declaring_scope : Int
   at_pos : Int?

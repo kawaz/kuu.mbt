@@ -26,6 +26,7 @@ pub struct CellSeats {
 pub fn CellSeats::new() -> Self
 pub fn CellSeats::old(Self, String, @abi.Value?) -> @abi.Value?
 pub fn CellSeats::put(Self, String, SeatState) -> Unit
+pub fn CellSeats::resolved_residual(Self, String, Array[@abi.ObservationSegment]) -> Array[@abi.ObservationSegment]?
 pub fn CellSeats::set_at(Self, String, Array[@abi.ObservationSegment], @abi.Value) -> Result[Unit, SeatFault]
 pub fn CellSeats::set_at_declared(Self, String, Array[@abi.ObservationSegment], @abi.Value, @abi.ValueType?, @extension.Registry, vivify~ : Bool) -> Result[Unit, SeatFault]
 pub fn CellSeats::value_at(Self, String, Array[@abi.ObservationSegment]) -> Result[@abi.Value, SeatFault]
