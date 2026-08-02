@@ -69,11 +69,112 @@ impl @extension.TypeExt for RangeSeatType with fn default_seat_resolver(
 }
 
 ///|
+/// array を名乗るテスト型: `out` は number の array、parse_token はカンマ区切り数値列。
+/// W2-8 の実行時 index 解決 (DR-127 §2.2 array 行の実行時列) の対象セルを作る。
+priv struct CsvSeatType {}
+
+///|
+impl @extension.TypeExt for CsvSeatType with fn name(_self) {
+  "csv"
+}
+
+///|
+impl @extension.TypeExt for CsvSeatType with fn has_value_slot(_self) {
+  true
+}
+
+///|
+impl @extension.TypeExt for CsvSeatType with fn output_type(_self) {
+  Some(@abi.ValueType::Array(@abi.ValueType::Number))
+}
+
+///|
+impl @extension.TypeExt for CsvSeatType with fn parse_token(_self, token) {
+  let items : Array[@abi.Value] = []
+  for piece in token.split(",") {
+    match @extension.number_type().parse_token(piece.to_owned()) {
+      Ok(value) => items.push(value)
+      Err(fail) => return Err(fail)
+    }
+  }
+  Ok(@abi.Array(items))
+}
+
+///|
+impl @extension.TypeExt for CsvSeatType with fn default_seat_resolver(
+  _self,
+  ctx,
+) {
+  ctx.declared()
+}
+
+///|
+/// map を名乗るテスト型: `out` は number 値の map、parse_token は `k=v` のカンマ区切り。
+/// W2-8 の実行時キー解決 (DR-127 §2.2 map 行 — 以降の segment は全て実行時) の対象セルを作る。
+priv struct DictSeatType {}
+
+///|
+impl @extension.TypeExt for DictSeatType with fn name(_self) {
+  "dict"
+}
+
+///|
+impl @extension.TypeExt for DictSeatType with fn has_value_slot(_self) {
+  true
+}
+
+///|
+impl @extension.TypeExt for DictSeatType with fn output_type(_self) {
+  Some(@abi.ValueType::Map(@abi.ValueType::Number))
+}
+
+///|
+impl @extension.TypeExt for DictSeatType with fn parse_token(_self, token) {
+  let fields : Array[(String, @abi.Value)] = []
+  for piece in token.split(",") {
+    let entry = piece.to_owned()
+    let mut split = -1
+    for index in 0..<entry.length() {
+      if entry[index] == '=' {
+        split = index
+        break
+      }
+    }
+    if split < 0 {
+      return Err({
+        disposition: @abi.RecognizedButInvalid,
+        reason: "invalid-range",
+        message: "dict expects k=v pairs",
+      })
+    }
+    match @extension.number_type().parse_token(entry[split + 1:].to_owned()) {
+      Ok(value) => fields.push((entry[0:split].to_owned(), value))
+      Err(fail) => return Err(fail)
+    }
+  }
+  Ok(@abi.Object(fields))
+}
+
+///|
+impl @extension.TypeExt for DictSeatType with fn default_seat_resolver(
+  _self,
+  ctx,
+) {
+  ctx.declared()
+}
+
+///|
 /// 値残余座への out 不適合を露出させるテスト用 Value fn: number を宣言する座へ string を返す。
 fn seat_registry() -> @node.Registry {
   let registry = canonical_registry()
   guard registry.register_type(RangeSeatType::{  } as &@extension.TypeExt) else {
     abort("duplicate test resident: trange")
+  }
+  guard registry.register_type(CsvSeatType::{  } as &@extension.TypeExt) else {
+    abort("duplicate test resident: csv")
+  }
+  guard registry.register_type(DictSeatType::{  } as &@extension.TypeExt) else {
+    abort("duplicate test resident: dict")
   }
   guard registry.register_cell_fn(
     @extension.cell_fn_descriptor(
@@ -168,8 +269,10 @@ fn seat_view(src : String, args : Array[String]) -> String raise {
 }
 
 ///|
-/// resolve 相の Reject (DR-127 §4.1/§4.2 — 単枝では全体パース失敗として観測される) の
-/// reason + message を返す。
+/// 解決失敗 (DR-127 §4.1/§4.2 — 単枝では全体パース失敗として観測される) の reason + message を
+/// 返す。値残余の解決失敗は裁定前の枝ローカル fold (§4.2、parse 相) が合成 ParseError で受け、
+/// 乖離検査 (§3.2) など経路解決以外の失敗は従来どおり resolve 相の Err として現れる —
+/// どちらも Failure に落ちるので、本ヘルパーは両位相を同じ形で観測する。
 fn seat_failure(src : String, args : Array[String]) -> String raise {
   let ast = seat_ast(src)
   let parsed = parse_legacy(ast, args)
@@ -183,7 +286,37 @@ fn seat_failure(src : String, args : Array[String]) -> String raise {
         fail("failure must carry a cause (DR-127 §4.2)")
         panic()
       }
-      failure.errors[0].reason + ": " + failure.errors[0].message
+      // 全 error を結合して返す — 全枝落ちでは枝ごとの失敗理由が並ぶ (DR-053 §2 全保持) ため、
+      // 先頭 1 件だけ見ると合成 ParseError (DR-127 §4.2) を見落とす。
+      let parts : Array[String] = []
+      for e in failure.errors {
+        parts.push(e.reason + ": " + e.message)
+      }
+      test_join_comma(parts)
+    }
+    other => {
+      fail("expected Failure, got " + render_outcome(other))
+      panic()
+    }
+  }
+}
+
+///|
+/// `seat_failure` の args_pos 付き変種 — 合成 ParseError の帰属 (DR-037 / DR-127 §4.2) を pin する。
+fn seat_failure_pos(src : String, args : Array[String]) -> String raise {
+  let ast = seat_ast(src)
+  let parsed = parse_legacy(ast, args)
+  match resolve_legacy(ast, parsed, args) {
+    @engine.Failure(failure) => {
+      guard failure.errors.length() > 0 else {
+        fail("failure must carry a cause (DR-127 §4.2)")
+        panic()
+      }
+      failure.errors[0].reason +
+      ": " +
+      failure.errors[0].message +
+      " @" +
+      failure.errors[0].args_pos.to_string()
     }
     other => {
       fail("expected Failure, got " + render_outcome(other))
@@ -274,11 +407,12 @@ test "DR-127 §4.1: 器のある座への incr は座の値を old に取る" {
 }
 
 ///|
-/// DR-127 §3: 空の座 (未 vivify) への ctx.old 依存 Value fn の適用は解決失敗 = 枝 Reject
-/// (単枝では全体パース失敗)。原因が errors に載る (§4.2 の帰属原則)。
+/// DR-127 §3: 空の座 (未 vivify) への ctx.old 依存 Value fn の適用は解決失敗 = 枝 Reject。
+/// 判定は裁定前の枝ローカル fold (§4.2) が持ち、単枝では全体パース失敗として観測される —
+/// 原因が合成 ParseError として errors に載る (§4.2 の合成義務)。
 test "DR-127 §3: 未 vivify の空座への ctx.old 依存 fn は Reject" {
   let failure = seat_failure(SEAT_SRC, ["--bump"])
-  assert_true(failure.contains("invalid-range"))
+  assert_true(failure.contains("unresolvable_link_path"))
   assert_true(failure.contains("ctx.old"))
 }
 
@@ -287,7 +421,7 @@ test "DR-127 §3: 未 vivify の空座への ctx.old 依存 fn は Reject" {
 /// 発火時 Reject。
 test "DR-127 §4.1: Sentinel (default) は値残余座で Reject" {
   let failure = seat_failure(SEAT_SRC, ["--reset"])
-  assert_true(failure.contains("invalid-range"))
+  assert_true(failure.contains("unresolvable_link_path"))
   assert_true(failure.contains("DR-127"))
 }
 
@@ -376,7 +510,7 @@ test "effects の operand は null 補形しない (生出力のまま)" {
 /// Reject の理由は消えない。器がある座では同じ fn が成立する (交差の pin)。
 test "DR-127 §3: old を読んで null を返す fn も空座では Reject" {
   let failure = seat_failure(SEAT_SRC, ["--peek"])
-  assert_true(failure.contains("invalid-range"))
+  assert_true(failure.contains("unresolvable_link_path"))
   assert_true(failure.contains("ctx.old"))
   // 器があれば同じ fn は成立する (null を座へ書く = set(null) と同じ着地)。
   assert_eq(
@@ -437,4 +571,110 @@ test "DR-127 §3.2: eq / short 入口でもフィールド type で読む" {
   let expected = "result={tr={since=null,until=5}} sources={tr={since=null,until=link}} effects=tr.until"
   assert_eq(seat_view(SEAT_SRC, ["--until=5"]), expected)
   assert_eq(seat_view(SEAT_SRC, ["-u", "5"]), expected)
+}
+
+// ── W2-8: DR-127 §4.2 裁定前の枝ローカル効果列 fold ─────────────────────────────
+
+///|
+/// 同じ綴り `--u` に operand 形 (`:set`) と bare 形 (`:incr`) が同居し、余りトークンは
+/// positional `rest` が吸えるため、`--u 5` は option-positional 境界をまたぐ 2 解釈になる
+/// (DESIGN §15.4 の real ambiguous の形)。片方の枝だけが値残余の解決に失敗する非対称を作る。
+const BRANCH_SRC : String =
+  #|{"options":[
+  #|  {"name":"tr","type":"trange","long":true},
+  #|  {"name":"u","type":"string","long":[":set",":incr"],"link":"tr.until"}],
+  #| "positionals":[{"name":"rest","type":"string","repeat":{"min":0}}]}
+
+///|
+/// DR-127 §4.2: 裁定は枝ローカルの効果列 fold の後に来る。`--u 5` の 2 解釈のうち bare `:incr`
+/// 枝は空座 (未 vivify) への ctx.old 依存 fn で解決失敗 = 枝 Reject となり、operand `:set` 枝
+/// (座へ 5 を書く) が勝つ — Ambiguous にも Failure にもならない (DR-127 §4 / DR-029)。
+test "DR-127 §4.2: 値残余 Reject の枝が落ち、兄弟枝が勝つ" {
+  assert_eq(
+    seat_view(BRANCH_SRC, ["--u", "5"]),
+    "result={rest=[],tr={since=null,until=5}} sources={rest=[],tr={since=null,until=link}} effects=tr.until",
+  )
+}
+
+///|
+/// 全枝落ちの対照: `--u` 単独は bare `:incr` の 1 解釈しか無く、その枝が値残余の解決失敗で
+/// 落ちると完全経路 0 件 = 全体パース失敗。合成 ParseError が errors に載る (§4.2 の合成義務)。
+test "DR-127 §4.2: 全枝が落ちれば全体パース失敗 + 原因の合成" {
+  let failure = seat_failure(BRANCH_SRC, ["--u"])
+  assert_true(failure.contains("unresolvable_link_path"))
+  assert_true(failure.contains("ctx.old"))
+}
+
+///|
+/// map セルの実行時キー解決 (DR-127 §2.2 map 行)。`--m a=1` の産出に存在するキーへの部分書きは
+/// 成立し (§3: 座が実在すれば書ける)、存在しないキーは枝 Reject。
+const MAP_SRC : String =
+  #|{"options":[
+  #|  {"name":"m","type":"dict","long":true},
+  #|  {"name":"wa","type":"number","long":true,"link":"m.a"},
+  #|  {"name":"wz","type":"number","long":[":set",":incr"],"link":"m.zzz"}],
+  #| "positionals":[{"name":"rest","type":"string","repeat":{"min":0}}]}
+
+///|
+test "DR-127 §2.2 map: 実在するキーの座への部分書きは成立する" {
+  assert_eq(
+    seat_view(MAP_SRC, ["--m", "a=1", "--wa", "5"]),
+    "result={m={a=5},rest=[]} sources={m={a=link},rest=[]} effects=m,m.a",
+  )
+}
+
+///|
+/// map キー不在は operand 形 (`set` の書き先不在) と bare 形 (`incr` の書き先不在) の両解釈で
+/// 解決失敗 — 全枝が落ち、失敗レポートに座の診断 (missing-field) が載る。
+test "DR-127 §2.2 map: キー不在は枝 Reject、全枝落ちで原因が載る" {
+  let failure = seat_failure(MAP_SRC, ["--m", "a=1", "--wz", "5"])
+  assert_true(failure.contains("unresolvable_link_path"))
+  assert_true(failure.contains("missing-field:zzz"))
+}
+
+///|
+/// array セルの実行時 index 解決 (DR-127 §1 / §2.2 array 行)。負 index は発火時点の現在長で
+/// 確定する — `--arr 1,2,3` の後の `[-1]` は index 2 の座。
+const ARR_SRC : String =
+  #|{"options":[
+  #|  {"name":"arr","type":"csv","long":true},
+  #|  {"name":"last","type":"number","long":true,"link":"arr[-1]"},
+  #|  {"name":"third","type":"number","long":true,"link":"arr[3]"}]}
+
+///|
+test "DR-127 §1: 負 index は発火時点の現在長で解決される" {
+  // sources は要素ごとの構造分解 (W2-5 M1) だが、座単位の re-tag は W2-9 の領分 —
+  // 現状は whole-cell carrier (最後に書いた binding の source) が全要素へ写る。
+  // effects の値空間 index も字面の -1 のまま (解決済み非負への書き換えは W2-9)。
+  assert_eq(
+    seat_view(ARR_SRC, ["--arr", "1,2,3", "--last", "9"]),
+    "result={arr=[1,2,9]} sources={arr=[link,link,link]} effects=arr,arr[-1]",
+  )
+}
+
+///|
+/// 範囲外 index は枝 Reject (definition-error ではない — 構造は静的合法、存在が実行時)。
+/// 単枝なので全体パース失敗になり、合成 ParseError の args_pos は当該 binding の at_pos
+/// (= operand `9` のトークン位置 3) に帰属する (DR-127 §4.2 / DR-037)。
+test "DR-127 §2.2 array: 範囲外 index は枝 Reject、args_pos は at_pos 帰属" {
+  let failure = seat_failure_pos(ARR_SRC, ["--arr", "1,2", "--third", "9"])
+  assert_true(failure.contains("unresolvable_link_path"))
+  assert_true(failure.contains("index-out-of-range:3"))
+  assert_true(failure.contains("@3"))
+}
+
+///|
+/// subcommand scope 配下でも枝ローカル fold の対象セル特定 (scope + 宣言名) が効く —
+/// scope 配下の binding は scope label 付きで運ばれるため、対象セルの宣言 (ValueType /
+/// 宣言 default) を root と取り違えると枝選別が誤る (W2-4 差異表 F-1 と同じ軸)。
+test "DR-127 §4.2: subcommand scope 配下でも枝選別が効く" {
+  let src =
+    #|{"commands":[{"name":"go","options":[
+    #|  {"name":"tr","type":"trange","long":true},
+    #|  {"name":"u","type":"string","long":[":set",":incr"],"link":"tr.until"}],
+    #| "positionals":[{"name":"rest","type":"string","repeat":{"min":0}}]}]}
+  assert_eq(
+    seat_view(src, ["go", "--u", "5"]),
+    "result={go={rest=[],tr={since=null,until=5}}} sources={go={rest=[],tr={since=null,until=link}}} effects=tr.until",
+  )
 }

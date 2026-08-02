@@ -682,7 +682,7 @@ fn declared_type_seat(
 /// `Invoke` に限る (DR-114 §2)。
 fn projected_effect(
   binding : @abi.Binding,
-  seats : CellSeats,
+  seats : @fold.CellSeats,
   defaults : Array[DefaultSeat],
   types : Array[TypeSeat],
   extensions : @node.Registry,
@@ -715,14 +715,14 @@ fn projected_effect(
     } else {
       None
     }
-    let (transition, _) = fold_seat_effect(
+    let (transition, _) = @fold.fold_seat_effect(
       binding,
       old,
       binding.key,
-      extensions,
+      extensions.extensions(),
     )
     match transition {
-      ToValue(value) =>
+      @fold.ToValue(value) =>
         // `unset` (null 返し) の空座適用は座を触らない no-op (DR-131 §7 / DR-127 §3)。
         if !(value is @abi.Null && !container_present) {
           match
@@ -743,13 +743,13 @@ fn projected_effect(
     transition
   } else {
     let old = seats.old(key, declared)
-    let (transition, _) = fold_seat_effect(
+    let (transition, _) = @fold.fold_seat_effect(
       binding,
       old,
       binding.key,
-      extensions,
+      extensions.extensions(),
     )
-    match seat_after(transition, declared) {
+    match @fold.seat_after(transition, declared) {
       Some(state) => seats.put(key, state)
       None => ()
     }
@@ -758,10 +758,11 @@ fn projected_effect(
   let (op, operand) = match binding.op {
     @abi.Invoke(_) =>
       match transition {
-        ToValue(value) => (@abi.EffectOp::Set, Some(value))
-        ToDefault => (@abi.EffectOp::Default, None)
-        ToEmpty => (@abi.EffectOp::Empty, None)
-        NoChange | FnMissing(_) | FnFailed(_) => (binding.op, None)
+        @fold.ToValue(value) => (@abi.EffectOp::Set, Some(value))
+        @fold.ToDefault => (@abi.EffectOp::Default, None)
+        @fold.ToEmpty => (@abi.EffectOp::Empty, None)
+        @fold.NoChange | @fold.FnMissing(_) | @fold.FnFailed(_) =>
+          (binding.op, None)
       }
     @abi.Set | @abi.Remove => (binding.op, Some(binding.value))
     _ => (binding.op, None)
@@ -778,7 +779,7 @@ fn project_effects(
   let config_file_cells : Array[ConfigFileCell] = []
   collect_config_file_cells(ast.root, [], config_file_cells)
   let effects : Array[OutputEffect] = []
-  let seats = CellSeats::new()
+  let seats = @fold.CellSeats::new()
   let default_seats : Array[DefaultSeat] = []
   collect_default_seats(ast.root, [], default_seats)
   let type_seats : Array[TypeSeat] = []

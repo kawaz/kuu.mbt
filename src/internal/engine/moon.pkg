@@ -1,6 +1,7 @@
 import {
   "kawaz/kuu/abi",
   "kawaz/kuu/extension",
+  "kawaz/kuu/internal/fold",
   "moonbitlang/core/string",
   "moonbitlang/core/debug",
 }

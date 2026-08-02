@@ -1,15 +1,22 @@
 // cell_fold.mbt — 座 (cell) の値状態と、効果 1 件を座へ畳む共有 fold。
 //
 // 効果列から「今この座に何が座っているか」を求める計算は、DR-045 の効果語彙・DR-114 §7 の
-// `ctx.old` 規範・DR-131 §7 の Sentinel 語彙が一体で決める 1 つの意味論である。従来それを
-// `front_door.mbt` の effects 射影 (`projected_effect` の `current` map) と `resolve.mbt` の
-// CLI seat 解決 (`resolve_entity_raw` の scalar fold) が独立に実装しており、複合値と vivify
-// (DR-127 §3) が入ると両者の答えがずれる。conformance は effects と result の両方を pin して
-// いるので、ずれは「両方が同時に間違っている」場合に検出できない — だから 3 つ目の fold
-// (DR-127 §4.2 の枝ローカル効果列) を足す前に、ここへ 1 本化する。
+// `ctx.old` 規範・DR-131 §7 の Sentinel 語彙が一体で決める 1 つの意味論であり、消費者は 3 つ:
+// `src/kuu/front_door.mbt` の effects 射影 (`projected_effect`)、`src/kuu/resolve.mbt` の
+// CLI seat 解決 (`resolve_entity_raw` の scalar fold)、`src/internal/engine/eval.mbt` の
+// 枝ローカル効果列 fold (DR-127 §4.2、裁定前の枝内解決可否判定)。複合値と vivify (DR-127 §3)
+// が絡むと独立実装は答えがずれ、conformance は effects と result の両方を pin しているため
+// 「両方が同時に間違っている」ずれを検出できない — だから 3 者が本モジュールの 1 つの fold を
+// 呼ぶ。engine (kuu パッケージの下流) からも呼べるよう、置き場は internal 共有パッケージで、
+// registry は @extension.Registry で受ける (cell fn の lookup 実体は extension 層にある)。
 //
 // 本モジュールが持つのは **値状態** だけである。効果の出力表現 (`OutputEffect` の op/operand) と
 // 解決済み binding の carrier 構築は、観測面と値源ラダーという別々の責務なので各呼び手に残る。
+//
+// なお `eval.mbt` の `is_committed` / `element_value` 系は本 fold と別概念である — あちらは
+// parse 途中の制約 gate (DR-055/DR-047) のための「fn 未発火の効果記号列に対する構文的
+// committed 判定」で、operand が未確定な位置から cell fn を呼べない (`has_pending_invoke` が
+// その手当て)。本 fold は完全枝・裁定直前/解決相で fn 発火込みに値状態を畳む。統合しない。
 
 ///|
 /// 座の値状態。DR-114 §7 の `ctx.old()`「発火直前の cell 値を返し、値が無ければ absent」を
@@ -24,7 +31,7 @@
 ///   resident (`resolve_cli`) が持ち本 fold を通らず、accumulator セルへ `ctx.old` を読む fn を
 ///   置く定義 (`multiple` × `update`) は `parse_definition` 時点の definition-error である。
 ///   consumer が入る段で型別の空値へ差し替えること
-priv enum SeatState {
+pub(all) enum SeatState {
   Opened
   Emptied
   Seated(@abi.Value)
@@ -33,7 +40,7 @@ priv enum SeatState {
 ///|
 /// 効果 1 件が座の値状態へ与える遷移。DR-045 の op 語彙を「値状態の言葉」へ写したもので、
 /// `Invoke` は cell fn を呼んだ **後** の分類になる (呼び出し自体が本 fold の責務)。
-priv enum SeatTransition {
+pub(all) enum SeatTransition {
   /// 値が座る。`ToValue(Null)` は「席を開ける」= uncommitted (DR-045 の `is_committed` が
   /// `Set` かつ値 null を committed としないのと同じ規則)。
   ToValue(@abi.Value)
@@ -58,11 +65,11 @@ priv enum SeatTransition {
 /// `Remove` を `ToValue` に写すのは、merge accumulator の add piece と同じ「operand が要素 type で
 /// parse された値」だからである (DR-080 §2)。scalar seat には `Remove`/`Splice` は届かない
 /// (呼び手側の防御 arm が受け持つ)。
-fn fold_seat_effect(
+pub fn fold_seat_effect(
   binding : @abi.Binding,
   old : @abi.Value?,
   target : String,
-  extensions : @node.Registry,
+  extensions : @extension.Registry,
 ) -> (SeatTransition, Bool) {
   match binding.op {
     @abi.Set | @abi.Remove => (ToValue(binding.value), false)
@@ -97,7 +104,7 @@ fn fold_seat_effect(
 ///|
 /// 遷移後の座の値状態。`ToDefault` の落ち先は呼び手のラダーが決めるので引数で受ける
 /// (供給が無ければ座は空 — 書き戻す値が無い)。状態を変えない遷移は `None` を返す。
-fn seat_after(
+pub fn seat_after(
   transition : SeatTransition,
   default_seat : @abi.Value?,
 ) -> SeatState? {
@@ -124,19 +131,19 @@ fn seat_after(
 /// 読み書きの口は `value_at` / `set_at` の 2 つだけである。**座そのものは空 segment 列という
 /// 特例**で、値空間 (DR-127 §2.2) へ降りる部分更新は同じ口に segment 列を渡した形になる —
 /// 降下の計算を 1 箇所へ集めておくと、vivify (DR-127 §3) を足すときに触る場所が 1 つで済む。
-priv struct CellSeats {
+pub struct CellSeats {
   states : Map[String, SeatState]
 }
 
 ///|
-fn CellSeats::new() -> CellSeats {
+pub fn CellSeats::new() -> CellSeats {
   { states: Map([]) }
 }
 
 ///|
 /// 座の `ctx.old` (DR-114 §7)。`declared_default` は当該セルの宣言 default で、席が開いている
 /// (= 効果がまだ無い / `unset` 済み) ときの落ち先。
-fn CellSeats::old(
+pub fn CellSeats::old(
   self : CellSeats,
   key : String,
   declared_default : @abi.Value?,
@@ -157,7 +164,11 @@ fn CellSeats::old(
 ///|
 /// 座の値状態を書く。値を持つ状態は「空 segment 列への部分更新」= 座そのものへの set なので、
 /// 書き込み口を 1 つに保つため `set_at` を通す。
-fn CellSeats::put(self : CellSeats, key : String, state : SeatState) -> Unit {
+pub fn CellSeats::put(
+  self : CellSeats,
+  key : String,
+  state : SeatState,
+) -> Unit {
   match state {
     Seated(value) =>
       match self.set_at(key, [], value) {
@@ -175,7 +186,7 @@ fn CellSeats::put(self : CellSeats, key : String, state : SeatState) -> Unit {
 ///|
 /// 座への部分更新が成立しない理由。DR-127 §2.2 の値空間降下が実行時に返す診断の素材で、
 /// 器の自動生成 (vivify、DR-127 §3) は本段では行わない — 未 vivify の座は `SeatAbsent` になる。
-priv enum SeatFault {
+pub(all) enum SeatFault {
   /// 座そのもの、または途中の器に値が無い。
   SeatAbsent
   /// スカラを segment で降りようとした。
@@ -189,7 +200,7 @@ priv enum SeatFault {
 ///|
 /// 座の失敗理由の綴り。W2-6 の値空間降下が診断メッセージへ載せる素材で、防御 abort の
 /// メッセージもここを通す (失敗の種類を握りつぶさない)。
-fn seat_fault_message(fault : SeatFault) -> String {
+pub fn seat_fault_message(fault : SeatFault) -> String {
   match fault {
     SeatAbsent => "absent"
     SeatNotContainer => "not-container"
@@ -364,7 +375,7 @@ fn declared_type_at(
 
 ///|
 /// 値残余終端のフィールド type が名乗る `out` (DR-127 §3.2 — 座に座る値の適合検査の规準)。
-fn residual_terminal_out(
+pub fn residual_terminal_out(
   declared : @abi.ValueType?,
   path : Array[@abi.ObservationSegment],
   registry : @extension.Registry,
@@ -579,7 +590,7 @@ fn typed_value_with_at(
 
 ///|
 /// 座の値空間残余への読み (宣言型併走、DR-130 §4.1 の論理 null 込み)。
-fn CellSeats::value_at_declared(
+pub fn CellSeats::value_at_declared(
   self : CellSeats,
   key : String,
   path : Array[@abi.ObservationSegment],
@@ -594,7 +605,7 @@ fn CellSeats::value_at_declared(
 
 ///|
 /// 座の値空間残余への書き (宣言型併走、vivify は `set` 専用の op gate を呼び手が `vivify~` で渡す)。
-fn CellSeats::set_at_declared(
+pub fn CellSeats::set_at_declared(
   self : CellSeats,
   key : String,
   path : Array[@abi.ObservationSegment],
@@ -619,7 +630,7 @@ fn CellSeats::set_at_declared(
 
 ///|
 /// 座の中の segment 列が指す値を読む。空 path は座の値そのもの。値の無い座は `SeatAbsent`。
-fn CellSeats::value_at(
+pub fn CellSeats::value_at(
   self : CellSeats,
   key : String,
   path : Array[@abi.ObservationSegment],
@@ -632,7 +643,7 @@ fn CellSeats::value_at(
 
 ///|
 /// 座の中の segment 列が指す値を書く。空 path は座そのものへの set。
-fn CellSeats::set_at(
+pub fn CellSeats::set_at(
   self : CellSeats,
   key : String,
   path : Array[@abi.ObservationSegment],

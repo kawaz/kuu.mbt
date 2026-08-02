@@ -2757,23 +2757,36 @@ fn bare_link_route(
 }
 
 ///|
-/// The W2-7 activation gate for a value-space residual: only the statically pinned
-/// record-field terminal (DR-127 §2.2 FieldType) routes. Array-element and map/value
-/// terminals stay inert until the branch-local runtime fold (DR-127 §4.2) exists —
-/// their seat existence is a runtime concern that fold owns.
+/// How a value-space residual routes (DR-127 §2.2). A record-field terminal pins the operand's
+/// parse identity to the field-side type (§3.2). Array-element and map/value terminals route
+/// too — their seat existence is decided at runtime by the branch-local fold (§4.2) — but no
+/// field-side parse identity exists there, so the operand keeps the entry's own declared type
+/// and the fire-time out-conformance check (`residual_terminal_out`, where the declaration
+/// reaches) remains the guard.
+priv enum ResidualRouting {
+  Unrouted // accumulator cell / non-terminal classification — validations own the diagnostic
+  RoutedField(&TypeExt) // FieldType terminal: operand parses with the field-side type
+  RoutedRuntime // ElementShape / RuntimeResolved terminal: seat existence resolves at runtime
+}
+
+///|
 fn residual_route(
   leaf : ElementDef,
   path : LinkPath,
   from : Int,
   extensions : Registry,
-) -> &TypeExt? {
+) -> ResidualRouting {
   if element_is_accumulator_cell(leaf) {
-    return None
+    return Unrouted
   }
   match classify_link_residual(leaf, path, from, extensions) {
     Terminal(FieldType(reference)) =>
-      extensions.resolve_type_reference(reference)
-    _ => None
+      match extensions.resolve_type_reference(reference) {
+        Some(field_ty) => RoutedField(field_ty)
+        None => Unrouted
+      }
+    Terminal(ElementShape(_)) | Terminal(RuntimeResolved) => RoutedRuntime
+    _ => Unrouted
   }
 }
 
@@ -2821,7 +2834,7 @@ fn link_route_fields(
               residual
             ) =>
               match residual_route(leaf, path, from, extensions) {
-                Some(field_ty) =>
+                RoutedField(field_ty) =>
                   Some({
                     target: Some(target),
                     target_scope,
@@ -2832,7 +2845,18 @@ fn link_route_fields(
                     residual,
                     parse_ty: Some(field_ty),
                   })
-                None =>
+                RoutedRuntime =>
+                  Some({
+                    target: Some(target),
+                    target_scope,
+                    tuple_arities,
+                    selections,
+                    observation,
+                    levels: bound_levels,
+                    residual,
+                    parse_ty: None,
+                  })
+                Unrouted =>
                   match bound_named_route(path) {
                     Some((target, target_scope)) =>
                       Some(
@@ -2903,7 +2927,8 @@ fn link_route_fields(
               residual
             ) =>
               match residual_route(leaf, path, from, extensions) {
-                Some(field_ty) => {
+                Unrouted => None
+                routed => {
                   let additional_levels = if target_depth > e.link_depth {
                     target_depth - e.link_depth
                   } else {
@@ -2917,10 +2942,12 @@ fn link_route_fields(
                     observation,
                     levels: additional_levels,
                     residual,
-                    parse_ty: Some(field_ty),
+                    parse_ty: match routed {
+                      RoutedField(field_ty) => Some(field_ty)
+                      _ => None
+                    },
                   })
                 }
-                None => None
               }
             Missing => None
           }

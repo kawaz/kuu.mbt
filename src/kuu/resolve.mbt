@@ -3477,7 +3477,7 @@ fn resolve_entity_raw(
   // placeholder が `old` として漏れる。値状態の遷移計算そのものは `cell_fold.mbt` の
   // `fold_seat_effect` が持ち、effects 射影 (`projected_effect`) と共有する。
   let mut current : @abi.Binding? = None
-  let seats = CellSeats::new()
+  let seats = @fold.CellSeats::new()
   let mut committed_now = false
   for b in cli {
     if b.key == e.name {
@@ -3491,9 +3491,12 @@ fn resolve_entity_raw(
         )
       }
       // DR-127 §4.1 — 値空間残余の座への操作。共有 fold の座の中を segment 列で部分更新し、
-      // 下流 carrier はセル全体の複合値で作り直す。解決失敗はその枝の Reject だが、裁定前の
-      // 枝ローカル判定 (DR-127 §4.2、W2-8) が入るまでは resolve 相の Err として表面化する
-      // (単枝では「他に成立する解釈が無ければ全体パース失敗」(§4) と同じ観測になる)。
+      // 下流 carrier はセル全体の複合値で作り直す。経路解決の失敗 (Sentinel / 空座 ctx.old /
+      // 座の解決失敗) は裁定前の枝ローカル fold (DR-127 §4.2、eval.mbt の branch_fold) が枝を
+      // 落とすので、勝ち残った解釈がここへ来る限り再発しないが、本分岐は最終防衛線として同じ
+      // 判定を保持する — CLI 以外の供給経路や fold の保守的スキップ (宣言を特定できない形) が
+      // ここへ届くため。fold が落とさない失敗 (fn 未登録 / 実行失敗 / out 不適合の乖離検査) は
+      // 本分岐だけが持ち主で、resolve 相の Err として表面化する。
       if b.value_residual.length() > 0 {
         let registry = extensions.extensions()
         let declared = e.ty.output_type()
@@ -3518,15 +3521,15 @@ fn resolve_entity_raw(
         } else {
           None
         }
-        let (transition, old_consulted) = fold_seat_effect(
+        let (transition, old_consulted) = @fold.fold_seat_effect(
           b,
           old,
           e.name,
-          extensions,
+          extensions.extensions(),
         )
         match transition {
-          NoChange => ()
-          FnMissing(name) =>
+          @fold.NoChange => ()
+          @fold.FnMissing(name) =>
             return Err(
               ladder_err(
                 e.name,
@@ -3536,11 +3539,11 @@ fn resolve_entity_raw(
                 epath,
               ),
             )
-          FnFailed({ reason, message, .. }) =>
+          @fold.FnFailed({ reason, message, .. }) =>
             return Err(ladder_err(e.name, residual_pos, reason, message, epath))
           // DR-127 §4.1 / DR-131 §7: Sentinel 返し (default / empty) と op=default/empty の
           // 値残余座への適用は発火時 Reject。座は退化セル — set と Value 返し fn だけを受ける。
-          ToDefault | ToEmpty =>
+          @fold.ToDefault | @fold.ToEmpty =>
             return Err(
               ladder_err(
                 e.name,
@@ -3552,7 +3555,7 @@ fn resolve_entity_raw(
                 epath,
               ),
             )
-          ToValue(value) => {
+          @fold.ToValue(value) => {
             // DR-127 §3: 空の座 (未 vivify) で `ctx.old()` を読んだ Value fn は、戻り値に
             // 依らず解決失敗 — 「ctx.old を要する fn」の判定は参照事実であって、返した値が
             // 偶然 null (成立形と同綴り) でも Reject の理由は消えない。
@@ -3575,7 +3578,11 @@ fn resolve_entity_raw(
             // dsl literal は entry 自身の型で decode されるため、ここが唯一の防衛線になる。
             if !(value is @abi.Null) {
               match
-                residual_terminal_out(declared, b.value_residual, registry) {
+                @fold.residual_terminal_out(
+                  declared,
+                  b.value_residual,
+                  registry,
+                ) {
                 Some(out) => {
                   let producer = match b.op {
                     @abi.Invoke(invocation) => invocation.name
@@ -3642,7 +3649,7 @@ fn resolve_entity_raw(
                       "the value-space seat of '" +
                       e.name +
                       "' did not resolve: " +
-                      seat_fault_message(fault) +
+                      @fold.seat_fault_message(fault) +
                       hint,
                       epath,
                     ),
@@ -3663,14 +3670,19 @@ fn resolve_entity_raw(
       // (「上位ラダー席まで解決した現在値」) であり、ここは effect mode (「発火直前の cell 値」)。
       // 下の `default_seat` が ladder を引くのは `default` 効果が明示発火した場合に限る (DR-081 §2)。
       let old = seats.old(e.name, default_scalar(e))
-      let (transition, _) = fold_seat_effect(b, old, e.name, extensions)
+      let (transition, _) = @fold.fold_seat_effect(
+        b,
+        old,
+        e.name,
+        extensions.extensions(),
+      )
       // REFERENCE の `cell_fns` 表 (`empty` 行): `Sentinel(Empty)` は **array / map / record を
       // committed=true で空にする** fn であり、scalar 等を target にした定義は definition-error
       // `invalid-range` である。collection セルはこの関数の冒頭で `resident.resolve_cli` へ抜けて
-      // いるので、scalar seat の fold へ `ToEmpty` が届くのは `empty` の target 型検査を lowering が
+      // いるので、scalar seat の fold へ `@fold.ToEmpty` が届くのは `empty` の target 型検査を lowering が
       // 持っていない場合に限る (docs/issue/2026-08-02-cell-fn-empty-target-type-check-missing.md)。合法な定義からは
       // 到達しないので、ここで scalar の空セル意味論を発明せず落とす。
-      if transition is ToEmpty {
+      if transition is @fold.ToEmpty {
         abort(
           "unreachable: `empty` は array / map / record 専用 (REFERENCE の cell_fns 表) — scalar (非 collection) セルの fold には合法な定義から届かない",
         )
@@ -3678,7 +3690,7 @@ fn resolve_entity_raw(
       // `@abi.Default` / Sentinel(use_default) の落ち先は値源ラダー (DR-081 §2: op=default は
       // 「その時点の書き換え済み default」をセルへ書く — env/config が下位席として後から勝つのでは
       // なく、発火時点で既にセルの default を書き換えている)。
-      let default_seat : @abi.Value? = if transition is ToDefault {
+      let default_seat : @abi.Value? = if transition is @fold.ToDefault {
         match
           resolve_ladder_below_cli(
             e, env_map, config_obj, config_path, at_pos, epath, tty_map, extensions,
@@ -3695,7 +3707,7 @@ fn resolve_entity_raw(
         None
       }
       match transition {
-        FnMissing(name) =>
+        @fold.FnMissing(name) =>
           return Err(
             ladder_err(
               e.name,
@@ -3705,15 +3717,15 @@ fn resolve_entity_raw(
               epath,
             ),
           )
-        FnFailed({ reason, message, .. }) =>
+        @fold.FnFailed({ reason, message, .. }) =>
           return Err(ladder_err(e.name, at_pos, reason, message, epath))
-        NoChange => ()
+        @fold.NoChange => ()
         _ => {
-          match seat_after(transition, default_seat) {
+          match @fold.seat_after(transition, default_seat) {
             Some(state) => seats.put(e.name, state)
             None => ()
           }
-          committed_now = !(transition is ToValue(@abi.Null))
+          committed_now = !(transition is @fold.ToValue(@abi.Null))
           current = match (b.op, transition) {
             // 値を運ぶ効果 (@abi.Set) は VERBATIM。
             (@abi.Set, _) => Some(b)
@@ -3731,10 +3743,10 @@ fn resolve_entity_raw(
               }
             // cell fn の出力は、Value なら通常の set 束縛、Sentinel なら対応する直接操作の
             // 束縛へ (DR-114 §2)。
-            (@abi.Invoke(_), ToValue(@abi.Null)) => None
-            (@abi.Invoke(_), ToValue(value)) =>
+            (@abi.Invoke(_), @fold.ToValue(@abi.Null)) => None
+            (@abi.Invoke(_), @fold.ToValue(value)) =>
               Some({ ..b, op: @abi.Set, value })
-            (@abi.Invoke(_), ToDefault) =>
+            (@abi.Invoke(_), @fold.ToDefault) =>
               match default_seat {
                 Some(value) => Some({ ..b, op: @abi.Set, value })
                 None => Some({ ..b, op: @abi.Default })

@@ -2,6 +2,7 @@ import {
   "kawaz/kuu/abi",
   "kawaz/kuu/extension",
   "kawaz/kuu/internal/engine",
+  "kawaz/kuu/internal/fold",
   "kawaz/kuu/kuu-node" @node,
   "kawaz/kuu/builtins",
   "moonbitlang/core/string",

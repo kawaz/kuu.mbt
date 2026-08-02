@@ -4901,6 +4901,37 @@ pub fn parse_tree(
         (_ctx, candidates, bindings) => [Pending(candidates, bindings)],
       )
   }
+  // DR-127 §4.2: 裁定 (完全経路カウント) の前に、完全枝ごとの効果列を畳んで値空間残余の
+  // 解決可否を判定する。解決不能な完全枝は Held 等価へ写す — 合成 ParseError が args_pos で
+  // max_reach / push_error / faildef に寄与するので、全枝落ちでも失敗レポートに原因が載る
+  // (DR-037 の帰属原則)。値残余を持たない枝 (= 既存の全経路) は素通しで、fold は走らない。
+  // partial Accept (p < toks.length()) は裁定に参加しない (完全経路の系の外) ため畳まない —
+  // 落ちる理由は token 残余として既に観測されている。
+  let branches = {
+    let mut seat_decls : Map[String, SeatDecl]? = None
+    let folded : Array[Branch] = []
+    for b in branches {
+      match b {
+        Accept(p, bs) if p == toks.length() && binding_has_value_residual(bs) => {
+          let decls = match seat_decls {
+            Some(decls) => decls
+            None => {
+              let decls = collect_seat_decls(root, defs)
+              seat_decls = Some(decls)
+              decls
+            }
+          }
+          let eff = strip_levels_to_declaring_scope(bs)
+          match branch_fold_reject(eff, p, decls, extensions) {
+            Some(pe) => folded.push(Held(pe, bs))
+            None => folded.push(b)
+          }
+        }
+        _ => folded.push(b)
+      }
+    }
+    folded
+  }
   let full : Array[Array[Binding]] = []
   let errors : Array[ParseError] = []
   let structural_repeat_residuals : Array[Int] = []
