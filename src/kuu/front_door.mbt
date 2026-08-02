@@ -394,7 +394,11 @@ pub fn resolve(
       firings?=bindings.firings,
     ) {
     @engine.Success(resolved) =>
-      Success({ raw: resolved, effects_: bindings.raw, firings: bindings.firings })
+      Success({
+        raw: resolved,
+        effects_: bindings.raw,
+        firings: bindings.firings,
+      })
     @engine.Failure(failure) => Failure(parse_failure(failure))
     @engine.Ambiguous(_) =>
       abort("resolve of one parsed binding path cannot be ambiguous")

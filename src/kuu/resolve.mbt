@@ -2914,8 +2914,18 @@ fn resolve_scope_tree_with_export_impl(
     let nested_ek = export_map_at_structural_path(ek, runtime_path, path)
     let nested_resolved = match
       resolve_scope_config_with_export(
-        nested_scope, nested_here, env_map, provider, runtime_path, child_outer_values,
-        at_pos, tty, nested_ek, extensions, include_default, firings?,
+        nested_scope,
+        nested_here,
+        env_map,
+        provider,
+        runtime_path,
+        child_outer_values,
+        at_pos,
+        tty,
+        nested_ek,
+        extensions,
+        include_default,
+        firings?,
       ) {
       Ok(rb) => rb
       Err(pe) => return Err(pe)
@@ -3095,8 +3105,18 @@ fn resolve_scope_tree_with_export(
     Err(error) => return Err(error)
   }
   resolve_scope_tree_with_export_impl(
-    sc, bindings, env_map, provider, path, outer_values, at_pos, tty, ek, extensions,
-    include_default, firings?,
+    sc,
+    bindings,
+    env_map,
+    provider,
+    path,
+    outer_values,
+    at_pos,
+    tty,
+    ek,
+    extensions,
+    include_default,
+    firings?,
   )
 }
 
@@ -3375,8 +3395,17 @@ fn resolve_entity(
 ) -> Result[Array[@abi.Binding], @abi.ParseError] {
   match
     resolve_entity_raw(
-      e, cli, env_map, config_obj, config_path, at_pos, epath, tty_map, extensions,
-      include_default, firings?,
+      e,
+      cli,
+      env_map,
+      config_obj,
+      config_path,
+      at_pos,
+      epath,
+      tty_map,
+      extensions,
+      include_default,
+      firings?,
     ) {
     Ok(bs) =>
       if !include_default && bs.length() == 0 {
@@ -4692,7 +4721,16 @@ fn resolve_scope_config_with_export(
       let cpath = config_path_of(e, path)
       match
         resolve_entity(
-          e, cli, env_map, config_obj, cpath, at_pos, path, tty, extensions, false,
+          e,
+          cli,
+          env_map,
+          config_obj,
+          cpath,
+          at_pos,
+          path,
+          tty,
+          extensions,
+          false,
           firings?,
         ) {
         Ok(bs) =>
@@ -4752,7 +4790,16 @@ fn resolve_scope_config_with_export(
         } else {
           let cpath = config_path_of(e, path)
           resolve_entity(
-            e, cli, env_map, config_obj, cpath, at_pos, path, tty, extensions, true,
+            e,
+            cli,
+            env_map,
+            config_obj,
+            cpath,
+            at_pos,
+            path,
+            tty,
+            extensions,
+            true,
             firings?,
           )
         }

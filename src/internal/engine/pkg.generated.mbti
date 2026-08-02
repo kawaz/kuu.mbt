@@ -4,6 +4,7 @@ package "kawaz/kuu/internal/engine"
 import {
   "kawaz/kuu/abi",
   "kawaz/kuu/extension",
+  "kawaz/kuu/internal/fold",
   "moonbitlang/core/debug",
 }
 
@@ -154,7 +155,7 @@ pub fn parse_int_value(String, @abi.RoundMode, allow_base_prefix? : Bool) -> Res
 
 pub fn parse_number(String, allow_base_prefix? : Bool) -> Double?
 
-pub fn parse_tree(Node, Array[String], defs? : Map[String, Node], faildef? : FailDef, extensions? : @extension.Registry) -> Outcome
+pub fn parse_tree(Node, Array[String], defs? : Map[String, Node], faildef? : FailDef, extensions? : @extension.Registry, ladder? : (Entity, Array[String], Array[@abi.Binding]) -> @abi.Value?, firings? : @fold.FiringDeliveries) -> Outcome
 
 pub fn round_mode_of(String) -> @abi.RoundMode?
 

@@ -7,7 +7,11 @@ import {
 }
 
 // Values
+pub fn firing_cell_key(Array[String], String) -> String
+
 pub fn fold_seat_effect(@abi.Binding, @abi.Value?, String, @extension.Registry) -> (SeatTransition, Bool)
+
+pub fn records_firing(@abi.Binding) -> Bool
 
 pub fn residual_terminal_out(@abi.ValueType?, Array[@abi.ObservationSegment], @extension.Registry) -> @abi.ValueType?
 
@@ -31,6 +35,33 @@ pub fn CellSeats::set_at(Self, String, Array[@abi.ObservationSegment], @abi.Valu
 pub fn CellSeats::set_at_declared(Self, String, Array[@abi.ObservationSegment], @abi.Value, @abi.ValueType?, @extension.Registry, vivify~ : Bool) -> Result[Unit, SeatFault]
 pub fn CellSeats::value_at(Self, String, Array[@abi.ObservationSegment]) -> Result[@abi.Value, SeatFault]
 pub fn CellSeats::value_at_declared(Self, String, Array[@abi.ObservationSegment], @abi.ValueType?, @extension.Registry) -> Result[@abi.Value, SeatFault]
+
+pub struct FiringCursor {
+  // private fields
+}
+pub fn FiringCursor::new() -> Self
+pub fn FiringCursor::next(Self, FiringLedger?, @abi.Binding) -> FiringRecord?
+
+pub struct FiringDeliveries {
+  // private fields
+}
+pub fn FiringDeliveries::deliver(Self, Array[@abi.Binding], FiringLedger) -> Unit
+pub fn FiringDeliveries::ledger_for(Self, Array[@abi.Binding]) -> FiringLedger?
+pub fn FiringDeliveries::new() -> Self
+
+pub struct FiringLedger {
+  // private fields
+}
+pub fn FiringLedger::new() -> Self
+pub fn FiringLedger::push(Self, Array[String], String, FiringRecord) -> Unit
+pub fn FiringLedger::record_at(Self, Array[String], String, Int) -> FiringRecord?
+
+pub(all) struct FiringRecord {
+  transition : SeatTransition
+  old_used : @abi.Value?
+  old_consulted : Bool
+  resolved_residual : Array[@abi.ObservationSegment]?
+}
 
 pub(all) enum SeatFault {
   SeatAbsent
