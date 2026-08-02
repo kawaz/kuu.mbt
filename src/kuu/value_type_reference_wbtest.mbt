@@ -431,8 +431,8 @@ test "structural group and or leaves contribute their actual types as seeds" {
   )
   for
     source in [
-      "{\"options\":[{\"name\":\"group\",\"long\":true,\"seq\":[{\"name\":\"child\",\"type\":\"brokenref\"}]}]}",
-      "{\"options\":[{\"name\":\"choice\",\"long\":true,\"or\":[{\"name\":\"branch\",\"type\":\"brokenref\"}]}]}",
+      "{\"options\":[{\"name\":\"group\",\"long\":true,\"seq\":[{\"type\":\"string\"},{\"name\":\"child\",\"type\":\"brokenref\"}]}]}",
+      "{\"options\":[{\"name\":\"choice\",\"long\":true,\"or\":[{\"type\":\"string\"},{\"name\":\"branch\",\"type\":\"brokenref\"}]}]}",
     ] {
     let errors = rejected_type_errors(source, [broken as &@extension.TypeExt])
     assert_eq(errors.length(), 1)
