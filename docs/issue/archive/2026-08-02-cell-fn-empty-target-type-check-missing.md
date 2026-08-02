@@ -1,6 +1,6 @@
 ---
 title: cell fn `empty` の target 型検査が lowering に無い
-status: open
+status: resolved
 category: bug
 created: 2026-08-02T11:05:08+09:00
 last_read:
@@ -9,10 +9,10 @@ wip_entered:
 blocked_entered:
 pending_entered:
 discarded_entered:
-resolved_entered:
+resolved_entered: 2026-08-02T12:18:44+09:00
 discard_reason:
 pending_reason:
-close_reason:
+close_reason: ["dr/DR-044","implemented","finding/2026-08-02-w2-6-value-space-static-resolution"]
 blocked_by:
 origin: kuu spec リポ
 ---
@@ -29,6 +29,6 @@ REFERENCE の cell_fns 表 (empty の target 型制約) を実装側で裏取り
 
 ## 受け入れ条件
 
-- [ ] scalar 等 array/map/record 以外の target への `clear:empty` が definition-error (invalid-range) になる
-- [ ] spec fixture (`definition-error/` 配下) に該当ケースを追加
-- [ ] REFERENCE.md の cell_fns 表の規定と実装が一致することを確認
+- [x] scalar 等 array/map/record 以外の target への `clear:empty` が definition-error (invalid-range) になる
+- [x] spec fixture (`definition-error/` 配下) に該当ケースを追加
+- [x] REFERENCE.md の cell_fns 表の規定と実装が一致することを確認

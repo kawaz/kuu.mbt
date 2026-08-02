@@ -210,18 +210,322 @@ test "residual link validation preserves opaque primitive and structural W2-2 be
   )
   assert_eq(primitive_errors.length(), 1)
   assert_eq(primitive_errors[0].kind, @abi.AbsentRef)
-  // Case e3: W2-6 で record 降下 (静的成功) へ置換される暫定 pin。
+}
+
+///|
+test "record residual paths resolve statically along the type dependency graph" {
+  // Case e3: a declared record field is a statically legal value-space seat.
+  let timestamp = declared_type("timestamp", Some(@abi.ValueType::Number))
+  let timerange = declared_type(
+    "timerange",
+    Some(
+      @abi.ValueType::Record([("since", "timestamp"), ("until", "timestamp")]),
+    ),
+  )
+  assert_true(
+    parse_with_declared_types(
+      "{\"options\":[{\"name\":\"tr\",\"type\":\"timerange\"},{\"name\":\"entry\",\"type\":\"string\",\"long\":true,\"link\":\"tr.since\"}]}",
+      [timestamp as &@extension.TypeExt, timerange as &@extension.TypeExt],
+    )
+    is Ok(_),
+  )
+  // Case e4: the descent crosses a second registry resident (DR-126 §1's
+  // dependency graph), so a two-hop field path is equally static.
+  let wrapper = declared_type(
+    "wrapper",
+    Some(@abi.ValueType::Record([("inner", "timerange")])),
+  )
+  assert_true(
+    parse_with_declared_types(
+      "{\"options\":[{\"name\":\"w\",\"type\":\"wrapper\"},{\"name\":\"entry\",\"type\":\"string\",\"long\":true,\"link\":\"w.inner.until\"}]}",
+      [
+        timestamp as &@extension.TypeExt,
+        timerange as &@extension.TypeExt,
+        wrapper as &@extension.TypeExt,
+      ],
+    )
+    is Ok(_),
+  )
+  // Case e5: a field miss inside the record is the same absent-ref family as a
+  // first-phase cell miss (DR-127 §2.2 record row).
+  let miss_errors = rejected_type_errors(
+    "{\"options\":[{\"name\":\"tr\",\"type\":\"timerange\"},{\"name\":\"entry\",\"type\":\"string\",\"long\":true,\"link\":\"tr.nope\"}]}",
+    [timestamp as &@extension.TypeExt, timerange as &@extension.TypeExt],
+  )
+  assert_eq(miss_errors.length(), 1)
+  assert_eq(miss_errors[0].kind, @abi.AbsentRef)
+  // Case e6: an index segment addresses no record seat — records expose a
+  // field vocabulary, never positions.
+  let index_errors = rejected_type_errors(
+    "{\"options\":[{\"name\":\"tr\",\"type\":\"timerange\"},{\"name\":\"entry\",\"type\":\"string\",\"long\":true,\"link\":\"tr[0]\"}]}",
+    [timestamp as &@extension.TypeExt, timerange as &@extension.TypeExt],
+  )
+  assert_eq(index_errors.length(), 1)
+  assert_eq(index_errors[0].kind, @abi.AbsentRef)
+  // Case e7: a field whose type is silent about its output structure blocks a
+  // deeper descent exactly like a silent leaf cell does.
+  let opaque_field = declared_type("opaque_payload", None)
+  let holder = declared_type(
+    "holder",
+    Some(@abi.ValueType::Record([("payload", "opaque_payload")])),
+  )
+  let opaque_errors = rejected_type_errors(
+    "{\"options\":[{\"name\":\"h\",\"type\":\"holder\"},{\"name\":\"entry\",\"type\":\"string\",\"long\":true,\"link\":\"h.payload.x\"}]}",
+    [opaque_field as &@extension.TypeExt, holder as &@extension.TypeExt],
+  )
+  assert_eq(opaque_errors.length(), 1)
+  assert_eq(opaque_errors[0].kind, @abi.Unsupported)
+  assert_eq(
+    opaque_errors[0].message,
+    "this link path reaches an opaque value structure",
+  )
+}
+
+///|
+test "array residual paths continue statically on [int] and reject .name" {
+  // DR-127 §2.2 array row: the [int] STRUCTURE is static (index existence is a
+  // runtime concern), while a name segment can never address an array.
+  let matrix = declared_type(
+    "int_matrix",
+    Some(@abi.ValueType::Array(@abi.ValueType::Number)),
+  )
+  assert_true(
+    parse_with_declared_types(
+      "{\"options\":[{\"name\":\"m\",\"type\":\"int_matrix\"},{\"name\":\"entry\",\"type\":\"string\",\"long\":true,\"link\":\"m[0]\"}]}",
+      [matrix as &@extension.TypeExt],
+    )
+    is Ok(_),
+  )
+  // A negative index is the same static structure — its resolution against the
+  // current length is runtime (DR-127 §1).
+  assert_true(
+    parse_with_declared_types(
+      "{\"options\":[{\"name\":\"m\",\"type\":\"int_matrix\"},{\"name\":\"entry\",\"type\":\"string\",\"long\":true,\"link\":\"m[-1]\"}]}",
+      [matrix as &@extension.TypeExt],
+    )
+    is Ok(_),
+  )
+  // The element type is followed for deeper segments: array of records keeps
+  // field checking static below the index.
+  let timestamp = declared_type("timestamp", Some(@abi.ValueType::Number))
+  let events = declared_type(
+    "events",
+    Some(@abi.ValueType::Array(@abi.ValueType::Record([("at", "timestamp")]))),
+  )
+  assert_true(
+    parse_with_declared_types(
+      "{\"options\":[{\"name\":\"e\",\"type\":\"events\"},{\"name\":\"entry\",\"type\":\"string\",\"long\":true,\"link\":\"e[2].at\"}]}",
+      [timestamp as &@extension.TypeExt, events as &@extension.TypeExt],
+    )
+    is Ok(_),
+  )
+  let field_miss = rejected_type_errors(
+    "{\"options\":[{\"name\":\"e\",\"type\":\"events\"},{\"name\":\"entry\",\"type\":\"string\",\"long\":true,\"link\":\"e[2].nope\"}]}",
+    [timestamp as &@extension.TypeExt, events as &@extension.TypeExt],
+  )
+  assert_eq(field_miss.length(), 1)
+  assert_eq(field_miss[0].kind, @abi.AbsentRef)
+  let name_errors = rejected_type_errors(
+    "{\"options\":[{\"name\":\"m\",\"type\":\"int_matrix\"},{\"name\":\"entry\",\"type\":\"string\",\"long\":true,\"link\":\"m.first\"}]}",
+    [matrix as &@extension.TypeExt],
+  )
+  assert_eq(name_errors.length(), 1)
+  assert_eq(name_errors[0].kind, @abi.AbsentRef)
+}
+
+///|
+test "map and value residuals defer every remaining segment to runtime" {
+  // DR-127 §2.2 map/value row: the static phase legitimately ends, so the
+  // definition is accepted; key presence and structure resolve at runtime.
+  let lookup = declared_type(
+    "lookup",
+    Some(@abi.ValueType::Map(@abi.ValueType::Number)),
+  )
+  assert_true(
+    parse_with_declared_types(
+      "{\"options\":[{\"name\":\"l\",\"type\":\"lookup\"},{\"name\":\"entry\",\"type\":\"string\",\"long\":true,\"link\":\"l.some.deep.key\"}]}",
+      [lookup as &@extension.TypeExt],
+    )
+    is Ok(_),
+  )
+  let anything = declared_type("anything", Some(@abi.ValueType::Value))
+  assert_true(
+    parse_with_declared_types(
+      "{\"options\":[{\"name\":\"a\",\"type\":\"anything\"},{\"name\":\"entry\",\"type\":\"string\",\"long\":true,\"link\":\"a.x[3]\"}]}",
+      [anything as &@extension.TypeExt],
+    )
+    is Ok(_),
+  )
+}
+
+///|
+test "union residuals require an agreeing operand parse type across variants" {
+  let timestamp = declared_type("timestamp", Some(@abi.ValueType::Number))
+  // Agreeing variants: both contain `.at` with the same field type reference,
+  // so the operand parser is pinned and the path is statically legal.
+  let agree = declared_type(
+    "agree_union",
+    Some(
+      @abi.ValueType::Union([
+        @abi.ValueType::Record([("at", "timestamp")]),
+        @abi.ValueType::Record([("at", "timestamp"), ("note", "string")]),
+      ]),
+    ),
+  )
+  assert_true(
+    parse_with_declared_types(
+      "{\"options\":[{\"name\":\"u\",\"type\":\"agree_union\"},{\"name\":\"entry\",\"type\":\"string\",\"long\":true,\"link\":\"u.at\"}]}",
+      [timestamp as &@extension.TypeExt, agree as &@extension.TypeExt],
+    )
+    is Ok(_),
+  )
+  // A variant that does not contain the path (Bool here) is simply dropped
+  // from the agreement set (DR-127 §2.2 union row: 1+ containing variants).
+  let partial = declared_type(
+    "partial_union",
+    Some(
+      @abi.ValueType::Union([
+        @abi.ValueType::Bool,
+        @abi.ValueType::Record([("at", "timestamp")]),
+      ]),
+    ),
+  )
+  assert_true(
+    parse_with_declared_types(
+      "{\"options\":[{\"name\":\"u\",\"type\":\"partial_union\"},{\"name\":\"entry\",\"type\":\"string\",\"long\":true,\"link\":\"u.at\"}]}",
+      [timestamp as &@extension.TypeExt, partial as &@extension.TypeExt],
+    )
+    is Ok(_),
+  )
+  // Disagreeing field type references leave the operand parse type undecided
+  // at definition time (DR-127 §3.2) — invalid-range.
+  let disagree = declared_type(
+    "disagree_union",
+    Some(
+      @abi.ValueType::Union([
+        @abi.ValueType::Record([("at", "timestamp")]),
+        @abi.ValueType::Record([("at", "number")]),
+      ]),
+    ),
+  )
+  let mismatch_errors = rejected_type_errors(
+    "{\"options\":[{\"name\":\"u\",\"type\":\"disagree_union\"},{\"name\":\"entry\",\"type\":\"string\",\"long\":true,\"link\":\"u.at\"}]}",
+    [timestamp as &@extension.TypeExt, disagree as &@extension.TypeExt],
+  )
+  assert_eq(mismatch_errors.length(), 1)
+  assert_eq(mismatch_errors[0].kind, @abi.InvalidRange)
+  // A runtime-deferred variant (map) cannot agree with a statically pinned
+  // record field — the parse identity would depend on the runtime variant.
+  let mixed = declared_type(
+    "mixed_union",
+    Some(
+      @abi.ValueType::Union([
+        @abi.ValueType::Record([("at", "timestamp")]),
+        @abi.ValueType::Map(@abi.ValueType::Number),
+      ]),
+    ),
+  )
+  let mixed_errors = rejected_type_errors(
+    "{\"options\":[{\"name\":\"u\",\"type\":\"mixed_union\"},{\"name\":\"entry\",\"type\":\"string\",\"long\":true,\"link\":\"u.at\"}]}",
+    [timestamp as &@extension.TypeExt, mixed as &@extension.TypeExt],
+  )
+  assert_eq(mixed_errors.length(), 1)
+  assert_eq(mixed_errors[0].kind, @abi.InvalidRange)
+}
+
+///|
+test "value-space paths into accumulator cells are unsupported" {
+  // DR-127 W2 統括裁定 (kuu.mbt 計画 §6.1): the accumulator's composite value
+  // is folded in the resolve phase, after effect application, so the effect
+  // timeline has no seat a value-space path could address.
+  let by_index = rejected_type_errors(
+    "{\"options\":[{\"name\":\"tags\",\"type\":\"string\",\"multiple\":true},{\"name\":\"entry\",\"type\":\"string\",\"long\":true,\"link\":\"tags[0]\"}]}",
+    [],
+  )
+  assert_eq(by_index.length(), 1)
+  assert_eq(by_index[0].kind, @abi.Unsupported)
+  assert_true(by_index[0].message.contains("accumulator"))
+  // The same closure applies to name segments — the ruling is about the cell
+  // kind, not about which segment spelling reaches into it.
+  let by_name = rejected_type_errors(
+    "{\"options\":[{\"name\":\"tags\",\"type\":\"string\",\"multiple\":true},{\"name\":\"entry\",\"type\":\"string\",\"long\":true,\"link\":\"tags.first\"}]}",
+    [],
+  )
+  assert_eq(by_name.length(), 1)
+  assert_eq(by_name[0].kind, @abi.Unsupported)
+  assert_true(by_name[0].message.contains("accumulator"))
+  // A bare link to the accumulator cell itself stays the ordinary supported
+  // cell synchronization.
+  assert_true(
+    parse_with_declared_types(
+      "{\"options\":[{\"name\":\"tags\",\"type\":\"string\",\"multiple\":true},{\"name\":\"entry\",\"type\":\"string\",\"long\":true,\"link\":\"tags\"}]}",
+      [],
+    )
+    is Ok(_),
+  )
+}
+
+///|
+test "cell fn empty requires a container-capable target" {
+  // REFERENCE §7.3: empty clears array/map/record; a target whose declaration
+  // statically excludes every container form is invalid-range.
+  let scalar_errors = rejected_type_errors(
+    "{\"options\":[{\"name\":\"v\",\"type\":\"string\",\"long\":[\":set\",\"clear:empty\"]}]}",
+    [],
+  )
+  assert_eq(scalar_errors.length(), 1)
+  assert_eq(scalar_errors[0].kind, @abi.InvalidRange)
+  assert_eq(scalar_errors[0].element, "v")
+  // Accumulator cells always carry an array (DR-044 §1), whatever their
+  // element type declares.
+  assert_true(
+    parse_with_declared_types(
+      "{\"options\":[{\"name\":\"v\",\"type\":\"string\",\"multiple\":true,\"long\":[\":set\",\"clear:empty\"]}]}",
+      [],
+    )
+    is Ok(_),
+  )
+  // A declared record output is a container.
   let timestamp = declared_type("timestamp", Some(@abi.ValueType::Number))
   let timerange = declared_type(
     "timerange",
     Some(@abi.ValueType::Record([("since", "timestamp")])),
   )
-  let record_errors = rejected_type_errors(
-    "{\"options\":[{\"name\":\"tr\",\"type\":\"timerange\"},{\"name\":\"entry\",\"type\":\"string\",\"long\":true,\"link\":\"tr.since\"}]}",
-    [timestamp as &@extension.TypeExt, timerange as &@extension.TypeExt],
+  assert_true(
+    parse_with_declared_types(
+      "{\"options\":[{\"name\":\"tr\",\"type\":\"timerange\",\"long\":[\":set\",\"clear:empty\"]}]}",
+      [timestamp as &@extension.TypeExt, timerange as &@extension.TypeExt],
+    )
+    is Ok(_),
   )
-  assert_eq(record_errors.length(), 1)
-  assert_eq(record_errors[0].kind, @abi.Unsupported)
+  // A type that stays silent about its output structure cannot be shown to be
+  // scalar for every input, so no definition-error is asserted.
+  let silent = declared_type("silent", None)
+  assert_true(
+    parse_with_declared_types(
+      "{\"options\":[{\"name\":\"s\",\"type\":\"silent\",\"long\":[\":set\",\"clear:empty\"]}]}",
+      [silent as &@extension.TypeExt],
+    )
+    is Ok(_),
+  )
+  // The check follows a bare link: the effect lands on the linked cell, and a
+  // scalar link target is rejected with the error attributed to the entry.
+  let linked_errors = rejected_type_errors(
+    "{\"options\":[{\"name\":\"v\",\"type\":\"string\"},{\"name\":\"clear\",\"type\":\"string\",\"link\":\"v\",\"long\":[\"clear:empty\"]}]}",
+    [],
+  )
+  assert_eq(linked_errors.length(), 1)
+  assert_eq(linked_errors[0].kind, @abi.InvalidRange)
+  assert_eq(linked_errors[0].element, "clear")
+  // An alias long_override spelling empty against a scalar canonical target is
+  // the same misconfiguration, attributed to the alias.
+  let alias_errors = rejected_type_errors(
+    "{\"options\":[{\"name\":\"v\",\"type\":\"string\",\"long\":true},{\"alias\":\"v\",\"name\":\"w\",\"long\":[\"clear:empty\"]}]}",
+    [],
+  )
+  assert_eq(alias_errors.length(), 1)
+  assert_eq(alias_errors[0].kind, @abi.InvalidRange)
+  assert_eq(alias_errors[0].element, "w")
 }
 
 ///|

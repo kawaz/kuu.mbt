@@ -2188,20 +2188,11 @@ priv enum LinkPathResolution {
     Array[Int],
     Array[LinkSelection],
     ObservationAddress?,
-    Int
+    Int,
+    ElementDef
   )
-  Residual(ValueType?)
+  Residual(ElementDef, Int)
   Missing
-}
-
-///|
-/// Temporary W2-2 classification that preserves the former primitive/opaque
-/// behavior until W2-6 implements value-space descent.
-fn residual_is_primitive_only(declared : ValueType?) -> Bool {
-  match declared {
-    None => false
-    Some(value_type) => value_type_primitive_only(value_type)
-  }
 }
 
 ///|
@@ -2214,10 +2205,137 @@ fn value_type_primitive_only(value_type : ValueType) -> Bool {
 }
 
 ///|
-fn residual_declaration_is_well_formed(declared : ValueType?) -> Bool {
-  match declared {
-    None => true
-    Some(value_type) => value_type.declaration_violations().length() == 0
+/// Cells whose result carrier is the collected array (DR-044 §1: repeat /
+/// multiple / separator are arrays regardless of cardinality).
+fn element_is_accumulator_cell(e : ElementDef) -> Bool {
+  e.multiple || elem_repeat(e) is Some(_) || e.separator is Some(_)
+}
+
+///|
+/// The operand-parsing identity a value-space link path ends on. Statically
+/// resolvable paths must pin this identity at definition time because the
+/// operand is read by the field-side type (DR-127 §3.2), not the entry's own
+/// declared type.
+priv enum ResidualTerminal {
+  FieldType(String) // canonical registry reference of the record field at the path end
+  ElementShape(ValueType) // structural value_type seat at the path end (array element)
+  RuntimeResolved // the remaining segments defer to runtime under map/value
+} derive(Eq)
+
+///|
+priv enum ResidualOutcome {
+  Terminal(ResidualTerminal)
+  AbsentSeat // the path names a seat the declarations do not expose -> absent-ref
+  OpaqueStructure // an undeclared output structure blocks the descent -> Unsupported
+  UnionMismatch // containing union variants disagree on the operand parse type -> invalid-range
+  AlreadyDiagnosed // the declaration itself is invalid; type-reference validation reports it
+}
+
+///|
+/// DR-127 §2.2 transition table, applied one segment at a time. Field types are
+/// registry references (DR-126 §1), so the descent follows the type dependency
+/// graph; each reference hop consumes a path segment, which bounds the walk
+/// even before circular-ref validation rejects cyclic graphs.
+fn classify_value_residual(
+  current : ValueType,
+  path : LinkPath,
+  from : Int,
+  extensions : Registry,
+) -> ResidualOutcome {
+  if current.declaration_violations().length() > 0 {
+    return AlreadyDiagnosed
+  }
+  match current {
+    String | Number | Bool | Null => AbsentSeat
+    // map/value: every remaining segment resolves at runtime (key presence and
+    // structure alike), so the static phase legitimately ends here.
+    Map(_) | Value => Terminal(RuntimeResolved)
+    Array(item_type) =>
+      match path.segments[from] {
+        Name(_) => AbsentSeat
+        // The [int] STRUCTURE continues statically; index existence (range,
+        // negative resolution against the current length) stays a runtime
+        // concern and is a branch Reject there, never a definition-error.
+        Index(_) =>
+          if from + 1 == path.segments.length() {
+            Terminal(ElementShape(item_type))
+          } else {
+            classify_value_residual(item_type, path, from + 1, extensions)
+          }
+      }
+    Record(fields) =>
+      match path.segments[from] {
+        Index(_) => AbsentSeat
+        Name(name) => {
+          for entry in fields {
+            let (field, spelling) = entry
+            if field == name {
+              match extensions.resolve_type_reference(spelling) {
+                None => return AlreadyDiagnosed
+                Some(resident) =>
+                  if from + 1 == path.segments.length() {
+                    return Terminal(
+                      FieldType(canonical_type_reference(spelling)),
+                    )
+                  } else {
+                    match resident.output_type() {
+                      None => return OpaqueStructure
+                      Some(nested) =>
+                        return classify_value_residual(
+                          nested,
+                          path,
+                          from + 1,
+                          extensions,
+                        )
+                    }
+                  }
+              }
+            }
+          }
+          AbsentSeat
+        }
+      }
+    Union(members) => {
+      let terminals : Array[ResidualTerminal] = []
+      for item_type in members {
+        match classify_value_residual(item_type, path, from, extensions) {
+          Terminal(terminal) => terminals.push(terminal)
+          AbsentSeat => () // this variant does not contain the path
+          // An opaque variant might contain the path, so it can neither be
+          // dropped as non-containing nor pin a parse identity.
+          OpaqueStructure => return OpaqueStructure
+          UnionMismatch => return UnionMismatch
+          AlreadyDiagnosed => return AlreadyDiagnosed
+        }
+      }
+      if terminals.length() == 0 {
+        return AbsentSeat
+      }
+      for terminal in terminals {
+        if terminal != terminals[0] {
+          return UnionMismatch
+        }
+      }
+      Terminal(terminals[0])
+    }
+  }
+}
+
+///|
+/// Entry point for a value-space residual at a non-accumulator leaf cell.
+/// Callers must route accumulator cells (element_is_accumulator_cell) to the
+/// dedicated Unsupported diagnostic first: their composite value is folded in
+/// the resolve phase, after effect application, so the DR-127 §4 effect
+/// timeline has no seat a value-space path could address.
+fn classify_link_residual(
+  leaf : ElementDef,
+  path : LinkPath,
+  from : Int,
+  extensions : Registry,
+) -> ResidualOutcome {
+  match leaf.ty.output_type() {
+    None => OpaqueStructure
+    Some(declared) => classify_value_residual(declared, path, from, extensions)
   }
 }
 
@@ -2389,7 +2507,7 @@ fn resolve_link_path(def : Definition, path : LinkPath) -> LinkPathResolution {
               }
               None => return Missing
             }
-          Cell | Enum(_) => return Residual(current.ty.output_type())
+          Cell | Enum(_) => return Residual(current, index)
         }
       Index(target_index) =>
         match indexed_structural_child(current, target_index) {
@@ -2413,7 +2531,7 @@ fn resolve_link_path(def : Definition, path : LinkPath) -> LinkPathResolution {
           }
           None =>
             match current.body {
-              Cell | Enum(_) => return Residual(current.ty.output_type())
+              Cell | Enum(_) => return Residual(current, index)
               Group(_) | Or(_) => return Missing
             }
         }
@@ -2428,6 +2546,7 @@ fn resolve_link_path(def : Definition, path : LinkPath) -> LinkPathResolution {
       selections,
       observation,
       root_depth,
+      current,
     )
   } else {
     Missing
@@ -2475,6 +2594,7 @@ fn link_route_fields(
               tuple_arities,
               selections,
               observation,
+              _,
               _
             ) =>
               Some(
@@ -2487,7 +2607,7 @@ fn link_route_fields(
                   bound_levels,
                 ),
               )
-            Residual(_) | Missing =>
+            Residual(_, _) | Missing =>
               match bound_named_route(path) {
                 Some((target, target_scope)) =>
                   Some((Some(target), target_scope, [], [], None, bound_levels))
@@ -2502,7 +2622,8 @@ fn link_route_fields(
               tuple_arities,
               selections,
               observation,
-              target_depth
+              target_depth,
+              _
             ) => {
               let additional_levels = if target_depth > e.link_depth {
                 target_depth - e.link_depth
@@ -2520,7 +2641,7 @@ fn link_route_fields(
                 ),
               )
             }
-            Residual(_) | Missing => None
+            Residual(_, _) | Missing => None
           }
       }
   }
@@ -4375,10 +4496,162 @@ fn collect_type_reference_errors(
 }
 
 ///|
-fn collect_link_path_errors(def : Definition, out : Array[DefError]) -> Unit {
+fn long_declaration_invokes_empty(
+  decl : LongDeclaration,
+  own_name : String,
+  ty : &TypeExt,
+  extensions : Registry,
+) -> Bool {
+  match decl {
+    Bool(_) => false
+    List(strs) => {
+      for l in strs {
+        if classify_long_spelling(l, own_name, ty, extensions)
+          is Variant({ op: Empty, .. }) {
+          return true
+        }
+      }
+      false
+    }
+    Forms(forms) => {
+      for form in forms {
+        if classify_long_form(form, own_name, ty, extensions)
+          is Variant({ op: Empty, .. }) {
+          return true
+        }
+      }
+      false
+    }
+  }
+}
+
+///|
+/// The cell an element's cell-fn effects apply to: itself, or the bare/cell
+/// resolved link target. Value-space residual and missing routes are owned by
+/// the link validations; empty checking skips them.
+fn cell_fn_target_element(def : Definition, e : ElementDef) -> ElementDef? {
+  match e.link_path {
+    None => Some(e)
+    Some(Invalid(_)) => None
+    Some(Valid(path)) =>
+      match resolve_link_path(def, path) {
+        Resolved(_, _, _, _, _, _, leaf) => Some(leaf)
+        Residual(_, _) | Missing => None
+      }
+  }
+}
+
+///|
+/// REFERENCE §7.3: `empty` clears array / map / record values; a target whose
+/// declaration statically excludes every container form is definition-error
+/// `invalid-range`. Accumulator cells always carry an array (DR-044 §1). A type
+/// that stays silent about its output structure is passed through — a
+/// definition-error asserts "broken for every input", which an undeclared
+/// structure cannot establish.
+fn empty_target_is_container_capable(e : ElementDef) -> Bool {
+  if element_is_accumulator_cell(e) {
+    return true
+  }
+  match e.ty.output_type() {
+    None => true
+    Some(declared) => !value_type_primitive_only(declared)
+  }
+}
+
+///|
+/// Both colon-DSL entrances that can spell an `empty` invocation (an element's
+/// own `long` and an alias `long_override`) are checked against the cell the
+/// effect lands on. `default_fn` needs no arm here: collect_default_fn_errors
+/// already rejects every sentinel-returning fn on the default seat.
+fn collect_empty_target_errors(
+  def : Definition,
+  extensions : Registry,
+  out : Array[DefError],
+) -> Unit {
+  fn push_scalar_target(
+    attribution : String,
+    target : ElementDef,
+    out : Array[DefError],
+  ) -> Unit {
+    out.push(
+      def_err(
+        attribution,
+        InvalidRange,
+        "cell fn 'empty' targets '" +
+        target.name +
+        "' whose declared value is never an array, map, or record",
+        "point empty at an array/map/record-valued cell or an accumulator cell",
+      ),
+    )
+  }
+
+  for e in def.options.iter().concat(def.positionals.iter()) {
+    if e.link_depth > 0 {
+      continue
+    }
+    // normalize_surface has already resolved the element's own long DSL into
+    // `variants`, so the element side reads the resolved ops directly.
+    let mut invokes_empty = false
+    for v in e.variants {
+      if v.op is Empty {
+        invokes_empty = true
+        break
+      }
+    }
+    if invokes_empty {
+      match cell_fn_target_element(def, e) {
+        Some(target) =>
+          if !empty_target_is_container_capable(target) {
+            push_scalar_target(e.name, target, out)
+          }
+        None => ()
+      }
+    }
+  }
+  for a in def.aliases {
+    match a.long_override {
+      Some(decl) => {
+        let alias_name = match a.name {
+          Some(n) => n
+          None => a.target
+        }
+        match find_elem(def, a.target) {
+          Some(canon) =>
+            if long_declaration_invokes_empty(
+                decl,
+                alias_name,
+                canon.ty,
+                extensions,
+              ) {
+              match cell_fn_target_element(def, canon) {
+                Some(target) =>
+                  if !empty_target_is_container_capable(target) {
+                    push_scalar_target(alias_name, target, out)
+                  }
+                None => ()
+              }
+            }
+          None => ()
+        }
+      }
+      None => ()
+    }
+  }
+  for command in def.commands {
+    collect_empty_target_errors(command.body, extensions, out)
+  }
+}
+
+///|
+fn collect_link_path_errors(
+  def : Definition,
+  extensions : Registry,
+  out : Array[DefError],
+) -> Unit {
   fn check(
     def : Definition,
     element : ElementDef,
+    extensions : Registry,
     out : Array[DefError],
   ) -> Unit {
     match element.link_path {
@@ -4414,32 +4687,57 @@ fn collect_link_path_errors(def : Definition, out : Array[DefError]) -> Unit {
           )
         } else {
           match resolve_link_path(def, path) {
-            Residual(declared) =>
-              if residual_declaration_is_well_formed(declared) &&
-                !residual_is_primitive_only(declared) {
+            Residual(leaf, from) =>
+              if element_is_accumulator_cell(leaf) {
                 out.push(
                   def_err(
                     element.name,
                     Unsupported,
-                    "this link path reaches an opaque value structure",
-                    "declare a structural output shape before linking into the value",
+                    "this link path addresses the inside of an accumulator cell's collected value",
+                    "target the accumulator cell itself with a bare link",
                   ),
                 )
+              } else {
+                match classify_link_residual(leaf, path, from, extensions) {
+                  OpaqueStructure =>
+                    out.push(
+                      def_err(
+                        element.name,
+                        Unsupported,
+                        "this link path reaches an opaque value structure",
+                        "declare a structural output shape before linking into the value",
+                      ),
+                    )
+                  UnionMismatch =>
+                    out.push(
+                      def_err(
+                        element.name,
+                        InvalidRange,
+                        "this link path's operand parse type differs between union variants",
+                        "declare the same field type in every union variant that contains the path",
+                      ),
+                    )
+                  // AbsentSeat is reported by the post-fixpoint absent-ref
+                  // validation (check_element_absent_link), like cell-space
+                  // misses; AlreadyDiagnosed is covered by type-reference
+                  // validation in this same batch.
+                  Terminal(_) | AbsentSeat | AlreadyDiagnosed => ()
+                }
               }
-            Resolved(_, _, _, _, _, _) | Missing => ()
+            Resolved(_, _, _, _, _, _, _) | Missing => ()
           }
         }
       None => ()
     }
   }
   for element in def.options {
-    check(def, element, out)
+    check(def, element, extensions, out)
   }
   for element in def.positionals {
-    check(def, element, out)
+    check(def, element, extensions, out)
   }
   for command in def.commands {
-    collect_link_path_errors(command.body, out)
+    collect_link_path_errors(command.body, extensions, out)
   }
 }
 
@@ -4490,15 +4788,19 @@ fn collect_unsupported_link_shape(
 /// fixpoint declaration snapshot already contains global contributions, so validation and lowering
 /// use the same declaration view. Global link entry copies are skipped: their declaring entry is
 /// validated once in its own scope and the copy only transports that already-valid route.
-fn collect_absent_link(def : Definition, out : Array[DefError]) -> Unit {
+fn collect_absent_link(
+  def : Definition,
+  extensions : Registry,
+  out : Array[DefError],
+) -> Unit {
   for element in def.options {
-    check_element_absent_link(def, element, out)
+    check_element_absent_link(def, element, extensions, out)
   }
   for element in def.positionals {
-    check_element_absent_link(def, element, out)
+    check_element_absent_link(def, element, extensions, out)
   }
   for command in def.commands {
-    collect_absent_link(command.body, out)
+    collect_absent_link(command.body, extensions, out)
   }
 }
 
@@ -4506,6 +4808,7 @@ fn collect_absent_link(def : Definition, out : Array[DefError]) -> Unit {
 fn check_element_absent_link(
   def : Definition,
   element : ElementDef,
+  extensions : Registry,
   out : Array[DefError],
 ) -> Unit {
   if element.link_depth > 0 {
@@ -4515,10 +4818,10 @@ fn check_element_absent_link(
     Some(Valid(path)) => {
       let absent = match resolve_link_path(def, path) {
         Missing => true
-        Residual(declared) =>
-          residual_declaration_is_well_formed(declared) &&
-          residual_is_primitive_only(declared)
-        Resolved(_, _, _, _, _, _) => false
+        Residual(leaf, from) =>
+          !element_is_accumulator_cell(leaf) &&
+          classify_link_residual(leaf, path, from, extensions) is AbsentSeat
+        Resolved(_, _, _, _, _, _, _) => false
       }
       if absent {
         out.push(
@@ -6340,9 +6643,10 @@ fn lower_definition_snapshot_impl(
   // DR-117 §2.6 / §8.1: `insert_form` の 3 種 invalid (enum 逸脱・非 completion_script への宣言・
   // 複数入口間の食い違い) を invalid-range で一括収集する。
   collect_completion_script_errors(def, errs)
-  collect_link_path_errors(def, errs)
+  collect_link_path_errors(def, extensions, errs)
   collect_unsupported_link_shape(def, errs)
   collect_type_reference_errors(def, extensions, template_declarations, errs)
+  collect_empty_target_errors(def, extensions, errs)
   if errs.length() > 0 {
     return Err(errs) // ALL definition-error 列挙
   }
@@ -6368,7 +6672,7 @@ fn lower_definition_snapshot_impl(
     // 同じ面で衝突を数えて 1 つの list に足す。
     Ok(scope) => {
       let validation_errors : Array[DefError] = []
-      collect_absent_link(def, validation_errors)
+      collect_absent_link(def, extensions, validation_errors)
       let export_scopes = build_export_scopes(
         def, validation_errors, template_declarations,
       )
@@ -6384,7 +6688,7 @@ fn lower_definition_snapshot_impl(
       }
     }
     Err(errors) => {
-      collect_absent_link(def, errors)
+      collect_absent_link(def, extensions, errors)
       let _ = build_export_scopes(def, errors, template_declarations)
       Err(errors)
     }
