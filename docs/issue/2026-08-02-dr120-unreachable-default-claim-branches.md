@@ -3,7 +3,7 @@ title: DR-120 後に到達不能な default claim 比較分岐を整理する
 status: open
 category: task
 created: 2026-08-02T17:31:31+09:00
-last_read:
+last_read: 2026-08-02T17:43:40+09:00
 open_entered: 2026-08-02T17:31:31+09:00
 wip_entered:
 blocked_entered:
