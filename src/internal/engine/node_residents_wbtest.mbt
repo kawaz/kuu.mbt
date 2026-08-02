@@ -175,13 +175,13 @@ test "mandatory resident preserves downstream @abi.Pending fire path" {
     constraints: [],
   }
   let sub : Scope = {
-    greedy: [CommandSatisfied("inner", inner)],
+    greedy: [CommandSatisfied("inner", 0, inner)],
     positional: [string_arg("file", [])],
     entities: [],
     constraints: [],
   }
   let root = ScopeNode({
-    greedy: [CommandSatisfied("sub", sub)],
+    greedy: [CommandSatisfied("sub", 0, sub)],
     positional: [],
     entities: [],
     constraints: [],

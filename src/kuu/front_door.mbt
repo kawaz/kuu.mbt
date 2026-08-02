@@ -513,6 +513,7 @@ fn filter_interpretation_result(
 fn collect_config_file_cells(
   scope : @engine.Scope,
   path : Array[String],
+  bindings : Array[@abi.Binding],
   out : Array[ConfigFileCell],
 ) -> Unit {
   for entity in scope.entities {
@@ -522,8 +523,12 @@ fn collect_config_file_cells(
   }
   for node in scope.greedy {
     match node {
-      @engine.CommandSatisfied(name, child) =>
-        collect_config_file_cells(child, output_path_push(path, name), out)
+      @engine.CommandSatisfied(name, ordinal, child) => {
+        let child_path = output_path_push(path, name)
+        if @engine.command_scope_selected(bindings, child_path, ordinal) {
+          collect_config_file_cells(child, child_path, bindings, out)
+        }
+      }
       _ => ()
     }
   }
@@ -585,6 +590,7 @@ priv struct DefaultSeat {
 fn collect_default_seats(
   scope : @engine.Scope,
   path : Array[String],
+  bindings : Array[@abi.Binding],
   out : Array[DefaultSeat],
 ) -> Unit {
   for entity in scope.entities {
@@ -601,8 +607,12 @@ fn collect_default_seats(
   }
   for node in scope.greedy {
     match node {
-      @engine.CommandSatisfied(name, child) =>
-        collect_default_seats(child, output_path_push(path, name), out)
+      @engine.CommandSatisfied(name, ordinal, child) => {
+        let child_path = output_path_push(path, name)
+        if @engine.command_scope_selected(bindings, child_path, ordinal) {
+          collect_default_seats(child, child_path, bindings, out)
+        }
+      }
       _ => ()
     }
   }
@@ -637,6 +647,7 @@ priv struct TypeSeat {
 fn collect_type_seats(
   scope : @engine.Scope,
   path : Array[String],
+  bindings : Array[@abi.Binding],
   out : Array[TypeSeat],
 ) -> Unit {
   for entity in scope.entities {
@@ -653,8 +664,12 @@ fn collect_type_seats(
   }
   for node in scope.greedy {
     match node {
-      @engine.CommandSatisfied(name, child) =>
-        collect_type_seats(child, output_path_push(path, name), out)
+      @engine.CommandSatisfied(name, ordinal, child) => {
+        let child_path = output_path_push(path, name)
+        if @engine.command_scope_selected(bindings, child_path, ordinal) {
+          collect_type_seats(child, child_path, bindings, out)
+        }
+      }
       _ => ()
     }
   }
@@ -801,15 +816,15 @@ fn project_effects(
   ast : AtomicAST,
   binds : Array[@abi.Binding],
 ) -> Array[OutputEffect] {
-  let none_cells = @engine.none_cells(ast.root, ast.templates)
+  let none_cells = @engine.selected_none_cells(ast.root, ast.templates, binds)
   let config_file_cells : Array[ConfigFileCell] = []
-  collect_config_file_cells(ast.root, [], config_file_cells)
+  collect_config_file_cells(ast.root, [], binds, config_file_cells)
   let effects : Array[OutputEffect] = []
   let seats = @fold.CellSeats::new()
   let default_seats : Array[DefaultSeat] = []
-  collect_default_seats(ast.root, [], default_seats)
+  collect_default_seats(ast.root, [], binds, default_seats)
   let type_seats : Array[TypeSeat] = []
-  collect_type_seats(ast.root, [], type_seats)
+  collect_type_seats(ast.root, [], binds, type_seats)
   for binding in binds {
     if (is_sentinel(binding.key) && binding.observation is None) ||
       output_internal_cell(

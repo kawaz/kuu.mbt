@@ -86,7 +86,7 @@ fn collect_seat_decl_nodes(
   match n {
     ScopeNode(child) =>
       collect_seat_decls_into(child, path, defs, out, seen_refs)
-    CommandSatisfied(name, child) => {
+    CommandSatisfied(name, _, child) => {
       let p2 : Array[String] = []
       for s in path {
         p2.push(s)

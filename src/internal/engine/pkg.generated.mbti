@@ -46,6 +46,8 @@ pub fn collect_installer_vocab_errors(Definition, Array[Array[String]]) -> Array
 
 pub fn collect_scopes(Node, Map[String, Node]) -> Array[ScopedCons]
 
+pub fn command_scope_selected(Array[@abi.Binding], Array[String], Int) -> Bool
+
 pub fn complete_tree(Node, Array[String], defs? : Map[String, Node], after? : Array[String], extensions? : @extension.Registry) -> Array[@abi.Candidate]
 
 pub fn config_from_json(Json) -> @abi.ConfigVal
@@ -159,6 +161,10 @@ pub fn round_mode_of(String) -> @abi.RoundMode?
 pub fn run_installer_fixpoint(InstallBuilder, Array[(InstallBuilder) -> Unit], (InstallBuilder) -> Unit) -> Result[Scope, Array[@abi.DefError]]
 
 pub fn scope_selected(Array[@abi.Binding], Array[String]) -> Bool
+
+pub fn scoped_constraints_selected(Array[@abi.Binding], ScopedCons) -> Bool
+
+pub fn selected_none_cells(Scope, Map[String, Node], Array[@abi.Binding]) -> Array[NoneCell]
 
 pub fn sep_binds(String, String, String?, &@extension.TypeExt, Array[@abi.FnInvocation], Int, Bool, @extension.Registry) -> Result[Array[@abi.Binding], @extension.ReadingFail]
 
@@ -353,10 +359,12 @@ pub struct ExportScopeMap {
 }
 pub fn ExportScopeMap::cell_is_occupied(Self, String) -> Bool
 pub fn ExportScopeMap::child(Self, String) -> Self
+pub fn ExportScopeMap::command_child(Self, String, Int) -> Self
 pub fn ExportScopeMap::declare_element(Self, String, ExportKey) -> Unit
-pub fn ExportScopeMap::declare_scope(Self, String, ExportKey) -> Self
+pub fn ExportScopeMap::declare_scope(Self, String, Int, ExportKey) -> Self
 pub fn ExportScopeMap::empty() -> Self
 pub fn ExportScopeMap::exposed_cell(Self, String) -> String?
+pub fn ExportScopeMap::exposed_command_scope(Self, String, Int) -> String?
 pub fn ExportScopeMap::exposed_scope(Self, String) -> String?
 pub fn ExportScopeMap::has_occupancy(Self) -> Bool
 pub fn ExportScopeMap::occupy_cell(Self, String) -> Unit
@@ -395,7 +403,7 @@ pub struct InstallChild {
 }
 pub fn InstallChild::body(Self) -> InstallBuilder
 pub fn InstallChild::name(Self) -> String
-pub fn InstallChild::new(String, InstallBuilder) -> Self
+pub fn InstallChild::new(String, Int, InstallBuilder) -> Self
 
 pub struct InstallOutput {
   // private fields
@@ -457,7 +465,7 @@ pub(all) enum Node {
   Ref(String)
   DdSatisfied(String)
   DdMatchSatisfied(String, Bool, Bool, String)
-  CommandSatisfied(String, Scope)
+  CommandSatisfied(String, Int, Scope)
   LinkTarget(String, String, Array[String], Array[Int], Array[@abi.LinkSelection], @abi.ObservationAddress?, Array[@abi.ObservationSegment], Int, &@extension.EntityExt, Node)
   Rooted(Node, Int)
   BoundedTail(Node, Int, Bool)
@@ -504,6 +512,7 @@ pub(all) struct ScopeDeclaration {
 
 pub struct ScopedCons {
   path : Array[String]
+  command_ordinals : Array[Int]
   constraints : Array[Constraint]
   entities : Array[Entity]
 } derive(@debug.Debug)

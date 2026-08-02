@@ -254,7 +254,7 @@ fn apply_export_keys(
 ) -> Array[@abi.Binding] {
   let out : Array[@abi.Binding] = []
   for b in binds {
-    let (new_scope, node) = walk_export_path(b.scope, ek)
+    let (new_scope, node) = walk_export_path(b.scope, ek, binds)
     let new_key = match node.exposed_cell(b.key) {
       Some(s) => s
       None => "" // nameless value axis
@@ -272,21 +272,51 @@ fn apply_export_keys(
 /// - ラベルが透過 (`export_key: null` / name 無し) なら segment を落とす — 子が親スコープへ昇格
 ///   する (DR-052 §2)。落ちるのは結果側の path だけで、宣言名の列は変わらないのでノードは進む
 /// - `#k` index segment は結果スコープを作らない (配列添字) のでノードを進めずそのまま通す
+fn command_ordinal_at_path(
+  bindings : Array[@abi.Binding],
+  path : Array[String],
+) -> Int? {
+  for binding in bindings {
+    if binding.key == "{}" && path_eq(binding.scope, path) {
+      match binding.value {
+        @abi.Number(value) => return Some(value.to_int())
+        _ => ()
+      }
+    }
+  }
+  None
+}
+
+///|
 fn walk_export_path(
   path : Array[String],
   ek : @engine.ExportScopeMap,
+  bindings : Array[@abi.Binding],
 ) -> (Array[String], @engine.ExportScopeMap) {
   let out : Array[String] = []
+  let declaration_path : Array[String] = []
   let mut node = ek
   for seg in path {
     if seg.length() >= 1 && seg[0:1].to_owned() == "#" {
       out.push(seg)
     } else {
-      match node.exposed_scope(seg) {
-        Some(s) => out.push(s)
-        None => ()
+      declaration_path.push(seg)
+      match command_ordinal_at_path(bindings, declaration_path) {
+        Some(ordinal) => {
+          match node.exposed_command_scope(seg, ordinal) {
+            Some(s) => out.push(s)
+            None => ()
+          }
+          node = node.command_child(seg, ordinal)
+        }
+        None => {
+          match node.exposed_scope(seg) {
+            Some(s) => out.push(s)
+            None => ()
+          }
+          node = node.child(seg)
+        }
       }
-      node = node.child(seg)
     }
   }
   (out, node)
@@ -303,10 +333,11 @@ fn walk_export_path(
 fn apply_export_to_types(
   types : Array[TypeSeat],
   ek : @engine.ExportScopeMap,
+  bindings : Array[@abi.Binding],
 ) -> Array[TypeSeat] {
   let out : Array[TypeSeat] = []
   for t in types {
-    let (new_path, node) = walk_export_path(t.path, ek)
+    let (new_path, node) = walk_export_path(t.path, ek, bindings)
     if !node.has_occupancy() || node.cell_is_occupied(t.name) {
       match node.exposed_cell(t.name) {
         None | Some("") => ()
@@ -343,10 +374,11 @@ fn declared_cell_type(
 fn apply_export_to_defaults(
   defaults : Array[DefaultCell],
   ek : @engine.ExportScopeMap,
+  bindings : Array[@abi.Binding],
 ) -> Array[DefaultCell] {
   let out : Array[DefaultCell] = []
   for d in defaults {
-    let (new_path, node) = walk_export_path(d.path, ek)
+    let (new_path, node) = walk_export_path(d.path, ek, bindings)
     if !node.has_occupancy() || node.cell_is_occupied(d.name) {
       match node.exposed_cell(d.name) {
         None | Some("") => ()
@@ -1413,7 +1445,7 @@ fn collect_accum(
   }
   for g in sc.greedy {
     match g {
-      @engine.CommandSatisfied(name, child) => {
+      @engine.CommandSatisfied(name, ordinal, child) => {
         // 未選択 (当該実行で未入場) の command scope は降りない — `collect_defaults` と同一の
         // gate (issue unselected-transparent-command-flag-leak)。DR-044 の「反復系は 0 回発火でも
         // `[]`」は **その cell が結果に現れる場合** の形の規定で、未選択 command 配下のセルは
@@ -1425,9 +1457,9 @@ fn collect_accum(
         // entry にするので **sources にだけ残る** (`{"path":["c"],"key":"tags"}`) — result から
         // 引けない由来 = DR-121 §2 違反。根は同じ「未選択スコープを無条件に降りる」。
         let child_decl = path_push(decl_path, name)
-        if @engine.scope_selected(binds, child_decl) {
-          let child_ek = ek.child(name)
-          match ek.exposed_scope(name) {
+        if @engine.command_scope_selected(binds, child_decl, ordinal) {
+          let child_ek = ek.command_child(name, ordinal)
+          match ek.exposed_command_scope(name, ordinal) {
             // dropped label → children promote (DR-052 §2)
             None => collect_accum(child, path, child_decl, child_ek, binds, out)
             Some(s) =>
@@ -1483,16 +1515,8 @@ fn internal_cells(
   templates? : Map[String, @engine.Node] = Map([]),
 ) -> Array[InternalCell] {
   let out : Array[InternalCell] = []
-  let unselected = unselected_command_paths(sc, [], binds)
-  for cell in @engine.none_cells(sc, templates) {
-    // `NoneCell.path` は宣言名軸だが command segment 以外 (name 付き seq/or の `Scoped`、
-    // repeat の `IndexedRepeat`) も積まれるので、`scope_selected` を path 全体には掛けられない
-    // (非 command scope に `{}` marker は無く、全部「未選択」と誤判定する)。代わりに
-    // **未選択 command path を prefix として持つか** で判定する。
-    if under_unselected_command(unselected, cell.path()) {
-      continue
-    }
-    let (path, node) = walk_export_path(cell.path(), ek)
+  for cell in @engine.selected_none_cells(sc, templates, binds) {
+    let (path, node) = walk_export_path(cell.path(), ek, binds)
     match node.exposed_cell(cell.name()) {
       None => () // 透過: 結果キー軸を持たないので射影側にも現れない
       Some(name) => out.push({ path, name })
@@ -1500,47 +1524,6 @@ fn internal_cells(
   }
   collect_config_file_seats(sc, [], [], ek, binds, out)
   out
-}
-
-///|
-/// 未選択 (当該実行で未入場) の command scope の path を **宣言名軸** で集める。子は辿らない
-/// (親が未選択なら子も未選択で、prefix 判定に親 1 段あれば足りる)。
-fn unselected_command_paths(
-  sc : @engine.Scope,
-  decl_path : Array[String],
-  binds : Array[@abi.Binding],
-) -> Array[Array[String]] {
-  let out : Array[Array[String]] = []
-  for g in sc.greedy {
-    match g {
-      @engine.CommandSatisfied(name, child) => {
-        let child_decl = path_push(decl_path, name)
-        if @engine.scope_selected(binds, child_decl) {
-          for p in unselected_command_paths(child, child_decl, binds) {
-            out.push(p)
-          }
-        } else {
-          out.push(child_decl)
-        }
-      }
-      _ => ()
-    }
-  }
-  out
-}
-
-///|
-/// セルの宣言名軸 path が、未選択 command scope のいずれかの配下にあるか。
-fn under_unselected_command(
-  unselected : Array[Array[String]],
-  path : Array[String],
-) -> Bool {
-  for u in unselected {
-    if path_starts_with(path, u) {
-      return true
-    }
-  }
-  false
 }
 
 ///|
@@ -1565,11 +1548,11 @@ fn collect_config_file_seats(
   }
   for g in sc.greedy {
     match g {
-      @engine.CommandSatisfied(name, child) => {
+      @engine.CommandSatisfied(name, ordinal, child) => {
         let child_decl = path_push(decl_path, name)
-        if @engine.scope_selected(binds, child_decl) {
-          let child_ek = ek.child(name)
-          match ek.exposed_scope(name) {
+        if @engine.command_scope_selected(binds, child_decl, ordinal) {
+          let child_ek = ek.command_child(name, ordinal)
+          match ek.exposed_command_scope(name, ordinal) {
             None =>
               collect_config_file_seats(
                 child, path, child_decl, child_ek, binds, out,
@@ -1686,7 +1669,7 @@ fn collect_defaults(
   }
   for g in sc.greedy {
     match g {
-      @engine.CommandSatisfied(name, child) => {
+      @engine.CommandSatisfied(name, ordinal, child) => {
         // 未選択 (当該実行で未入場) の command scope は降りない (issue
         // unselected-transparent-command-flag-leak)。上の「flag は絶対 absent にならない」は
         // **選ばれた** scope の中の話 (DR-051 §2) で、選ばれなかった sibling command の配下は
@@ -1702,7 +1685,7 @@ fn collect_defaults(
         // 宣言ラベルで prepend するので、透過 command でも選ばれていれば判定が通る (透過が
         // 落とすのは結果キー軸だけ、DR-052 §2)。
         let child_path = path_push(path, name)
-        if @engine.scope_selected(binds, child_path) {
+        if @engine.command_scope_selected(binds, child_path, ordinal) {
           collect_defaults(child, child_path, binds, out)
         }
       }
@@ -1721,9 +1704,13 @@ fn projected_command_key_selected(
 ) -> Bool {
   for greedy in sc.greedy {
     match greedy {
-      @engine.CommandSatisfied(name, _) =>
-        if export_map.exposed_scope(name) == Some(key) &&
-          @engine.scope_selected(binds, path_push(declaration_path, name)) {
+      @engine.CommandSatisfied(name, ordinal, _) =>
+        if export_map.exposed_command_scope(name, ordinal) == Some(key) &&
+          @engine.command_scope_selected(
+            binds,
+            path_push(declaration_path, name),
+            ordinal,
+          ) {
           return true
         }
       _ => ()
@@ -1754,11 +1741,13 @@ fn command_projection_bindings(
 ) -> Unit {
   for greedy in sc.greedy {
     match greedy {
-      @engine.CommandSatisfied(name, child) => {
+      @engine.CommandSatisfied(name, ordinal, child) => {
         let child_declaration_path = path_push(declaration_path, name)
-        let child_export_map = export_map.child(name)
-        let exposed = export_map.exposed_scope(name)
-        if @engine.scope_selected(binds, child_declaration_path) {
+        let child_export_map = export_map.command_child(name, ordinal)
+        let exposed = export_map.exposed_command_scope(name, ordinal)
+        if @engine.command_scope_selected(
+            binds, child_declaration_path, ordinal,
+          ) {
           let child_result_path = match exposed {
             Some(key) => path_push(result_path, key)
             None => result_path
@@ -1808,12 +1797,12 @@ fn build_result_export(
   let projected = apply_export_keys(active_link_bindings(binds), ek)
   command_projection_bindings(sc, binds, [], [], ek, projected)
   let declared_types : Array[TypeSeat] = []
-  collect_type_seats(sc, [], declared_types)
-  let types = apply_export_to_types(declared_types, ek)
+  collect_type_seats(sc, [], binds, declared_types)
+  let types = apply_export_to_types(declared_types, ek, binds)
   build_result(
     projected,
     accum_cells(sc, ek, binds),
-    apply_export_to_defaults(default_cells(sc, binds), ek),
+    apply_export_to_defaults(default_cells(sc, binds), ek, binds),
     [],
     nones=internal_cells(sc, ek, binds, templates~),
     extensions~,
@@ -1935,7 +1924,11 @@ fn source_seats(
   let seats : Array[SourceSeat] = []
   let cells = accum_cells(sc, ek, resolved)
   let internal = internal_cells(sc, ek, resolved, templates~)
-  let defaults = apply_export_to_defaults(default_cells(sc, resolved), ek)
+  let defaults = apply_export_to_defaults(
+    default_cells(sc, resolved),
+    ek,
+    resolved,
+  )
   for binding in apply_export_keys(resolved, ek) {
     if (binding.key != "" && is_sentinel(binding.key)) ||
       is_internal_cell(internal, binding.scope, binding.key) {
@@ -2633,23 +2626,6 @@ fn eval_requires(
 }
 
 ///|
-/// Whether ANY binding in `binds` was recorded at exactly this scope path — "this nested command
-/// scope was actually entered in this candidate". Ported from `json_conformance_test.mbt`'s
-/// `scope_entered` (production code can't reference a wbtest-only symbol; wbtest files aren't
-/// linked into non-test builds) for `resolve_scope_tree`'s own use.
-fn scope_entered_here(
-  binds : Array[@abi.Binding],
-  path : Array[String],
-) -> Bool {
-  for b in binds {
-    if path_eq(b.scope, path) {
-      return true
-    }
-  }
-  false
-}
-
-///|
 /// Whether `sc.greedy` enters a genuine command scope named `name` (a `@engine.CommandSatisfied` node) — used by
 /// `resolve_scope_tree`'s pass-through below to tell a real child COMMAND scope apart from a
 /// ref-template accum entity's own one-level-deeper binding wrap (`ref_row_head`/`@engine.Scoped(e.name,
@@ -2659,7 +2635,7 @@ fn scope_entered_here(
 fn is_cmdsat_child(sc : @engine.Scope, name : String) -> Bool {
   for g in sc.greedy {
     match g {
-      @engine.CommandSatisfied(n, _) => if n == name { return true }
+      @engine.CommandSatisfied(n, _, _) => if n == name { return true }
       _ => ()
     }
   }
@@ -2987,9 +2963,9 @@ fn resolve_scope_tree_with_export_impl(
   }
   for g in sc.greedy {
     match g {
-      @engine.CommandSatisfied(name, child) => {
+      @engine.CommandSatisfied(name, ordinal, child) => {
         let childpath = path_push(path, name)
-        if scope_entered_here(binds, childpath) {
+        if @engine.command_scope_selected(binds, childpath, ordinal) {
           match
             resolve_scope_tree_with_export(
               child,
@@ -3000,7 +2976,7 @@ fn resolve_scope_tree_with_export_impl(
               child_outer_values,
               at_pos,
               tty,
-              ek.child(name),
+              ek.command_child(name, ordinal),
               extensions,
               include_default,
             ) {
@@ -3189,9 +3165,9 @@ fn apply_requires_filter_with_export(
               // child の RequiredGroup/Required が resolve 相で偽陽性を出し、KTop の Success を Failure
               // に落としてしまう (issue required-group-scope-participation、実測: `--r1` のみで
               // child-a scope の g が違反として付随、path=[child-a] の error 生成)。gate の判定は engine
-              // 側と完全に同じ `@engine.scope_selected` を共用 — 判定意味論のドリフト防止 (bindings 内の
-              // `{}` scope_marker の存在で判定、CommandSatisfied 入場時に cont.mbt KNest が prepend する)。
-              if !@engine.scope_selected(binds, sc2.path) {
+              // 側と完全に同じ `@engine.scoped_constraints_selected` を共用 — raw path と同名 command
+              // 宣言 ordinal の両方を `{}` scope_marker と照合し、非選択 sibling の述語を混ぜない。
+              if !@engine.scoped_constraints_selected(binds, sc2) {
                 continue
               }
               for v in eval_requires(sc2, binds, resolved, toks_len) {

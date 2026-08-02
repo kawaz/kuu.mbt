@@ -282,13 +282,14 @@ fn nest_branches(label : String, brs : Array[Branch]) -> Array[Branch] {
 }
 
 ///|
-/// The `{}` object-presence marker at scope `[label]`: an invoked command
-/// scope appears (as at least `{}`) even when it produced no bindings.
-fn scope_marker(label : String) -> Binding {
+/// The `{}` object-presence marker at scope `[label]`. Its numeric value is the same-name command
+/// declaration ordinal: presence keeps an invoked empty scope observable, and the ordinal selects
+/// the exact declaration during resolve and result projection.
+fn scope_marker(label : String, ordinal : Int) -> Binding {
   {
     key: "{}",
     op: Set,
-    value: Bool(false),
+    value: Number(ordinal.to_double()),
     source: Cli,
     scope: [label],
     link_selections: [],
@@ -520,13 +521,14 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
       } else {
         []
       }
-    CommandSatisfied(name, child) =>
+    CommandSatisfied(name, ordinal, child) =>
       // off-spine command (a probe or a nested context): child evaluated with
       // KDone; bindings nest under the name + presence marker. The greedy
       // face path (step_greedy) threads the real continuation instead.
       if pos < ctx.toks.length() && ctx.toks[pos] == name {
         mark_scope(
           name,
+          ordinal,
           nest_branches(
             name,
             scope_step(child, ctx, pos + 1, 0, [], false, KDone),
@@ -1433,6 +1435,7 @@ fn eval_indexed_with_downstream(
 /// a closure inside Cont.
 fn nest_since(
   label : String,
+  command_ordinal : Int,
   is_command : Bool,
   start : Int,
   acc : Array[Binding],
@@ -1453,7 +1456,7 @@ fn nest_since(
     out.push(binding)
   }
   if is_command {
-    out.push(scope_marker(label))
+    out.push(scope_marker(label, command_ordinal))
   }
   for binding in nest(label, inside) {
     out.push(binding)
@@ -1588,7 +1591,7 @@ fn eval_greedy_with_downstream(
   out : Array[Branch],
 ) -> Unit {
   match node {
-    CommandSatisfied(name, child) =>
+    CommandSatisfied(name, ordinal, child) =>
       if pos < ctx.toks.length() && ctx.toks[pos] == name {
         let start = acc.length()
         for
@@ -1605,7 +1608,7 @@ fn eval_greedy_with_downstream(
                 ctx2,
                 next_pos,
                 pidx,
-                nest_since(name, true, start, bindings),
+                nest_since(name, ordinal, true, start, bindings),
                 severed || child_severed,
                 on_accept,
                 on_rejected,
@@ -2321,11 +2324,15 @@ fn req_arg_eval(
 
 ///|
 /// Prepend the `{}` presence marker to each Accept.
-fn mark_scope(name : String, brs : Array[Branch]) -> Array[Branch] {
+fn mark_scope(
+  name : String,
+  ordinal : Int,
+  brs : Array[Branch],
+) -> Array[Branch] {
   let out : Array[Branch] = []
   for b in brs {
     match b {
-      Accept(p, bs) => out.push(Accept(p, [scope_marker(name)] + bs))
+      Accept(p, bs) => out.push(Accept(p, [scope_marker(name, ordinal)] + bs))
       Rejected(pe, bs) => out.push(Rejected(pe, bs))
       Held(pe, bs) => out.push(Held(pe, bs))
       Pending(cs, bs) => out.push(Pending(cs, bs))
@@ -2602,7 +2609,7 @@ fn greedy_engages(g : Node, ctx : Ctx, pos : Int) -> Bool {
       }
       false
     }
-    CommandSatisfied(name, _) => ctx.toks[pos] == name
+    CommandSatisfied(name, _, _) => ctx.toks[pos] == name
     DdSatisfied(t) => ctx.toks[pos] == t
     DdMatchSatisfied(spelling, is_pattern, _, _) =>
       dd_match_token(spelling, is_pattern, ctx.toks[pos])
@@ -2658,7 +2665,7 @@ fn greedy_trigger_matches(g : Node, ctx : Ctx, pos : Int) -> Bool {
       }
       false
     }
-    CommandSatisfied(name, _) => ctx.toks[pos] == name
+    CommandSatisfied(name, _, _) => ctx.toks[pos] == name
     DdSatisfied(t) => ctx.toks[pos] == t
     DdMatchSatisfied(spelling, is_pattern, _, _) =>
       dd_match_token(spelling, is_pattern, ctx.toks[pos])
@@ -3006,10 +3013,11 @@ fn step_greedy(
   out : Array[Branch],
 ) -> Unit {
   match g {
-    CommandSatisfied(name, child) =>
+    CommandSatisfied(name, ordinal, child) =>
       if pos < ctx.toks.length() && ctx.toks[pos] == name {
         let kk = KNest(
           name,
+          ordinal,
           true,
           acc.length(),
           KResumeScope(sc, pidx, severed, k),
@@ -4696,17 +4704,24 @@ pub fn scope_selected(bindings : Array[Binding], path : Array[String]) -> Bool {
     return true
   }
   for b in bindings {
-    if b.key == "{}" && b.scope.length() == path.length() {
-      let mut eq = true
-      let mut i = 0
-      for s in b.scope {
-        if s != path[i] {
-          eq = false
-        }
-        i = i + 1
-      }
-      if eq {
-        return true
+    if b.key == "{}" && b.scope == path {
+      return true
+    }
+  }
+  false
+}
+
+///|
+pub fn command_scope_selected(
+  bindings : Array[Binding],
+  path : Array[String],
+  ordinal : Int,
+) -> Bool {
+  for binding in bindings {
+    if binding.key == "{}" && scope_path_eq(binding.scope, path) {
+      match binding.value {
+        Number(value) => if value.to_int() == ordinal { return true }
+        _ => ()
       }
     }
   }
@@ -4725,6 +4740,24 @@ pub fn scope_selected(bindings : Array[Binding], path : Array[String]) -> Bool {
 /// トリガ側) the skip is observation-equivalent to the previous vacuous-true evaluation (member
 /// count 0, no committed target); for値述語 (`required`/`required_group`) it changes behaviour
 /// exactly where the SCB-Q1 裁定 requires (未入場 scope の required は違反にしない).
+pub fn scoped_constraints_selected(
+  bindings : Array[Binding],
+  scoped : ScopedCons,
+) -> Bool {
+  if scoped.path.length() != scoped.command_ordinals.length() {
+    return false
+  }
+  let prefix : Array[String] = []
+  for index in 0..<scoped.path.length() {
+    prefix.push(scoped.path[index])
+    if !command_scope_selected(bindings, prefix, scoped.command_ordinals[index]) {
+      return false
+    }
+  }
+  true
+}
+
+///|
 fn eval_all_constraints(
   table : Array[ScopedCons],
   bindings : Array[Binding],
@@ -4732,7 +4765,7 @@ fn eval_all_constraints(
 ) -> Array[ParseError] {
   let out : Array[ParseError] = []
   for sc in table {
-    if !scope_selected(bindings, sc.path) {
+    if !scoped_constraints_selected(bindings, sc) {
       continue
     }
     for v in eval_constraints(sc, bindings, pos) {
@@ -4761,7 +4794,7 @@ pub fn collect_scopes(
 ) -> Array[ScopedCons] {
   let out : Array[ScopedCons] = []
   match root {
-    ScopeNode(sc) => collect_scope_into(sc, [], defs, out, [])
+    ScopeNode(sc) => collect_scope_into(sc, [], [], defs, out, [])
     _ => ()
   }
   out
@@ -4771,18 +4804,24 @@ pub fn collect_scopes(
 fn collect_scope_into(
   sc : Scope,
   path : Array[String],
+  command_ordinals : Array[Int],
   defs : Map[String, Node],
   out : Array[ScopedCons],
   seen_refs : Array[String],
 ) -> Unit {
   if sc.constraints.length() > 0 {
-    out.push({ path, constraints: sc.constraints, entities: sc.entities })
+    out.push({
+      path,
+      command_ordinals,
+      constraints: sc.constraints,
+      entities: sc.entities,
+    })
   }
   for g in sc.greedy {
-    collect_greedy_scopes(g, path, defs, out, seen_refs)
+    collect_greedy_scopes(g, path, command_ordinals, defs, out, seen_refs)
   }
   for p in sc.positional {
-    collect_pos_scopes(p, path, defs, out, seen_refs)
+    collect_pos_scopes(p, path, command_ordinals, defs, out, seen_refs)
   }
 }
 
@@ -4790,26 +4829,27 @@ fn collect_scope_into(
 fn collect_greedy_scopes(
   g : Node,
   path : Array[String],
+  command_ordinals : Array[Int],
   defs : Map[String, Node],
   out : Array[ScopedCons],
   seen_refs : Array[String],
 ) -> Unit {
   match g {
-    CommandSatisfied(name, child) => {
-      let p2 : Array[String] = []
-      for s in path {
-        p2.push(s)
-      }
+    CommandSatisfied(name, ordinal, child) => {
+      let p2 = path.copy()
       p2.push(name)
-      collect_scope_into(child, p2, defs, out, seen_refs)
+      let ordinals = command_ordinals.copy()
+      ordinals.push(ordinal)
+      collect_scope_into(child, p2, ordinals, defs, out, seen_refs)
     }
     Or(alts) =>
       for a in alts {
-        collect_greedy_scopes(a, path, defs, out, seen_refs)
+        collect_greedy_scopes(a, path, command_ordinals, defs, out, seen_refs)
       }
     LinkTarget(_, _, _, _, _, _, _, _, _, inner) =>
-      collect_greedy_scopes(inner, path, defs, out, seen_refs)
-    Rooted(inner, _) => collect_greedy_scopes(inner, path, defs, out, seen_refs)
+      collect_greedy_scopes(inner, path, command_ordinals, defs, out, seen_refs)
+    Rooted(inner, _) =>
+      collect_greedy_scopes(inner, path, command_ordinals, defs, out, seen_refs)
     _ => ()
   }
 }
@@ -4818,12 +4858,14 @@ fn collect_greedy_scopes(
 fn collect_pos_scopes(
   n : Node,
   path : Array[String],
+  command_ordinals : Array[Int],
   defs : Map[String, Node],
   out : Array[ScopedCons],
   seen_refs : Array[String],
 ) -> Unit {
   match n {
-    ScopeNode(child) => collect_scope_into(child, path, defs, out, seen_refs)
+    ScopeNode(child) =>
+      collect_scope_into(child, path, command_ordinals, defs, out, seen_refs)
     Ref(name) =>
       if !str_mem(seen_refs, name) {
         let seen2 : Array[String] = []
@@ -4832,17 +4874,21 @@ fn collect_pos_scopes(
         }
         seen2.push(name)
         match ref_head(defs, name) {
-          ScopeNode(child) => collect_scope_into(child, path, defs, out, seen2)
+          ScopeNode(child) =>
+            collect_scope_into(child, path, command_ordinals, defs, out, seen2)
           _ => ()
         }
       }
     BoundedTail(head, _, _) =>
       match head {
         ScopeNode(child) =>
-          collect_scope_into(child, path, defs, out, seen_refs)
+          collect_scope_into(
+            child, path, command_ordinals, defs, out, seen_refs,
+          )
         _ => ()
       }
-    Many(inner, _) => collect_pos_scopes(inner, path, defs, out, seen_refs)
+    Many(inner, _) =>
+      collect_pos_scopes(inner, path, command_ordinals, defs, out, seen_refs)
     _ => ()
   }
 }

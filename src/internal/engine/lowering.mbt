@@ -1321,9 +1321,12 @@ fn init_sb(
 ) -> InstallBuilder {
   let positional = lower_positional(def, templates, extensions)
   let children : Array[InstallChild] = []
+  let command_ordinals : Map[String, Int] = Map([])
   for c in def.commands {
+    let ordinal = command_ordinals.get(c.name).unwrap_or(0)
+    command_ordinals.set(c.name, ordinal + 1)
     children.push(
-      InstallChild::new(c.name, init_sb(c.body, templates, extensions)),
+      InstallChild::new(c.name, ordinal, init_sb(c.body, templates, extensions)),
     )
   }
   InstallBuilder::new(
@@ -4264,7 +4267,7 @@ fn head_progresses(
     | Exact(_)
     | NativeMatch(_)
     | DdSatisfied(_)
-    | CommandSatisfied(_, _) => true
+    | CommandSatisfied(_, _, _) => true
     // DR-090: progress depends on `self_keep` — `drop` (false) consumes 1 token like `DdSatisfied`,
     // `keep` (true) is a 0-token Accept (same standing as `Bind`/`effect resident` below).
     DdMatchSatisfied(_, _, self_keep, _) => !self_keep
@@ -6623,12 +6626,9 @@ fn command_is_alias_copy(def : Definition, c : CommandDef) -> Bool {
 /// 検査は構造的で経路の到達可能性を見ない (§6) — `or` の別枝・`exclusive_group` の兄弟・排他の
 /// 別 command 配下から昇格露出する子も、同じスコープに同じキーで並べば対象になる。
 ///
-/// **表現の限界**: 木は名前でキーする (binding が運ぶ軸が名前だから) ので、同一スコープ・同一軸に
-/// **同名**の宣言が 2 つ並び互いに違う `export_key` を持つ場合、remap はどちらか一方しか採れない
-/// (宣言順で後勝ち)。DR-120 §7 が明示的に合法とする「相異なる `export_key` を割った同名 command
-/// 2 本」がこれに当たる — 検査は宣言ごとに数えるので衝突と誤判定しないが、選ばれた側の結果キーが
-/// もう一方の `export_key` になりうる。binding の scope segment が宣言の識別子を運ばない限り
-/// 解けない (lowered 側の表現の問題)。
+/// 同一親 scope の同名 command は宣言 ordinal で候補を分離する。評価時の `{}` sentinel が
+/// `(raw name, ordinal)` を運び、resolve と結果キー射影が同じ候補を選ぶため、相異なる `export_key`
+/// を持つ同名 command も透過 command も、宣言順に対して決定的に同じ枝へ着地する。
 fn build_export_scopes(
   def : Definition,
   out : Array[DefError],
@@ -6670,11 +6670,14 @@ fn gather_export_seats(
   for e in def.positionals {
     gather_element_seats(e, node, seats, out, true, template_declarations)
   }
+  let command_ordinals : Map[String, Int] = Map([])
   for c in def.commands {
     // command はスコープラベル軸のみに載る。同名の option が同じスコープに居ても値セル軸は
     // 奪わない (DR-120 §7: 綴り軸と結果キー軸は別の軸で、同名 option / command は結果キーが
     // 違えば合法) — 両者は binding の別の軸 (`scope` segment と `key`) に現れる。
-    let child = node.declare_scope(c.name, c.export_key)
+    let ordinal = command_ordinals.get(c.name).unwrap_or(0)
+    command_ordinals.set(c.name, ordinal + 1)
+    let child = node.declare_scope(c.name, ordinal, c.export_key)
     // alias 由来の command copy は canonical と同じ構造の写しなので、席も内側の検査も canonical
     // 側に任せる (軸だけは remap のために登録済み — 結果キーは canonical へ寄る、DR-057 §2)。
     if command_is_alias_copy(def, c) {
@@ -6857,8 +6860,14 @@ fn register_export_axes(def : Definition, node : ExportScopeMap) -> Unit {
   for e in def.positionals {
     register_element_axes(e, node)
   }
+  let command_ordinals : Map[String, Int] = Map([])
   for c in def.commands {
-    register_export_axes(c.body, node.declare_scope(c.name, c.export_key))
+    let ordinal = command_ordinals.get(c.name).unwrap_or(0)
+    command_ordinals.set(c.name, ordinal + 1)
+    register_export_axes(
+      c.body,
+      node.declare_scope(c.name, ordinal, c.export_key),
+    )
   }
 }
 

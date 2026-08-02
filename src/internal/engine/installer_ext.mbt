@@ -95,12 +95,17 @@ pub fn InstallOutput::push_constraint(
 ///|
 pub struct InstallChild {
   priv name : String
+  priv ordinal : Int
   priv body : InstallBuilder
 }
 
 ///|
-pub fn InstallChild::new(name : String, body : InstallBuilder) -> InstallChild {
-  { name, body }
+pub fn InstallChild::new(
+  name : String,
+  ordinal : Int,
+  body : InstallBuilder,
+) -> InstallChild {
+  { name, ordinal, body }
 }
 
 ///|
@@ -210,7 +215,9 @@ fn InstallBuilder::materialize(self : InstallBuilder) -> Scope {
     greedy.push(node)
   }
   for child in self.children {
-    greedy.push(CommandSatisfied(child.name, child.body.materialize()))
+    greedy.push(
+      CommandSatisfied(child.name, child.ordinal, child.body.materialize()),
+    )
   }
   {
     greedy,

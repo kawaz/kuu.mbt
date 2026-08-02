@@ -49,7 +49,18 @@ pub fn none_cells(
   templates : Map[String, Node],
 ) -> Array[NoneCell] {
   let out : Array[NoneCell] = []
-  collect_nones(scope, [], templates, out)
+  collect_nones(scope, [], templates, [], false, out)
+  out
+}
+
+///|
+pub fn selected_none_cells(
+  scope : Scope,
+  templates : Map[String, Node],
+  bindings : Array[Binding],
+) -> Array[NoneCell] {
+  let out : Array[NoneCell] = []
+  collect_nones(scope, [], templates, bindings, true, out)
   out
 }
 
@@ -90,6 +101,8 @@ fn collect_nones_in_node(
   names : Array[String],
   templates : Map[String, Node],
   visiting : Array[String],
+  bindings : Array[Binding],
+  selected_only : Bool,
   out : Array[NoneCell],
 ) -> Unit {
   match node {
@@ -100,6 +113,8 @@ fn collect_nones_in_node(
         names,
         templates,
         visiting,
+        bindings,
+        selected_only,
         out,
       )
     IndexedRepeat(label, body, _, _) =>
@@ -109,24 +124,38 @@ fn collect_nones_in_node(
         names,
         templates,
         visiting,
+        bindings,
+        selected_only,
         out,
       )
     Seq(children) =>
       for child in children {
-        collect_nones_in_node(child, path, names, templates, visiting, out)
+        collect_nones_in_node(
+          child, path, names, templates, visiting, bindings, selected_only, out,
+        )
       }
     Or(children) =>
       for child in children {
-        collect_nones_in_node(child, path, names, templates, visiting, out)
+        collect_nones_in_node(
+          child, path, names, templates, visiting, bindings, selected_only, out,
+        )
       }
     Many(inner, _) =>
-      collect_nones_in_node(inner, path, names, templates, visiting, out)
+      collect_nones_in_node(
+        inner, path, names, templates, visiting, bindings, selected_only, out,
+      )
     GreedyRepeat(inner) =>
-      collect_nones_in_node(inner, path, names, templates, visiting, out)
+      collect_nones_in_node(
+        inner, path, names, templates, visiting, bindings, selected_only, out,
+      )
     Rooted(inner, _) =>
-      collect_nones_in_node(inner, path, names, templates, visiting, out)
+      collect_nones_in_node(
+        inner, path, names, templates, visiting, bindings, selected_only, out,
+      )
     BoundedTail(inner, _, _) =>
-      collect_nones_in_node(inner, path, names, templates, visiting, out)
+      collect_nones_in_node(
+        inner, path, names, templates, visiting, bindings, selected_only, out,
+      )
     // `name#cons` の自参照 (`lower_repeat_shape`) や相互参照するテンプレで無限降下しないよう、
     // 降下中のテンプレ名を stack で持って再入を止める。兄弟位置からの再参照は stack に無いので
     // 通常どおり降りる (同じテンプレでも参照位置ごとに path が違うため席は別々に要る)。
@@ -139,7 +168,9 @@ fn collect_nones_in_node(
       match templates.get(target) {
         Some(body) => {
           visiting.push(target)
-          collect_nones_in_node(body, path, names, templates, visiting, out)
+          collect_nones_in_node(
+            body, path, names, templates, visiting, bindings, selected_only, out,
+          )
           let _ = visiting.pop()
         }
         None => ()
@@ -158,9 +189,16 @@ fn collect_nones_in_node(
           }
         None => ()
       }
-    CommandSatisfied(name, child) =>
-      collect_nones(child, append_path(path, name), templates, out)
-    ScopeNode(inner) => collect_nones(inner, path, templates, out)
+    CommandSatisfied(name, ordinal, child) => {
+      let child_path = append_path(path, name)
+      if !selected_only || command_scope_selected(bindings, child_path, ordinal) {
+        collect_nones(
+          child, child_path, templates, bindings, selected_only, out,
+        )
+      }
+    }
+    ScopeNode(inner) =>
+      collect_nones(inner, path, templates, bindings, selected_only, out)
     _ => ()
   }
 }
@@ -170,6 +208,8 @@ fn collect_nones(
   scope : Scope,
   path : Array[String],
   templates : Map[String, Node],
+  bindings : Array[Binding],
+  selected_only : Bool,
   out : Array[NoneCell],
 ) -> Unit {
   let names : Array[String] = []
@@ -182,10 +222,28 @@ fn collect_nones(
     }
   }
   for node in scope.greedy {
-    collect_nones_in_node(node, path, names, templates, [], out)
+    collect_nones_in_node(
+      node,
+      path,
+      names,
+      templates,
+      [],
+      bindings,
+      selected_only,
+      out,
+    )
   }
   for node in scope.positional {
-    collect_nones_in_node(node, path, names, templates, [], out)
+    collect_nones_in_node(
+      node,
+      path,
+      names,
+      templates,
+      [],
+      bindings,
+      selected_only,
+      out,
+    )
   }
 }
 

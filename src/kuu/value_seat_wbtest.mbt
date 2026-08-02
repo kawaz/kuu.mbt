@@ -875,16 +875,11 @@ test "DR-037: 判明済み失敗 (out 乖離) の枝は完全経路に数えず�
 
 ///|
 /// 監査 M3: duplicate raw command path (同名 command 2 本、export_key で結果キーは分離 —
-/// DR-120 合法) で同名 target `tr` が別宣言 (record と number) を持つとき、宣言 index は
-/// 複数候補になり一意に絞れない → fold は保守的スキップ (対象外 = resolve 相へ委譲)。
-/// 後勝ち上書きで number (primitive) 宣言を採ると parse 相で誤枝刈り
-/// (`unresolvable_link_path`) になる形が、parse は通る (= fold は枝を落とさない)。
-///
-/// resolve 相は現状、同名 scope の entity 解決が候補を区別せず number 宣言側を引いて
-/// `invalid-range` (vivify 不可の absent) で落ちる — fold とは独立の既存 gap
-/// (issue `2026-08-02-dup-label-scope-resolve-gap` 参照)。本 pin の主眼は
-/// 「失敗が parse 相の合成 (`unresolvable_link_path`) では**ない**」= fold が誤枝刈り
-/// していないこと。
+/// DR-120 合法) で同名 target `tr` が別宣言 (record と number) を持っても、選択された command
+/// 枝の identity で resolve 対象と結果キー射影を区別する。`--until` は go1 にしか無いため、
+/// go1 の record 宣言を使って `tr.until` を vivify し、go2 の number 宣言と `required` 述語へは
+/// 到達しない。parse 相の宣言 index は枝 identity を持たないため保守的スキップを維持し、resolve 相が
+/// 選択済みの枝だけを最終解決する。
 test "監査 M3: 同名 command 2 本の別宣言 target は保守的スキップ (誤枝刈りしない)" {
   let src =
     #|{"commands":[
@@ -892,20 +887,62 @@ test "監査 M3: 同名 command 2 本の別宣言 target は保守的スキッ�
     #|  {"name":"tr","type":"trange","long":true},
     #|  {"name":"until","type":"string","long":true,"link":"tr.until"}]},
     #| {"name":"go","export_key":"go2","options":[
-    #|  {"name":"tr","type":"number","long":true}]}]}
-  let ast = seat_ast(src)
-  let args = ["go", "--until", "5"]
-  // fold は枝を落とさない — parse は完全経路 1 本の Success。
-  match parse_legacy(ast, args) {
-    @engine.Success(_) => ()
-    other => {
-      fail("parse must not prune the reading, got " + render_outcome(other))
-      panic()
-    }
-  }
-  let failure = seat_failure(src, args)
-  assert_true(failure.contains("invalid-range"))
-  assert_true(!failure.contains("unresolvable_link_path"))
+    #|  {"name":"tr","type":"number","long":true,"required":true}]}]}
+  assert_eq(
+    seat_view(src, ["go", "--until", "5"]),
+    "result={go1={tr={since=null,until=5}},go2=null} sources={go1={tr={since=null,until=link}},go2=null} effects=tr.until",
+  )
+}
+
+///|
+/// 同名 command が両方とも透過 (`export_key:null`) でも、branch identity は結果キーでなく
+/// 同名 command 列の宣言 ordinal を使うため選択枝を区別できる。`--until` を宣言した先頭枝の
+/// record セルだけを resolve し、後続枝の number 宣言へ到達せず、透過規則どおり子を root へ昇格する。
+test "同名 transparent command も宣言 ordinal で選択枝を resolve する" {
+  let src =
+    #|{"commands":[
+    #| {"name":"go","export_key":null,"options":[
+    #|  {"name":"tr","export_key":"tr1","type":"trange","long":true},
+    #|  {"name":"until","type":"string","long":true,"link":"tr.until"}]},
+    #| {"name":"go","export_key":null,"options":[
+    #|  {"name":"tr","export_key":"tr2","type":"number","long":true}]}]}
+  assert_eq(
+    seat_view(src, ["go", "--until", "5"]),
+    "result={tr1={since=null,until=5}} sources={tr1={since=null,until=link}} effects=tr.until",
+  )
+}
+
+///|
+/// 宣言順を反転して選択枝が ordinal 1 でも、ordinal 0 の number 型席を record 席へ重ねない。
+/// 選択枝自身の record 型で null 補形するため `since:null` が保存され、結果形は宣言順に依存しない。
+test "同名 command の後続宣言を選んでも選択枝の型席で null 補形する" {
+  let src =
+    #|{"commands":[
+    #| {"name":"go","export_key":"go2","options":[
+    #|  {"name":"tr","type":"number","long":true,"required":true}]},
+    #| {"name":"go","export_key":"go1","options":[
+    #|  {"name":"tr","type":"trange","long":true},
+    #|  {"name":"until","type":"string","long":true,"link":"tr.until"}]}]}
+  assert_eq(
+    seat_view(src, ["go", "--until", "5"]),
+    "result={go1={tr={since=null,until=5}},go2=null} sources={go1={tr={since=null,until=link}},go2=null} effects=tr.until",
+  )
+}
+
+///|
+/// 未選択の同名 sibling に同名 none セルがあっても、内部セル負リストは選択枝 identity で絞る。
+/// 選択枝の string 値と effect を none 扱いで消さず、未選択 command は DR-130 どおり null になる。
+test "未選択の同名 command の none セルは選択枝の同名値を隠さない" {
+  let src =
+    #|{"commands":[
+    #| {"name":"go","export_key":"go1","options":[
+    #|  {"name":"x","export_key":"x1","type":"string","long":true}]},
+    #| {"name":"go","export_key":"go2","options":[
+    #|  {"name":"x","export_key":"x2","type":"none","long":true}]}]}
+  assert_eq(
+    seat_view(src, ["go", "--x", "hello"]),
+    "result={go1={x1=hello},go2=null} sources={go1={x1=cli},go2=null} effects=x",
+  )
 }
 
 ///|

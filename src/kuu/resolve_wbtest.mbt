@@ -413,7 +413,7 @@ fn test_export_scopes(
     node.declare_element(it.0, it.1)
   }
   for it in scopes {
-    let _ = node.declare_scope(it.0, it.1)
+    let _ = node.declare_scope(it.0, 0, it.1)
   }
   node
 }
@@ -517,7 +517,7 @@ test "accum_cells resolves export_key rename on a command scope label (nested pa
     constraints: [],
   }
   let root : @engine.Scope = {
-    greedy: [@engine.CommandSatisfied("sub", child)],
+    greedy: [@engine.CommandSatisfied("sub", 0, child)],
     positional: [],
     entities: [],
     constraints: [],
@@ -982,7 +982,7 @@ test "command_child fetches a subcommand scope; outer_values_of builds the paren
     constraints: [],
   }
   let root : @engine.Scope = {
-    greedy: [@engine.CommandSatisfied("serve", child)],
+    greedy: [@engine.CommandSatisfied("serve", 0, child)],
     positional: [],
     entities: [],
     constraints: [],
@@ -2014,7 +2014,7 @@ fn selected_marker(scope : Array[String]) -> @abi.Binding {
   {
     key: "{}",
     op: @abi.Set,
-    value: @abi.Bool(false),
+    value: @abi.Number(0.0),
     source: @abi.Cli,
     scope,
     link_selections: [],
@@ -2047,7 +2047,10 @@ fn two_command_scope(a_flag : String, c_flag : String) -> @engine.Scope {
     constraints: [],
   }
   {
-    greedy: [@engine.CommandSatisfied("a", a), @engine.CommandSatisfied("c", c)],
+    greedy: [
+      @engine.CommandSatisfied("a", 0, a),
+      @engine.CommandSatisfied("c", 0, c),
+    ],
     positional: [],
     entities: [],
     constraints: [],
@@ -2066,7 +2069,7 @@ test "default_cells: an UNSELECTED transparent command's unfired flag does not p
   let ek = test_export_scopes(scopes=[("c", @engine.ExportKey::null())])
   let sc = two_command_scope("keep", "keep")
   let binds : Array[@abi.Binding] = [selected_marker(["a"])]
-  let cells = apply_export_to_defaults(default_cells(sc, binds), ek)
+  let cells = apply_export_to_defaults(default_cells(sc, binds), ek, binds)
   assert_eq(cells.length(), 1)
   assert_eq(cells[0].path, ["a"])
   assert_eq(cells[0].name, "keep")
@@ -2082,7 +2085,7 @@ test "default_cells 対極: a SELECTED transparent command's flag still promotes
   let ek = test_export_scopes(scopes=[("c", @engine.ExportKey::null())])
   let sc = two_command_scope("keep", "keep")
   let binds : Array[@abi.Binding] = [selected_marker(["c"])]
-  let cells = apply_export_to_defaults(default_cells(sc, binds), ek)
+  let cells = apply_export_to_defaults(default_cells(sc, binds), ek, binds)
   assert_eq(cells.length(), 1)
   assert_eq(cells[0].path, []) // 透過ラベルが落ちて root へ昇格
   assert_eq(cells[0].name, "keep")
@@ -2097,7 +2100,7 @@ test "default_cells: an UNSELECTED identity command's unfired flag is not collec
   let ek = test_export_scopes()
   let sc = two_command_scope("keep", "hold")
   let binds : Array[@abi.Binding] = [selected_marker(["a"])]
-  let cells = apply_export_to_defaults(default_cells(sc, binds), ek)
+  let cells = apply_export_to_defaults(default_cells(sc, binds), ek, binds)
   assert_eq(cells.length(), 1)
   assert_eq(cells[0].path, ["a"])
   assert_eq(cells[0].name, "keep")
@@ -2110,7 +2113,7 @@ test "default_cells 対極: a SELECTED identity command's unfired flag renders u
   let ek = test_export_scopes()
   let sc = two_command_scope("keep", "hold")
   let binds : Array[@abi.Binding] = [selected_marker(["c"])]
-  let cells = apply_export_to_defaults(default_cells(sc, binds), ek)
+  let cells = apply_export_to_defaults(default_cells(sc, binds), ek, binds)
   assert_eq(cells.length(), 1)
   assert_eq(cells[0].path, ["c"])
   assert_eq(cells[0].name, "hold")
@@ -2144,15 +2147,15 @@ test "default_cells: with two transparent commands, only the SELECTED one's flag
   }
   let sc : @engine.Scope = {
     greedy: [
-      @engine.CommandSatisfied("c1", c1),
-      @engine.CommandSatisfied("c2", c2),
+      @engine.CommandSatisfied("c1", 0, c1),
+      @engine.CommandSatisfied("c2", 0, c2),
     ],
     positional: [],
     entities: [],
     constraints: [],
   }
   let binds : Array[@abi.Binding] = [selected_marker(["c2"])]
-  let cells = apply_export_to_defaults(default_cells(sc, binds), ek)
+  let cells = apply_export_to_defaults(default_cells(sc, binds), ek, binds)
   assert_eq(cells.length(), 1)
   assert_eq(cells[0].path, [])
   assert_eq(cells[0].name, "two")
@@ -2166,7 +2169,7 @@ test "default_cells 対極: the root scope is always selected — its flag defau
   let ek = test_export_scopes()
   let sc : @engine.Scope = {
     greedy: [
-      @engine.CommandSatisfied("c", {
+      @engine.CommandSatisfied("c", 0, {
         greedy: [],
         positional: [],
         entities: [
@@ -2189,7 +2192,7 @@ test "default_cells 対極: the root scope is always selected — its flag defau
     ],
     constraints: [],
   }
-  let cells = apply_export_to_defaults(default_cells(sc, []), ek)
+  let cells = apply_export_to_defaults(default_cells(sc, []), ek, [])
   assert_eq(cells.length(), 1)
   assert_eq(cells[0].path, [])
   assert_eq(cells[0].name, "verbose")
@@ -2216,7 +2219,10 @@ fn command_with_accum_scope() -> @engine.Scope {
     constraints: [],
   }
   {
-    greedy: [@engine.CommandSatisfied("a", a), @engine.CommandSatisfied("c", c)],
+    greedy: [
+      @engine.CommandSatisfied("a", 0, a),
+      @engine.CommandSatisfied("c", 0, c),
+    ],
     positional: [],
     entities: [],
     constraints: [],
@@ -2289,7 +2295,7 @@ test "internal_cells: an UNSELECTED transparent command's config_file seat does 
     constraints: [],
   }
   let sc : @engine.Scope = {
-    greedy: [@engine.CommandSatisfied("c", c)],
+    greedy: [@engine.CommandSatisfied("c", 0, c)],
     positional: [],
     entities: [ent("cfg", @builtins.string_type())], // root の実在する値セル (同名)
     constraints: [],
@@ -2312,7 +2318,7 @@ test "internal_cells 対極: a SELECTED transparent command's config_file seat s
     constraints: [],
   }
   let sc : @engine.Scope = {
-    greedy: [@engine.CommandSatisfied("c", c)],
+    greedy: [@engine.CommandSatisfied("c", 0, c)],
     positional: [],
     entities: [],
     constraints: [],
@@ -2335,7 +2341,7 @@ test "internal_cells 対極: a SELECTED identity command's config_file seat nest
     constraints: [],
   }
   let sc : @engine.Scope = {
-    greedy: [@engine.CommandSatisfied("c", c)],
+    greedy: [@engine.CommandSatisfied("c", 0, c)],
     positional: [],
     entities: [ent("cfg", @builtins.string_type())],
     constraints: [],
@@ -2361,7 +2367,7 @@ test "internal_cells: an UNSELECTED transparent command's none-cell seat does no
     constraints: [],
   }
   let sc : @engine.Scope = {
-    greedy: [@engine.CommandSatisfied("c", c)],
+    greedy: [@engine.CommandSatisfied("c", 0, c)],
     positional: [],
     entities: [ent("x", @builtins.string_type())], // root の実在する値セル (同名)
     constraints: [],
@@ -2380,7 +2386,7 @@ test "internal_cells 対極: a SELECTED transparent command's none-cell seat sti
     constraints: [],
   }
   let sc : @engine.Scope = {
-    greedy: [@engine.CommandSatisfied("c", c)],
+    greedy: [@engine.CommandSatisfied("c", 0, c)],
     positional: [],
     entities: [],
     constraints: [],

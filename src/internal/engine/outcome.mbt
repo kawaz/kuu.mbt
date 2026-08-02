@@ -248,7 +248,7 @@ fn scope_at_path(root : Node, path : Array[String]) -> Scope? {
         let mut next : Node? = None
         for g in sc.greedy {
           match g {
-            CommandSatisfied(name, child) =>
+            CommandSatisfied(name, _, child) =>
               if name == label {
                 next = Some(ScopeNode(child))
               }
@@ -294,7 +294,7 @@ fn tried_triggers_in_greedy(g : Node, out : Array[String]) -> Unit {
       if !is_pattern {
         out.push(spelling)
       }
-    CommandSatisfied(name, _) => out.push(name)
+    CommandSatisfied(name, _, _) => out.push(name)
     _ => ()
   }
 }
@@ -559,7 +559,7 @@ fn collect_entities_greedy(
   seen_refs : Array[String],
 ) -> Unit {
   match g {
-    CommandSatisfied(name, child) => {
+    CommandSatisfied(name, _, child) => {
       let p2 : Array[String] = []
       for s in path {
         p2.push(s)

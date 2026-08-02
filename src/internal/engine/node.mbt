@@ -61,13 +61,21 @@ fn resolved_export_key(name : String, key : ExportKey) -> String? {
 ///
 /// 名前でキーするのは binding が運ぶ軸が名前だから (`@abi.Binding.key` / `.scope` はどちらも
 /// 宣言名の列)。名前は**結果スコープの中でしか**意味を持たないので、全スコープを 1 枚の
-/// `Map[String, ExportKey]` に混ぜると同名の別要素が 1 エントリを取り合って潰れる。同じ理由で
-/// 値セル軸 (`cells_`、binding の `key` として現れる) とスコープラベル軸 (`scopes_`、binding の
-/// `scope` segment として現れる) を分ける — 同一スコープに同名の option と command が並ぶのは
+/// `Map[String, ExportKey]` に混ぜない。値セル軸 (`cells_`) と構造ラベル軸 (`scopes_`) に加え、
+/// 同名 command は宣言 ordinal ごとの候補列 (`command_scopes_`) に分ける — 同一スコープに
+/// 同名の option と command が並ぶのは
 /// 結果キーが別なら合法 (DR-120 §7: 綴り軸と結果キー軸は別) で、両者は binding の別の軸に現れる。
+priv struct CommandExportScope {
+  ordinal : Int
+  key : ExportKey
+  child : ExportScopeMap
+}
+
+///|
 pub struct ExportScopeMap {
   priv cells_ : Map[String, ExportKey]
   priv scopes_ : Map[String, ExportKey]
+  priv command_scopes_ : Map[String, Array[CommandExportScope]]
   priv occupied_cells_ : Map[String, Bool]
   priv occupied_scopes_ : Map[String, Bool]
   priv projected_cells_ : Map[String, Bool]
@@ -83,6 +91,7 @@ pub fn ExportScopeMap::empty() -> ExportScopeMap {
   {
     cells_: Map([], capacity=0),
     scopes_: Map([], capacity=0),
+    command_scopes_: Map([], capacity=0),
     occupied_cells_: Map([], capacity=0),
     occupied_scopes_: Map([], capacity=0),
     projected_cells_: Map([], capacity=0),
@@ -104,16 +113,31 @@ pub fn ExportScopeMap::declare_element(
 }
 
 ///|
-/// command 1 件の結果キー軸を積み、その body のスコープノードを返す (同名で 2 度呼べば同じ
-/// ノードを返す)。command はスコープラベル軸にしか現れない (値セルは持たず、選ばれたときの空 kv
+/// command 1 件の結果キー軸を `(name, ordinal)` 候補へ積み、その body のスコープノードを返す。
+/// command はスコープラベル軸にしか現れない (値セルは持たず、選ばれたときの空 kv
 /// `{}` は scope 側で表される、DESIGN §2.6)。
 pub fn ExportScopeMap::declare_scope(
   self : ExportScopeMap,
   name : String,
+  ordinal : Int,
   key : ExportKey,
 ) -> ExportScopeMap {
-  self.scopes_.set(name, key)
-  self.child_node(name)
+  let candidates = match self.command_scopes_.get(name) {
+    Some(existing) => existing
+    None => {
+      let created : Array[CommandExportScope] = []
+      self.command_scopes_.set(name, created)
+      created
+    }
+  }
+  for candidate in candidates {
+    if candidate.ordinal == ordinal {
+      return candidate.child
+    }
+  }
+  let child = ExportScopeMap::empty()
+  candidates.push({ ordinal, key, child })
+  child
 }
 
 ///|
@@ -224,6 +248,42 @@ pub fn ExportScopeMap::exposed_scope(
 }
 
 ///|
+pub fn ExportScopeMap::exposed_command_scope(
+  self : ExportScopeMap,
+  name : String,
+  ordinal : Int,
+) -> String? {
+  match self.command_scopes_.get(name) {
+    Some(candidates) =>
+      for candidate in candidates {
+        if candidate.ordinal == ordinal {
+          return resolved_export_key(name, candidate.key)
+        }
+      }
+    None => ()
+  }
+  Some(name)
+}
+
+///|
+pub fn ExportScopeMap::command_child(
+  self : ExportScopeMap,
+  name : String,
+  ordinal : Int,
+) -> ExportScopeMap {
+  match self.command_scopes_.get(name) {
+    Some(candidates) =>
+      for candidate in candidates {
+        if candidate.ordinal == ordinal {
+          return candidate.child
+        }
+      }
+    None => ()
+  }
+  ExportScopeMap::empty()
+}
+
+///|
 /// `name` が作る 1 段下の結果スコープ。透過ラベル (`exposed_scope` が `None`) でも子ノードは
 /// 残る — 露出キーが落ちるのは**結果側の path** であって、binding が運ぶ宣言名の列は変わらない
 /// ので、lookup はラベルを辿り続ける必要がある。
@@ -260,9 +320,19 @@ pub fn ExportScopeMap::projection_keys(self : ExportScopeMap) -> Array[String] {
     }
   }
   for name, _ in self.projected_scopes_ {
-    match self.exposed_scope(name) {
-      Some(key) => push_projection_key(keys, key)
-      None => ()
+    match self.command_scopes_.get(name) {
+      Some(candidates) =>
+        for candidate in candidates {
+          match resolved_export_key(name, candidate.key) {
+            Some(key) => push_projection_key(keys, key)
+            None => ()
+          }
+        }
+      None =>
+        match self.exposed_scope(name) {
+          Some(key) => push_projection_key(keys, key)
+          None => ()
+        }
     }
   }
   keys
@@ -275,6 +345,20 @@ pub fn ExportScopeMap::projection_child(
   self : ExportScopeMap,
   key : String,
 ) -> ExportScopeMap? {
+  for name, candidates in self.command_scopes_ {
+    for candidate in candidates {
+      let exposed = resolved_export_key(name, candidate.key)
+      if exposed == Some(key) {
+        return Some(candidate.child)
+      }
+      if exposed is None {
+        match candidate.child.projection_child(key) {
+          Some(found) => return Some(found)
+          None => ()
+        }
+      }
+    }
+  }
   for name, child in self.children_ {
     let cell_exposed = if self.cells_.contains(name) {
       self.exposed_cell(name)
@@ -366,11 +450,12 @@ pub(all) enum Node {
   ///   the firing arm produces (mirrors `DdSatisfied`'s own trigger-string-as-name shortcut, which only
   ///   works there because `DdSatisfied` never decouples spelling from name). Never used for matching.
   DdMatchSatisfied(String, Bool, Bool, String)
-  /// command satellite (DR-018 / DR-041 §4). A GREEDY-face resident whose matcher is
-  /// a plain exact match on the command name. Firing enters the child scope as a NEW
-  /// backbone (the parent greedy face does not interject inside it). 先食い protects the
-  /// command name from a positional raw-eat, which is the DR-018 "commands が先" priority.
-  CommandSatisfied(String, Scope)
+  /// command satellite (DR-018 / DR-041 §4). Fields are `(raw name, same-name declaration
+  /// ordinal, child scope)`. The matcher uses the raw name; the ordinal is carried by the `{}`
+  /// sentinel so resolve and result projection select the same declaration when names duplicate.
+  /// Firing enters the child scope as a NEW backbone (the parent greedy face does not interject
+  /// inside it). 先食い protects the command name from a positional raw-eat.
+  CommandSatisfied(String, Int, Scope)
   /// DR-029 / DR-031 / DR-121 §4 value-link route. Evaluates `inner`, then rewrites effects whose
   /// key equals `from` to `target`, tags them Source::Link, and makes them escape
   /// `levels_to_target` lexical levels. This is the single evaluator funnel shared by every
@@ -443,7 +528,8 @@ pub impl Eq for Node with fn equal(self, other) {
     (DdSatisfied(a), DdSatisfied(b)) => a == b
     (DdMatchSatisfied(as_, ap, ak, an), DdMatchSatisfied(bs, bp, bk, bn)) =>
       as_ == bs && ap == bp && ak == bk && an == bn
-    (CommandSatisfied(an, ac), CommandSatisfied(bn, bc)) => an == bn && ac == bc
+    (CommandSatisfied(an, ai, ac), CommandSatisfied(bn, bi, bc)) =>
+      an == bn && ai == bi && ac == bc
     (
       LinkTarget(af, at, as_, aa, ax, ao, ar, al, ae, an),
       LinkTarget(bf, bt, bs, ba, bx, bo, br, bl, be, bn),
@@ -515,9 +601,10 @@ pub impl Debug for Node with fn to_repr(self) {
         (None, Debug::to_repr(c)),
         (None, Debug::to_repr(d)),
       ])
-    CommandSatisfied(a, b) =>
+    CommandSatisfied(a, ordinal, b) =>
       @debug.Repr::ctor("CommandSatisfied", [
         (None, Debug::to_repr(a)),
+        (None, Debug::to_repr(ordinal)),
         (None, Debug::to_repr(b)),
       ])
     LinkTarget(a, b, c, d, e, f, r, g, h, i) =>

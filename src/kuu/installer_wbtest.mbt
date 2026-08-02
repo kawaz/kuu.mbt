@@ -993,11 +993,14 @@ test "global + long + fixpoint: child scope receives @engine.Rooted satellite (l
     ],
   }
   let sc = ok_scope(def, all_installers())
-  // 子 scope (@engine.CommandSatisfied("sub", child_scope)) を取り出す
+  // 子 scope (@engine.CommandSatisfied("sub", 0, child_scope)) を取り出す
   let mut child_sc : @engine.Scope? = None
   for g in sc.greedy {
     match g {
-      @engine.CommandSatisfied(n, cs) => if n == "sub" { child_sc = Some(cs) }
+      @engine.CommandSatisfied(n, _, cs) =>
+        if n == "sub" {
+          child_sc = Some(cs)
+        }
       _ => ()
     }
   }
@@ -1725,7 +1728,7 @@ test "copy_global_into: two same-name different-trigger globals (declared indepe
   let mut mid_sc : @engine.Scope? = None
   for g in sc.greedy {
     match g {
-      @engine.CommandSatisfied(n, cs) => if n == "mid" { mid_sc = Some(cs) }
+      @engine.CommandSatisfied(n, _, cs) => if n == "mid" { mid_sc = Some(cs) }
       _ => ()
     }
   }
@@ -1733,7 +1736,7 @@ test "copy_global_into: two same-name different-trigger globals (declared indepe
   let mut sub_sc : @engine.Scope? = None
   for g in mid_sc.greedy {
     match g {
-      @engine.CommandSatisfied(n, cs) => if n == "sub" { sub_sc = Some(cs) }
+      @engine.CommandSatisfied(n, _, cs) => if n == "sub" { sub_sc = Some(cs) }
       _ => ()
     }
   }

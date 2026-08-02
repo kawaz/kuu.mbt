@@ -14,10 +14,11 @@
 ///|
 /// One scope's delayed predicates + their scope: the constraint table entry
 /// KTop evaluates at the global completion point. `path` is the result
-/// nesting path of the declaring scope (root = []); bindings are matched
-/// scope-exactly against it.
+/// nesting path of the declaring scope (root = []). `command_ordinals` is parallel to `path` and
+/// identifies each raw command segment's same-name declaration; bindings must match both axes.
 pub struct ScopedCons {
   path : Array[String]
+  command_ordinals : Array[Int]
   constraints : Array[Constraint]
   entities : Array[Entity]
 } derive(Debug)
@@ -25,6 +26,7 @@ pub struct ScopedCons {
 ///|
 pub impl Eq for ScopedCons with fn equal(self, other) {
   self.path == other.path &&
+  self.command_ordinals == other.command_ordinals &&
   self.constraints == other.constraints &&
   self.entities == other.entities
 }
@@ -51,12 +53,13 @@ priv enum Cont {
   /// scope finished; continue the parent's scope_step from this state.
   KResumeScope(Scope, Int, Bool, Cont)
   /// nest the bindings accumulated SINCE `start` (an index into acc) under
-  /// `label`, then continue. The Bool adds the `{}` presence marker (a
-  /// command scope appears as at least {} even when empty, DR-025). This
+  /// `label`, then continue. Payload = `(label, command ordinal, is command, start, outer)`.
+  /// A command adds the `{}` presence marker carrying its ordinal (an empty command scope remains
+  /// observable, DR-025). This
   /// frame is what lets a child scope's repeats consult the parent's
   /// continuation (phase16) while the child's bindings still nest under the
   /// command name — nesting happens when the frame RUNS, on the acc slice.
-  KNest(String, Bool, Int, Cont)
+  KNest(String, Int, Bool, Int, Cont)
   /// a Ref-repeat head that is itself a ScopeNode just finished consuming:
   /// (sc, ref name, pidx, severed, entry_pos, outer). Runs the stop/more
   /// 取り分選好 (ref_choice) from the head's end position. Without this
@@ -79,8 +82,8 @@ impl Eq for Cont with fn equal(self, other) {
     (KDone, KDone) => true
     (KResumeScope(as_, ap, av, ao), KResumeScope(bs, bp, bv, bo)) =>
       as_ == bs && ap == bp && av == bv && ao == bo
-    (KNest(al, ac, ai, ao), KNest(bl, bc, bi, bo)) =>
-      al == bl && ac == bc && ai == bi && ao == bo
+    (KNest(al, aa, ac, ai, ao), KNest(bl, ba, bc, bi, bo)) =>
+      al == bl && aa == ba && ac == bc && ai == bi && ao == bo
     (KRefChoice(as_, an, ap, av, ae, ao), KRefChoice(bs, bn, bp, bv, be, bo)) =>
       as_ == bs && an == bn && ap == bp && av == bv && ae == be && ao == bo
     (
@@ -109,8 +112,8 @@ fn sever_cont(k : Cont) -> Cont {
     KTop(_) | KDone => k
     KResumeScope(sc, pidx, _, outer) =>
       KResumeScope(sc, pidx, true, sever_cont(outer))
-    KNest(label, is_cmd, start, outer) =>
-      KNest(label, is_cmd, start, sever_cont(outer))
+    KNest(label, ordinal, is_cmd, start, outer) =>
+      KNest(label, ordinal, is_cmd, start, sever_cont(outer))
     KRefChoice(sc, name, pidx, _, entry_pos, outer) =>
       KRefChoice(sc, name, pidx, true, entry_pos, sever_cont(outer))
     KTailChoice(sc, head, budget, is_lazy, pidx, _, entry_pos, outer) =>
@@ -174,7 +177,7 @@ fn run_cont(
     KDone => [Accept(pos, acc)]
     KResumeScope(sc, pidx, severed, outer) =>
       scope_step(sc, ctx, pos, pidx, acc, severed, outer)
-    KNest(label, is_cmd, start, outer) => {
+    KNest(label, ordinal, is_cmd, start, outer) => {
       // nest acc[start..] one level under `label` (bindings with
       // levels_to_declaring_scope > 0 escape, DR-042); acc[..start] predates the scope and passes
       // through.
@@ -194,7 +197,7 @@ fn run_cont(
         out.push(b)
       }
       if is_cmd {
-        out.push(scope_marker(label))
+        out.push(scope_marker(label, ordinal))
       }
       for b in nest(label, inside) {
         out.push(b)

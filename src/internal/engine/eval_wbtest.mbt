@@ -82,6 +82,7 @@ test "sever_cont marks every resumable spine across nesting and repeat choices" 
   let sc : Scope = { greedy: [], positional: [], entities: [], constraints: [] }
   let original = KNest(
     "cmd",
+    0,
     true,
     0,
     KResumeScope(
@@ -100,6 +101,7 @@ test "sever_cont marks every resumable spine across nesting and repeat choices" 
   )
   let expected = KNest(
     "cmd",
+    0,
     true,
     0,
     KResumeScope(
