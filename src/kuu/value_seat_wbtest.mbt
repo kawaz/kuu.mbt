@@ -622,15 +622,14 @@ test "DR-126 §1: positional 入口でも送信元 type shadow をフィール�
     #|],"positionals":[
     #|  {"name":"hexy","type":"number","link":"tr.until"}
     #|]}
-  let linked_ast = seat_ast(linked_src)
-  // 値残余の着地座は canonical number。送信元 shadow を引き継がないので 0x10 は拒否される。
-  match parse_legacy(linked_ast, ["0x10"]) {
-    @engine.Success(_) =>
-      fail(
-        "the canonical field number must reject a base-prefixed positional literal",
-      )
-    _ => ()
-  }
+  // decimal の成立形で positional residual route 自体が `tr.until` まで届くことを先に固定する。
+  assert_eq(
+    seat_view(linked_src, ["16"]),
+    "result={tr={since=null,until=16}} sources={tr={since=null,until=link}} effects=tr.until",
+  )
+  // 同じ経路で 0x10 だけが canonical number parser の `not_a_number` として拒否される。
+  let failure = seat_failure(linked_src, ["0x10"])
+  assert_true(failure.contains("not_a_number"))
 }
 
 ///|
