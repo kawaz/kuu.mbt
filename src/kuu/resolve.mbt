@@ -2668,6 +2668,9 @@ fn resolve_child_default_seats(
         out.push(binding)
         continue
       }
+      // A `#seat:` binding's value is the target element name, built directly by lowering
+      // (`Bind(child_default_seat_key(e), String(e.name))`) and never routed through a
+      // `parse_token`, so it stays a String no matter what value shapes producers gain.
       let target = match binding.value {
         @abi.String(name) => name
         _ => ""
