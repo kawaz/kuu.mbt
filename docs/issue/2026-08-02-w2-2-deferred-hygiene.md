@@ -34,5 +34,9 @@ W2-2 実装レビュー時にこれらの問題を発見したが、いずれも
 ## 受け入れ条件
 
 - [ ] F4: Union の uniqueItems 等価検査が Record フィールド順の違いを正しく意味的同一として扱う (または順序正規化してから比較する)
-- [ ] F6: `builtin/` prefix 正規化ロジックを 1 箇所に集約し、Registry と engine の双方がそこを参照する
-- [ ] F8: `DefError` の message が `declaration_violations` の全件 (または件数を示すサマリ) を含む
+- [x] F6: `builtin/` prefix 正規化ロジックを 1 箇所に集約し、Registry と engine の双方がそこを参照する
+- [x] F8: `DefError` の message が `declaration_violations` の全件 (または件数を示すサマリ) を含む
+
+## 進捗
+
+F6 は `builtin/` 正規化を `extension.Registry::canonical_type_reference` に集約し、`resolve_type_reference` と engine が共用する形にした。F8 は `declaration_violations` の全件を `'; '` 区切りで `DefError` の message に載せ、wbtest の期待値を更新した。`just test` は 713/713 pass、conformance は decoded=400 ran_cases=904 skipped=0 mismatches=0。`moon check --deny-warn` は green。
