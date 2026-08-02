@@ -43,6 +43,7 @@ pub fn Binding::effect(key : String, op : EffectOp, source : Source) -> Binding 
     scope: [],
     link_selections: [],
     observation: None,
+    value_residual: [],
     levels_to_declaring_scope: 0,
     at_pos: None,
   }
@@ -60,6 +61,7 @@ pub fn Binding::action_marker(name : String, pos : Int) -> Binding {
     scope: [],
     link_selections: [],
     observation: None,
+    value_residual: [],
     levels_to_declaring_scope: 0,
     at_pos: None,
   }

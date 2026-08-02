@@ -293,6 +293,7 @@ fn scope_marker(label : String) -> Binding {
     scope: [label],
     link_selections: [],
     observation: None,
+    value_residual: [],
     levels_to_declaring_scope: 0,
     at_pos: None,
   }
@@ -310,6 +311,7 @@ fn array_marker(label : String) -> Binding {
     scope: [label],
     link_selections: [],
     observation: None,
+    value_residual: [],
     levels_to_declaring_scope: 0,
     at_pos: None,
   }
@@ -540,6 +542,7 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
       target_tuple_arities,
       target_selections,
       target_observation,
+      target_residual,
       levels,
       extension,
       inner
@@ -552,8 +555,15 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
               Accept(
                 next_pos,
                 bindings_through_link(
-                  bindings, from, target, target_scope, target_tuple_arities, target_selections,
-                  target_observation, levels,
+                  bindings,
+                  from,
+                  target,
+                  target_scope,
+                  target_tuple_arities,
+                  target_selections,
+                  target_observation,
+                  levels,
+                  target_residual~,
                 ),
               ),
             )
@@ -562,8 +572,15 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
               Rejected(
                 error,
                 bindings_through_link(
-                  bindings, from, target, target_scope, target_tuple_arities, target_selections,
-                  target_observation, levels,
+                  bindings,
+                  from,
+                  target,
+                  target_scope,
+                  target_tuple_arities,
+                  target_selections,
+                  target_observation,
+                  levels,
+                  target_residual~,
                 ),
               ),
             )
@@ -572,8 +589,15 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
               Held(
                 error,
                 bindings_through_link(
-                  bindings, from, target, target_scope, target_tuple_arities, target_selections,
-                  target_observation, levels,
+                  bindings,
+                  from,
+                  target,
+                  target_scope,
+                  target_tuple_arities,
+                  target_selections,
+                  target_observation,
+                  levels,
+                  target_residual~,
                 ),
               ),
             )
@@ -582,8 +606,15 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
               Pending(
                 decorate_link_candidates(candidates, from, extension),
                 bindings_through_link(
-                  bindings, from, target, target_scope, target_tuple_arities, target_selections,
-                  target_observation, levels,
+                  bindings,
+                  from,
+                  target,
+                  target_scope,
+                  target_tuple_arities,
+                  target_selections,
+                  target_observation,
+                  levels,
+                  target_residual~,
                 ),
               ),
             )
@@ -811,6 +842,7 @@ fn eval_with_downstream(
       target_tuple_arities,
       target_selections,
       target_observation,
+      target_residual,
       levels,
       extension,
       inner
@@ -824,8 +856,15 @@ fn eval_with_downstream(
             ctx2,
             next_pos,
             bindings_through_link(
-              bindings, from, target, target_scope, target_tuple_arities, target_selections,
-              target_observation, levels,
+              bindings,
+              from,
+              target,
+              target_scope,
+              target_tuple_arities,
+              target_selections,
+              target_observation,
+              levels,
+              target_residual~,
             ),
           )
         },
@@ -834,8 +873,15 @@ fn eval_with_downstream(
             ctx2,
             error,
             bindings_through_link(
-              bindings, from, target, target_scope, target_tuple_arities, target_selections,
-              target_observation, levels,
+              bindings,
+              from,
+              target,
+              target_scope,
+              target_tuple_arities,
+              target_selections,
+              target_observation,
+              levels,
+              target_residual~,
             ),
           )
         },
@@ -844,8 +890,15 @@ fn eval_with_downstream(
             ctx2,
             error,
             bindings_through_link(
-              bindings, from, target, target_scope, target_tuple_arities, target_selections,
-              target_observation, levels,
+              bindings,
+              from,
+              target,
+              target_scope,
+              target_tuple_arities,
+              target_selections,
+              target_observation,
+              levels,
+              target_residual~,
             ),
           )
         },
@@ -854,8 +907,15 @@ fn eval_with_downstream(
             ctx2,
             decorate_link_candidates(candidates, from, extension),
             bindings_through_link(
-              bindings, from, target, target_scope, target_tuple_arities, target_selections,
-              target_observation, levels,
+              bindings,
+              from,
+              target,
+              target_scope,
+              target_tuple_arities,
+              target_selections,
+              target_observation,
+              levels,
+              target_residual~,
             ),
           )
         },
@@ -864,8 +924,15 @@ fn eval_with_downstream(
             ctx2,
             next_pos,
             bindings_through_link(
-              bindings, from, target, target_scope, target_tuple_arities, target_selections,
-              target_observation, levels,
+              bindings,
+              from,
+              target,
+              target_scope,
+              target_tuple_arities,
+              target_selections,
+              target_observation,
+              levels,
+              target_residual~,
             ),
           )
         }),
@@ -2537,7 +2604,8 @@ fn greedy_engages(g : Node, ctx : Ctx, pos : Int) -> Bool {
     DdSatisfied(t) => ctx.toks[pos] == t
     DdMatchSatisfied(spelling, is_pattern, _, _) =>
       dd_match_token(spelling, is_pattern, ctx.toks[pos])
-    LinkTarget(_, _, _, _, _, _, _, _, inner) => greedy_engages(inner, ctx, pos)
+    LinkTarget(_, _, _, _, _, _, _, _, _, inner) =>
+      greedy_engages(inner, ctx, pos)
     Rooted(inner, _) => greedy_engages(inner, ctx, pos)
     _ => has_viable(eval(g, ctx, pos), pos, ctx)
   }
@@ -2593,7 +2661,7 @@ fn greedy_trigger_matches(g : Node, ctx : Ctx, pos : Int) -> Bool {
     DdMatchSatisfied(spelling, is_pattern, _, _) =>
       dd_match_token(spelling, is_pattern, ctx.toks[pos])
     NativeMatch(m) => run_matcher(m, ctx, pos).length() > 0
-    LinkTarget(_, _, _, _, _, _, _, _, inner) =>
+    LinkTarget(_, _, _, _, _, _, _, _, _, inner) =>
       greedy_trigger_matches(inner, ctx, pos)
     Rooted(inner, _) => greedy_trigger_matches(inner, ctx, pos)
     _ => greedy_engages(g, ctx, pos)
@@ -2646,7 +2714,7 @@ fn is_zero_token_marker(node : Node) -> Bool {
 /// 増えても自動的に安全側 (cut 候補として拾う) に倒れ、このヘルパーの更新漏れを起こさない。
 fn value_slot_trigger(g : Node) -> String? {
   match g {
-    LinkTarget(_, _, _, _, _, _, _, _, inner) | Rooted(inner, _) =>
+    LinkTarget(_, _, _, _, _, _, _, _, _, inner) | Rooted(inner, _) =>
       value_slot_trigger(inner)
     Seq([Exact(t), rest, ..]) =>
       if is_zero_token_marker(rest) {
@@ -2665,7 +2733,7 @@ fn value_slot_trigger(g : Node) -> String? {
 /// `Bind, failure resident` 2連続を含む) なら trigger 文字列を返す。
 fn zero_arg_variant_trigger(g : Node) -> String? {
   match g {
-    LinkTarget(_, _, _, _, _, _, _, _, inner) | Rooted(inner, _) =>
+    LinkTarget(_, _, _, _, _, _, _, _, _, inner) | Rooted(inner, _) =>
       zero_arg_variant_trigger(inner)
     Seq([Exact(t), .. rest]) => {
       if rest.length() == 0 {
@@ -2866,7 +2934,7 @@ fn seq_boundary_name(node : Node) -> String? {
 /// `Exact` alone or an unrecognized tail shape is left as the spelling fallback, unchanged).
 fn cand_boundary_origin(g : Node) -> String? {
   match g {
-    LinkTarget(_, _, _, _, _, _, _, _, inner) => cand_boundary_origin(inner)
+    LinkTarget(_, _, _, _, _, _, _, _, _, inner) => cand_boundary_origin(inner)
     Rooted(inner, _) => cand_boundary_origin(inner)
     Seq([Exact(_), rest, ..]) => seq_boundary_name(rest)
     _ => None
@@ -3746,6 +3814,7 @@ fn consume_compound(
       target_tuple_arities,
       target_selections,
       target_observation,
+      target_residual,
       levels,
       extension,
       inner
@@ -3758,8 +3827,15 @@ fn consume_compound(
               Accept(
                 next_pos,
                 bindings_through_link(
-                  bindings, from, target, target_scope, target_tuple_arities, target_selections,
-                  target_observation, levels,
+                  bindings,
+                  from,
+                  target,
+                  target_scope,
+                  target_tuple_arities,
+                  target_selections,
+                  target_observation,
+                  levels,
+                  target_residual~,
                 ),
               ),
             )
@@ -3768,8 +3844,15 @@ fn consume_compound(
               Rejected(
                 error,
                 bindings_through_link(
-                  bindings, from, target, target_scope, target_tuple_arities, target_selections,
-                  target_observation, levels,
+                  bindings,
+                  from,
+                  target,
+                  target_scope,
+                  target_tuple_arities,
+                  target_selections,
+                  target_observation,
+                  levels,
+                  target_residual~,
                 ),
               ),
             )
@@ -3778,8 +3861,15 @@ fn consume_compound(
               Held(
                 error,
                 bindings_through_link(
-                  bindings, from, target, target_scope, target_tuple_arities, target_selections,
-                  target_observation, levels,
+                  bindings,
+                  from,
+                  target,
+                  target_scope,
+                  target_tuple_arities,
+                  target_selections,
+                  target_observation,
+                  levels,
+                  target_residual~,
                 ),
               ),
             )
@@ -3788,8 +3878,15 @@ fn consume_compound(
               Pending(
                 decorate_link_candidates(candidates, from, extension),
                 bindings_through_link(
-                  bindings, from, target, target_scope, target_tuple_arities, target_selections,
-                  target_observation, levels,
+                  bindings,
+                  from,
+                  target,
+                  target_scope,
+                  target_tuple_arities,
+                  target_selections,
+                  target_observation,
+                  levels,
+                  target_residual~,
                 ),
               ),
             )
@@ -4708,7 +4805,7 @@ fn collect_greedy_scopes(
       for a in alts {
         collect_greedy_scopes(a, path, defs, out, seen_refs)
       }
-    LinkTarget(_, _, _, _, _, _, _, _, inner) =>
+    LinkTarget(_, _, _, _, _, _, _, _, _, inner) =>
       collect_greedy_scopes(inner, path, defs, out, seen_refs)
     Rooted(inner, _) => collect_greedy_scopes(inner, path, defs, out, seen_refs)
     _ => ()

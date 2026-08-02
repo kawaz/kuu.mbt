@@ -382,6 +382,7 @@ pub(all) enum Node {
     Array[Int],
     Array[LinkSelection],
     ObservationAddress?,
+    Array[ObservationSegment], // DR-127 §2.2 value-space residual; [] = the link lands on the cell itself
     Int,
     &EntityExt,
     Node
@@ -444,8 +445,8 @@ pub impl Eq for Node with fn equal(self, other) {
       as_ == bs && ap == bp && ak == bk && an == bn
     (CommandSatisfied(an, ac), CommandSatisfied(bn, bc)) => an == bn && ac == bc
     (
-      LinkTarget(af, at, as_, aa, ax, ao, al, ae, an),
-      LinkTarget(bf, bt, bs, ba, bx, bo, bl, be, bn),
+      LinkTarget(af, at, as_, aa, ax, ao, ar, al, ae, an),
+      LinkTarget(bf, bt, bs, ba, bx, bo, br, bl, be, bn),
     ) =>
       af == bf &&
       at == bt &&
@@ -453,6 +454,7 @@ pub impl Eq for Node with fn equal(self, other) {
       aa == ba &&
       ax == bx &&
       ao == bo &&
+      ar == br &&
       al == bl &&
       ae == be &&
       an == bn
@@ -518,7 +520,7 @@ pub impl Debug for Node with fn to_repr(self) {
         (None, Debug::to_repr(a)),
         (None, Debug::to_repr(b)),
       ])
-    LinkTarget(a, b, c, d, e, f, g, h, i) =>
+    LinkTarget(a, b, c, d, e, f, r, g, h, i) =>
       @debug.Repr::ctor("LinkTarget", [
         (None, Debug::to_repr(a)),
         (None, Debug::to_repr(b)),
@@ -526,6 +528,7 @@ pub impl Debug for Node with fn to_repr(self) {
         (None, Debug::to_repr(d)),
         (None, Debug::to_repr(e)),
         (None, Debug::to_repr(f)),
+        (None, Debug::to_repr(r)),
         (None, Debug::to_repr(g)),
         (None, Debug::to_repr(h.encode())),
         (None, Debug::to_repr(i)),

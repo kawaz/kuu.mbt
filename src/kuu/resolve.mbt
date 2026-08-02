@@ -1476,6 +1476,7 @@ fn command_projection_bindings(
                   scope: result_path.copy(),
                   link_selections: [],
                   observation: None,
+                  value_residual: [],
                   levels_to_declaring_scope: 0,
                   at_pos: None,
                 })

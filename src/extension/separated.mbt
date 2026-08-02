@@ -62,6 +62,7 @@ pub fn sep_binds(
           scope: [],
           link_selections: [],
           observation: None,
+          value_residual: [],
           levels_to_declaring_scope: 0,
           at_pos: Some(pos),
         })
@@ -77,6 +78,7 @@ pub fn sep_binds(
               scope: [],
               link_selections: [],
               observation: None,
+              value_residual: [],
               levels_to_declaring_scope: 0,
               at_pos: Some(pos),
             })

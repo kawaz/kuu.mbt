@@ -54,6 +54,7 @@ pub struct EqEntry {
   priv link_target_tuple_arities : Array[Int]
   priv link_target_selections : Array[@abi.LinkSelection]
   priv link_target_observation : @abi.ObservationAddress?
+  priv link_target_residual : Array[@abi.ObservationSegment]
   priv link_additional_levels : Int
   priv extension : &EntityExt
 }
@@ -72,6 +73,7 @@ pub fn eq_entry(
   link_target_tuple_arities? : Array[Int] = [],
   link_target_selections? : Array[@abi.LinkSelection] = [],
   link_target_observation? : @abi.ObservationAddress? = None,
+  link_target_residual? : Array[@abi.ObservationSegment] = [],
   link_additional_levels? : Int = 0,
   extension? : &EntityExt = entity_ext(),
 ) -> EqEntry {
@@ -88,6 +90,7 @@ pub fn eq_entry(
     link_target_tuple_arities,
     link_target_selections,
     link_target_observation,
+    link_target_residual,
     link_additional_levels,
     extension,
   }
@@ -110,6 +113,7 @@ pub struct ShortEntry {
   priv link_target_tuple_arities : Array[Int]
   priv link_target_selections : Array[@abi.LinkSelection]
   priv link_target_observation : @abi.ObservationAddress?
+  priv link_target_residual : Array[@abi.ObservationSegment]
   priv link_additional_levels : Int
   priv extension : &EntityExt
 }
@@ -130,6 +134,7 @@ pub fn short_entry(
   link_target_tuple_arities? : Array[Int] = [],
   link_target_selections? : Array[@abi.LinkSelection] = [],
   link_target_observation? : @abi.ObservationAddress? = None,
+  link_target_residual? : Array[@abi.ObservationSegment] = [],
   link_additional_levels? : Int = 0,
   extension? : &EntityExt = entity_ext(),
 ) -> ShortEntry {
@@ -148,6 +153,7 @@ pub fn short_entry(
     link_target_tuple_arities,
     link_target_selections,
     link_target_observation,
+    link_target_residual,
     link_additional_levels,
     extension,
   }
@@ -382,14 +388,22 @@ fn route_entry_bindings(
   target_tuple_arities : Array[Int],
   target_selections : Array[@abi.LinkSelection],
   target_observation : @abi.ObservationAddress?,
+  target_residual : Array[@abi.ObservationSegment],
   levels : Int,
   bindings : Array[@abi.Binding],
 ) -> Array[@abi.Binding] {
   match target {
     Some(target_name) =>
       @abi.bindings_through_link(
-        bindings, name, target_name, target_scope, target_tuple_arities, target_selections,
-        target_observation, levels,
+        bindings,
+        name,
+        target_name,
+        target_scope,
+        target_tuple_arities,
+        target_selections,
+        target_observation,
+        levels,
+        target_residual~,
       )
     None => bindings
   }
@@ -465,6 +479,7 @@ fn run_eq_split(
                   e.link_target_tuple_arities,
                   e.link_target_selections,
                   e.link_target_observation,
+                  e.link_target_residual,
                   e.link_additional_levels,
                   bs,
                 ) +
@@ -505,6 +520,7 @@ fn run_eq_split(
                 e.link_target_tuple_arities,
                 e.link_target_selections,
                 e.link_target_observation,
+                e.link_target_residual,
                 e.link_additional_levels,
                 [@abi.Binding::new(e.name, value, @abi.Cli, at_pos=Some(pos))],
               ) +
@@ -611,6 +627,7 @@ fn short_val(
             e.link_target_tuple_arities,
             e.link_target_selections,
             e.link_target_observation,
+            e.link_target_residual,
             e.link_additional_levels,
             bindings,
           ),
@@ -642,6 +659,7 @@ fn short_val(
             e.link_target_tuple_arities,
             e.link_target_selections,
             e.link_target_observation,
+            e.link_target_residual,
             e.link_additional_levels,
             [@abi.Binding::new(e.name, value, @abi.Cli, at_pos=Some(pos))],
           ),
@@ -719,6 +737,7 @@ fn walk_short(
             e.link_target_tuple_arities,
             e.link_target_selections,
             e.link_target_observation,
+            e.link_target_residual,
             e.link_additional_levels,
             [presence],
           )[0]

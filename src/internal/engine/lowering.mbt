@@ -1096,9 +1096,10 @@ fn lower_repeat_head(
   e : ElementDef,
   head : Node,
   registry : Map[String, Node],
+  extensions : Registry,
   out : Array[Node],
 ) -> Unit {
-  let head = match route_link_entry(def, e, head) {
+  let head = match route_link_entry(def, e, head, extensions) {
     Some(node) => node
     None => return
   }
@@ -1109,6 +1110,7 @@ fn lower_repeat_head(
 fn lower_positional(
   def : Definition,
   registry : Map[String, Node],
+  extensions : Registry,
 ) -> Array[Node] {
   let out : Array[Node] = []
   for e in def.positionals {
@@ -1136,7 +1138,7 @@ fn lower_positional(
           } else {
             Scoped(e.name, Or(nodes))
           }
-          lower_repeat_head(def, e, head, registry, out)
+          lower_repeat_head(def, e, head, registry, extensions, out)
         }
         Group(items) => {
           // MDR-004 §3 "Group + repeat": IndexedRepeat(label=name, head=Seq(inner cells), min,
@@ -1183,6 +1185,7 @@ fn lower_positional(
                     e,
                     ref_row_head(e.name, element_head(e)),
                     registry,
+                    extensions,
                     out,
                   )
               }
@@ -1209,6 +1212,7 @@ fn lower_positional(
                       e,
                       opt_node(element_head(e)),
                       registry,
+                      extensions,
                       out,
                     )
                   Some(_) => {
@@ -1229,14 +1233,21 @@ fn lower_positional(
                       }
                       None => Bind(child_default_seat_key(e), String(e.name))
                     }
-                    match route_link_entry(def, e, presence) {
+                    match route_link_entry(def, e, presence, extensions) {
                       Some(node) => out.push(node)
                       None => ()
                     }
                   }
                 }
               } else {
-                lower_repeat_head(def, e, element_head(e), registry, out)
+                lower_repeat_head(
+                  def,
+                  e,
+                  element_head(e),
+                  registry,
+                  extensions,
+                  out,
+                )
               }
           }
         // Enum (issue values-decode-support): `dec_positional` never produces this shape today
@@ -1250,6 +1261,7 @@ fn lower_positional(
             e,
             enum_value_node(e.name, e.ty, values),
             registry,
+            extensions,
             out,
           )
       }
@@ -1266,7 +1278,7 @@ fn init_sb(
   templates : Map[String, Node],
   extensions : Registry,
 ) -> InstallBuilder {
-  let positional = lower_positional(def, templates)
+  let positional = lower_positional(def, templates, extensions)
   let children : Array[InstallChild] = []
   for c in def.commands {
     children.push(
@@ -1767,20 +1779,26 @@ fn inst_long(
   def : Definition,
   build : InstallOutput,
   registry : Map[String, Node],
+  extensions : Registry,
 ) -> Unit {
   let eq_prefixes : Array[String] = []
   let eq_groups : Array[Array[EqEntry]] = []
   for e in def.options {
-    let (
-      link_target,
-      link_target_scope,
-      link_target_tuple_arities,
-      link_target_selections,
-      link_target_observation,
-      link_additional_levels,
-    ) = match link_route_fields(def, e) {
-      Some(fields) => fields
-      None => (None, [], [], [], None, 0)
+    let route = match link_route_fields(def, e, extensions) {
+      Some(route) => route
+      None => bare_link_route(None, [], [], [], None, 0)
+    }
+    let link_target = route.target
+    let link_target_scope = route.target_scope
+    let link_target_tuple_arities = route.tuple_arities
+    let link_target_selections = route.selections
+    let link_target_observation = route.observation
+    let link_target_residual = route.residual
+    let link_additional_levels = route.levels
+    // DR-127 §3.2: a value-space residual entry's operand is read by the FIELD-side type.
+    let entry_ty = match route.parse_ty {
+      Some(field_ty) => field_ty
+      None => e.ty
     }
     let matcher_link_levels = if link_target is Some(_) {
       link_additional_levels + e.link_depth
@@ -1818,16 +1836,18 @@ fn inst_long(
                 def,
                 e,
                 build,
+                extensions,
                 Seq(with_depr(e, [Exact(trigger), or_node])),
               )
             Some(_) => {
               let spine : Array[Node] = []
-              lower_repeat_head(def, e, or_node, registry, spine)
+              lower_repeat_head(def, e, or_node, registry, extensions, spine)
               let tail = if spine.length() == 1 { spine[0] } else { Seq(spine) }
               add_entry_greedy(
                 def,
                 e,
                 build,
+                extensions,
                 Seq(with_depr(e, [Exact(trigger), GreedyRepeat(tail)])),
               )
             }
@@ -1848,11 +1868,12 @@ fn inst_long(
                   def,
                   e,
                   build,
+                  extensions,
                   Seq(with_depr(e, [Exact(trigger), body])),
                 )
               Some(_) => {
                 let spine : Array[Node] = []
-                lower_repeat_head(def, e, body, registry, spine)
+                lower_repeat_head(def, e, body, registry, extensions, spine)
                 let tail = if spine.length() == 1 {
                   spine[0]
                 } else {
@@ -1862,6 +1883,7 @@ fn inst_long(
                   def,
                   e,
                   build,
+                  extensions,
                   Seq(with_depr(e, [Exact(trigger), GreedyRepeat(tail)])),
                 )
               }
@@ -1872,6 +1894,7 @@ fn inst_long(
             def,
             e,
             build,
+            extensions,
             Seq(
               with_depr(e, [
                 Exact(trigger),
@@ -1926,6 +1949,7 @@ fn inst_long(
                     e,
                     ref_row_head(e.name, element_head(e)),
                     registry,
+                    extensions,
                     spine,
                   )
                   let tail = if spine.length() == 1 {
@@ -1985,11 +2009,12 @@ fn inst_long(
                   def,
                   e,
                   build,
+                  extensions,
                   Seq(
                     with_depr(e, [
                       Exact(trigger),
                       value_prim(
-                        e.ty,
+                        entry_ty,
                         e.name,
                         e.int_round,
                         e.allow_base_prefix,
@@ -2088,7 +2113,7 @@ fn inst_long(
                 l,
                 e.name,
                 configured_type(
-                  e.ty,
+                  entry_ty,
                   e.int_round,
                   e.bool_config,
                   allow_base_prefix=e.allow_base_prefix,
@@ -2102,6 +2127,7 @@ fn inst_long(
                 link_target_tuple_arities~,
                 link_target_selections~,
                 link_target_observation~,
+                link_target_residual~,
                 link_additional_levels=matcher_link_levels,
                 extension=link_extension,
               ),
@@ -2158,7 +2184,7 @@ fn inst_long(
         }
         _ => [Exact(trigger), effect_mark(e.name, v.op)]
       }
-      add_entry_greedy(def, e, build, Seq(with_depr(e, nodes)))
+      add_entry_greedy(def, e, build, extensions, Seq(with_depr(e, nodes)))
     }
   }
 }
@@ -2191,7 +2217,22 @@ priv enum LinkPathResolution {
     Int,
     ElementDef
   )
-  Residual(ElementDef, Int)
+  /// A leaf cell reached with segments left over (DR-127 §2.2 value-space residual). Mirrors
+  /// `Resolved`'s route fields (target name / scope / tuple arities / selections / observation /
+  /// root depth) so the FieldType-terminal case can build the same `LinkTarget` route, then adds
+  /// the leaf element, the first value-space segment index, and the residual as observation
+  /// segments (the seat address inside the leaf's value).
+  Residual(
+    String,
+    Array[String],
+    Array[Int],
+    Array[LinkSelection],
+    ObservationAddress?,
+    Int,
+    ElementDef,
+    Int,
+    Array[ObservationSegment]
+  )
   Missing
 }
 
@@ -2463,6 +2504,56 @@ fn link_path_crosses_multiple(def : Definition, path : LinkPath) -> Bool {
 /// The declaration snapshot gains global copies during the installer fixpoint; the root copy's
 /// `link_depth` remains the lexical escape depth while each traversed structural wrapper contributes
 /// one pre-seeded result scope.
+/// Build the value-space residual arm at the leaf `current` (DR-127 §2.2): the remaining path
+/// segments become observation segments (the seat address inside the leaf's value), and the
+/// observation address extends to the actual landing seat (DR-127 §6 — entity is the nearest
+/// NAMED cell, so a named leaf anchors a fresh address while a nameless tuple child appends to
+/// the positional one built by the cell-space descent).
+fn residual_resolution(
+  current : ElementDef,
+  path : LinkPath,
+  index : Int,
+  scope : Array[String],
+  tuple_arities : Array[Int],
+  selections : Array[LinkSelection],
+  observation : ObservationAddress?,
+  root_depth : Int,
+) -> LinkPathResolution {
+  let residual : Array[ObservationSegment] = []
+  for i in index..<path.segments.length() {
+    match path.segments[i] {
+      Name(name) => residual.push(ObservationName(name))
+      Index(idx) => residual.push(ObservationIndex(idx))
+    }
+  }
+  let observed : ObservationAddress? = if current.name != "" {
+    Some({ entity: current.name, path: residual.copy() })
+  } else {
+    match observation {
+      Some(address) => {
+        let extended = address.path.copy()
+        for segment in residual {
+          extended.push(segment)
+        }
+        Some({ entity: address.entity, path: extended })
+      }
+      None => None
+    }
+  }
+  Residual(
+    current.name,
+    scope,
+    tuple_arities,
+    selections,
+    observed,
+    root_depth,
+    current,
+    index,
+    residual,
+  )
+}
+
+///|
 fn resolve_link_path(def : Definition, path : LinkPath) -> LinkPathResolution {
   let mut root : ElementDef? = None
   for element in def.options {
@@ -2507,7 +2598,11 @@ fn resolve_link_path(def : Definition, path : LinkPath) -> LinkPathResolution {
               }
               None => return Missing
             }
-          Cell | Enum(_) => return Residual(current, index)
+          Cell | Enum(_) =>
+            return residual_resolution(
+              current, path, index, scope, tuple_arities, selections, observation,
+              root_depth,
+            )
         }
       Index(target_index) =>
         match indexed_structural_child(current, target_index) {
@@ -2531,7 +2626,11 @@ fn resolve_link_path(def : Definition, path : LinkPath) -> LinkPathResolution {
           }
           None =>
             match current.body {
-              Cell | Enum(_) => return Residual(current, index)
+              Cell | Enum(_) =>
+                return residual_resolution(
+                  current, path, index, scope, tuple_arities, selections, observation,
+                  root_depth,
+                )
               Group(_) | Or(_) => return Missing
             }
         }
@@ -2570,19 +2669,74 @@ fn bound_named_route(path : LinkPath) -> (String, Array[String])? {
 }
 
 ///|
+/// One entry's resolved link route. `target` None = the element has no link at all;
+/// a `None` return from `link_route_fields` = the declaration does not route (the
+/// pre/post-fixpoint link validations own the diagnostic).
+priv struct LinkRoute {
+  target : String?
+  target_scope : Array[String]
+  tuple_arities : Array[Int]
+  selections : Array[LinkSelection]
+  observation : ObservationAddress?
+  levels : Int
+  /// DR-127 §2.2 value-space residual segments; [] = the link lands on the cell itself.
+  residual : Array[ObservationSegment]
+  /// DR-127 §3.2: the operand of a set into a value-space seat is read by the FIELD-side
+  /// type's pieceProcessor, not the entry's own declared type. Some only for a routed
+  /// FieldType-terminal residual.
+  parse_ty : &TypeExt?
+}
+
+///|
+fn bare_link_route(
+  target : String?,
+  target_scope : Array[String],
+  tuple_arities : Array[Int],
+  selections : Array[LinkSelection],
+  observation : ObservationAddress?,
+  levels : Int,
+) -> LinkRoute {
+  {
+    target,
+    target_scope,
+    tuple_arities,
+    selections,
+    observation,
+    levels,
+    residual: [],
+    parse_ty: None,
+  }
+}
+
+///|
+/// The W2-7 activation gate for a value-space residual: only the statically pinned
+/// record-field terminal (DR-127 §2.2 FieldType) routes. Array-element and map/value
+/// terminals stay inert until the branch-local runtime fold (DR-127 §4.2) exists —
+/// their seat existence is a runtime concern that fold owns.
+fn residual_route(
+  leaf : ElementDef,
+  path : LinkPath,
+  from : Int,
+  extensions : Registry,
+) -> &TypeExt? {
+  if element_is_accumulator_cell(leaf) {
+    return None
+  }
+  match classify_link_residual(leaf, path, from, extensions) {
+    Terminal(FieldType(reference)) =>
+      extensions.resolve_type_reference(reference)
+    _ => None
+  }
+}
+
+///|
 fn link_route_fields(
   def : Definition,
   e : ElementDef,
-) -> (
-  String?,
-  Array[String],
-  Array[Int],
-  Array[LinkSelection],
-  ObservationAddress?,
-  Int,
-)? {
+  extensions : Registry,
+) -> LinkRoute? {
   match e.link_path {
-    None => Some((None, [], [], [], None, 0))
+    None => Some(bare_link_route(None, [], [], [], None, 0))
     Some(Invalid(_)) => None
     Some(Valid(path)) =>
       match e.link_additional_levels {
@@ -2598,7 +2752,7 @@ fn link_route_fields(
               _
             ) =>
               Some(
-                (
+                bare_link_route(
                   Some(target),
                   target_scope,
                   tuple_arities,
@@ -2607,10 +2761,58 @@ fn link_route_fields(
                   bound_levels,
                 ),
               )
-            Residual(_, _) | Missing =>
+            Residual(
+              target,
+              target_scope,
+              tuple_arities,
+              selections,
+              observation,
+              _,
+              leaf,
+              from,
+              residual
+            ) =>
+              match residual_route(leaf, path, from, extensions) {
+                Some(field_ty) =>
+                  Some({
+                    target: Some(target),
+                    target_scope,
+                    tuple_arities,
+                    selections,
+                    observation,
+                    levels: bound_levels,
+                    residual,
+                    parse_ty: Some(field_ty),
+                  })
+                None =>
+                  match bound_named_route(path) {
+                    Some((target, target_scope)) =>
+                      Some(
+                        bare_link_route(
+                          Some(target),
+                          target_scope,
+                          [],
+                          [],
+                          None,
+                          bound_levels,
+                        ),
+                      )
+                    None => None
+                  }
+              }
+            Missing =>
               match bound_named_route(path) {
                 Some((target, target_scope)) =>
-                  Some((Some(target), target_scope, [], [], None, bound_levels))
+                  Some(
+                    bare_link_route(
+                      Some(target),
+                      target_scope,
+                      [],
+                      [],
+                      None,
+                      bound_levels,
+                    ),
+                  )
                 None => None
               }
           }
@@ -2631,7 +2833,7 @@ fn link_route_fields(
                 0
               }
               Some(
-                (
+                bare_link_route(
                   Some(target),
                   target_scope,
                   tuple_arities,
@@ -2641,7 +2843,38 @@ fn link_route_fields(
                 ),
               )
             }
-            Residual(_, _) | Missing => None
+            Residual(
+              target,
+              target_scope,
+              tuple_arities,
+              selections,
+              observation,
+              target_depth,
+              leaf,
+              from,
+              residual
+            ) =>
+              match residual_route(leaf, path, from, extensions) {
+                Some(field_ty) => {
+                  let additional_levels = if target_depth > e.link_depth {
+                    target_depth - e.link_depth
+                  } else {
+                    0
+                  }
+                  Some({
+                    target: Some(target),
+                    target_scope,
+                    tuple_arities,
+                    selections,
+                    observation,
+                    levels: additional_levels,
+                    residual,
+                    parse_ty: Some(field_ty),
+                  })
+                }
+                None => None
+              }
+            Missing => None
           }
       }
   }
@@ -2651,32 +2884,32 @@ fn link_route_fields(
 /// Single lowering funnel for ordinary entry nodes. Native short/eq matchers cannot be wrapped as a
 /// whole because one matcher contains entries from multiple elements; their per-entry route calls
 /// the same `bindings_through_link` ABI helper used by this wrapper.
-fn route_link_entry(def : Definition, e : ElementDef, node : Node) -> Node? {
-  match link_route_fields(def, e) {
-    Some(
-      (
-        Some(target),
-        target_scope,
-        target_tuple_arities,
-        target_selections,
-        target_observation,
-        levels,
-      )
-    ) =>
-      Some(
-        LinkTarget(
-          e.name,
-          target,
-          target_scope,
-          target_tuple_arities,
-          target_selections,
-          target_observation,
-          levels,
-          entity_ext(hidden=e.hidden, completer=e.completer),
-          node,
-        ),
-      )
-    Some((None, _, _, _, _, _)) => Some(node)
+fn route_link_entry(
+  def : Definition,
+  e : ElementDef,
+  node : Node,
+  extensions : Registry,
+) -> Node? {
+  match link_route_fields(def, e, extensions) {
+    Some(route) =>
+      match route.target {
+        Some(target) =>
+          Some(
+            LinkTarget(
+              e.name,
+              target,
+              route.target_scope,
+              route.tuple_arities,
+              route.selections,
+              route.observation,
+              route.residual,
+              route.levels,
+              entity_ext(hidden=e.hidden, completer=e.completer),
+              node,
+            ),
+          )
+        None => Some(node)
+      }
     None => None
   }
 }
@@ -2686,9 +2919,10 @@ fn add_entry_greedy(
   def : Definition,
   e : ElementDef,
   build : InstallOutput,
+  extensions : Registry,
   node : Node,
 ) -> Unit {
-  match route_link_entry(def, e, node) {
+  match route_link_entry(def, e, node, extensions) {
     Some(routed) => add_greedy(build, maybe_root(e.link_depth, routed))
     None => () // post-fixpoint absent-ref validation reports the unresolved declaration
   }
@@ -2747,7 +2981,11 @@ fn short_group(
 /// already applied to `inst_long`/`eq_split`. `e.short_combine` (issue scope-config-object-gap
 /// 解釈A, team-lead 裁定 2026-07-11) rides straight through to the matcher's `combine` param —
 /// `run_short`/`walk_short` (builtins/matcher_residents.mbt) are the sole consumers of the flag's actual meaning.
-fn inst_short(def : Definition, build : InstallOutput) -> Unit {
+fn inst_short(
+  def : Definition,
+  build : InstallOutput,
+  extensions : Registry,
+) -> Unit {
   let sh_prefixes : Array[String] = []
   let sh_combines : Array[Bool] = []
   let sh_groups : Array[Array[ShortEntry]] = []
@@ -2758,10 +2996,38 @@ fn inst_short(def : Definition, build : InstallOutput) -> Unit {
       link_target_tuple_arities,
       link_target_selections,
       link_target_observation,
+      link_target_residual,
       link_additional_levels,
-    ) = match link_route_fields(def, e) {
-      Some(fields) => fields
-      None => (None, [], [], [], None, 0)
+      entry_ty,
+    ) = match link_route_fields(def, e, extensions) {
+      Some(route) => {
+        // DR-127 §3.2: a value-space residual entry's operand is read by the FIELD-side type.
+        let entry_ty = match route.parse_ty {
+          Some(field_ty) => field_ty
+          None => e.ty
+        }
+        (
+          route.target,
+          route.target_scope,
+          route.tuple_arities,
+          route.selections,
+          route.observation,
+          route.residual,
+          route.levels,
+          entry_ty,
+        )
+      }
+      None =>
+        (
+          (None : String?),
+          ([] : Array[String]),
+          ([] : Array[Int]),
+          ([] : Array[LinkSelection]),
+          (None : ObservationAddress?),
+          ([] : Array[ObservationSegment]),
+          0,
+          e.ty,
+        )
     }
     let matcher_link_levels = if link_target is Some(_) {
       link_additional_levels + e.link_depth
@@ -2787,7 +3053,7 @@ fn inst_short(def : Definition, build : InstallOutput) -> Unit {
           c,
           e.name,
           configured_short_type(
-            e.ty,
+            entry_ty,
             e.int_round,
             e.allow_base_prefix,
             e.bool_config,
@@ -2803,6 +3069,7 @@ fn inst_short(def : Definition, build : InstallOutput) -> Unit {
           link_target_tuple_arities~,
           link_target_selections~,
           link_target_observation~,
+          link_target_residual~,
           link_additional_levels=matcher_link_levels,
           extension=link_extension,
         ),
@@ -2906,8 +3173,8 @@ fn inst_global(sb : InstallBuilder) -> Unit {
       let bound_link_levels : Int? = match opt.link_path {
         None => None
         Some(_) =>
-          match link_route_fields(sb.definition(), opt) {
-            Some((Some(_), _, _, _, _, levels)) => Some(levels)
+          match link_route_fields(sb.definition(), opt, sb.extensions()) {
+            Some(route) if route.target is Some(_) => Some(route.levels)
             _ => opt.link_additional_levels
           }
       }
@@ -3116,7 +3383,7 @@ fn collect_value_names(
     Many(inner, _) => collect_value_names(inner, registry, visiting, out)
     BoundedTail(inner, _, _) =>
       collect_value_names(inner, registry, visiting, out)
-    LinkTarget(_, _, _, _, _, _, _, _, inner) =>
+    LinkTarget(_, _, _, _, _, _, _, _, _, inner) =>
       collect_value_names(inner, registry, visiting, out)
     Rooted(inner, _) => collect_value_names(inner, registry, visiting, out)
     Scoped(_, inner) => collect_value_names(inner, registry, visiting, out)
@@ -3923,7 +4190,7 @@ fn head_progresses(
     IndexedRepeat(_, _, _, _) => true // 名前付き indexed repeat は head を消費
     BoundedTail(head, budget, _) =>
       budget >= 1 && head_progresses(head, registry, visiting)
-    LinkTarget(_, _, _, _, _, _, _, _, inner) =>
+    LinkTarget(_, _, _, _, _, _, _, _, _, inner) =>
       head_progresses(inner, registry, visiting)
     Rooted(inner, _) => head_progresses(inner, registry, visiting)
     Bind(_, _) | ChildDefault(_, _, _) => false // a child-default fallback may consume 0 tokens
@@ -4536,7 +4803,7 @@ fn cell_fn_target_element(def : Definition, e : ElementDef) -> ElementDef? {
     Some(Valid(path)) =>
       match resolve_link_path(def, path) {
         Resolved(_, _, _, _, _, _, leaf) => Some(leaf)
-        Residual(_, _) | Missing => None
+        Residual(_, _, _, _, _, _, _, _, _) | Missing => None
       }
   }
 }
@@ -4687,7 +4954,7 @@ fn collect_link_path_errors(
           )
         } else {
           match resolve_link_path(def, path) {
-            Residual(leaf, from) =>
+            Residual(_, _, _, _, _, _, leaf, from, _) =>
               if element_is_accumulator_cell(leaf) {
                 out.push(
                   def_err(
@@ -4818,7 +5085,7 @@ fn check_element_absent_link(
     Some(Valid(path)) => {
       let absent = match resolve_link_path(def, path) {
         Missing => true
-        Residual(leaf, from) =>
+        Residual(_, _, _, _, _, _, leaf, from, _) =>
           !element_is_accumulator_cell(leaf) &&
           classify_link_residual(leaf, path, from, extensions) is AbsentSeat
         Resolved(_, _, _, _, _, _, _) => false
@@ -6732,8 +6999,14 @@ pub fn lower_definition_snapshot(
 pub fn apply_builtin_installer(kind : String, builder : InstallBuilder) -> Unit {
   match kind {
     "long" =>
-      inst_long(builder.definition(), builder.output(), builder.templates())
-    "short" => inst_short(builder.definition(), builder.output())
+      inst_long(
+        builder.definition(),
+        builder.output(),
+        builder.templates(),
+        builder.extensions(),
+      )
+    "short" =>
+      inst_short(builder.definition(), builder.output(), builder.extensions())
     "env" => inst_env(builder.definition(), builder.output())
     "dd" => inst_dd(builder.definition(), builder.output())
     "global" => inst_global(builder)

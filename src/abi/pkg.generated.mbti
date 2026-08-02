@@ -8,7 +8,7 @@ import {
 // Values
 pub fn attach_mode_of(String) -> AttachMode?
 
-pub fn bindings_through_link(Array[Binding], String, String, Array[String], Array[Int], Array[LinkSelection], ObservationAddress?, Int) -> Array[Binding]
+pub fn bindings_through_link(Array[Binding], String, String, Array[String], Array[Int], Array[LinkSelection], ObservationAddress?, Int, target_residual? : Array[ObservationSegment]) -> Array[Binding]
 
 pub fn config_from_json(Json) -> ConfigVal
 
@@ -49,6 +49,7 @@ pub(all) struct Binding {
   scope : Array[String]
   link_selections : Array[LinkSelection]
   observation : ObservationAddress?
+  value_residual : Array[ObservationSegment]
   levels_to_declaring_scope : Int
   at_pos : Int?
 } derive(Eq, @debug.Debug)

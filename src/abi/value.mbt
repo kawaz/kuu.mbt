@@ -345,6 +345,12 @@ pub(all) struct Binding {
   scope : Array[String]
   link_selections : Array[LinkSelection]
   observation : ObservationAddress?
+  // DR-127 §2.2 の値空間残余: この binding の効果がセルの値**内部**の座に着地するとき、その座を
+  // 指す segment 列。`[]` = セルそのものへの着地 (従来の全 binding)。非空はリンク固定パスの
+  // 第 2 相 (値空間) を通った binding だけが持ち、効果適用 (`cell_fold.mbt` の `CellSeats`) が
+  // この列で部分更新する。observation.path と別に持つのは、observation がセル空間の消費済み
+  // segment (`pair[0]` の位置) も含む観測アドレスであって値残余と一致しないため (DR-127 §6)。
+  value_residual : Array[ObservationSegment]
   levels_to_declaring_scope : Int // a global-copy binding (DR-042/007): the number of result-nesting
   //           levels it still ESCAPES before settling at its declaring scope. 0 = a normal binding
   //           (every CommandSatisfied/Scoped level prepends its label). N>0 = a global copied N scopes
@@ -384,6 +390,7 @@ pub fn Binding::new(
     scope: [],
     link_selections: [],
     observation: None,
+    value_residual: [],
     levels_to_declaring_scope: 0,
     at_pos,
   }
@@ -403,6 +410,7 @@ pub fn bindings_through_link(
   target_selections : Array[LinkSelection],
   target_observation : ObservationAddress?,
   levels_to_target : Int,
+  target_residual? : Array[ObservationSegment] = [],
 ) -> Array[Binding] {
   let routed : Array[Binding] = []
   let mut shape_seeded = false
@@ -425,6 +433,7 @@ pub fn bindings_through_link(
               scope: prefix.copy(),
               link_selections: target_selections.copy(),
               observation: None,
+              value_residual: [],
               levels_to_declaring_scope: binding.levels_to_declaring_scope +
               levels_to_target,
               at_pos: None,
@@ -449,6 +458,7 @@ pub fn bindings_through_link(
         scope,
         link_selections: target_selections.copy(),
         observation: target_observation,
+        value_residual: target_residual.copy(),
         levels_to_declaring_scope: binding.levels_to_declaring_scope +
         levels_to_target,
       })
@@ -491,6 +501,7 @@ pub fn Binding::deprecation_mark(element : String) -> Binding {
     scope: [],
     link_selections: [],
     observation: None,
+    value_residual: [],
     levels_to_declaring_scope: 0,
     at_pos: None,
   }
