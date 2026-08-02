@@ -26,15 +26,17 @@
 **呼び手に残したもの**と、その理由:
 
 - effects の op/operand の綴り (観測面の責務。`Invoke` だけが cell fn 結果で op が決まる、DR-114 §2)
-- 解決済み binding の carrier 構築 (DR-045 の「`Set`/`Default`/`Empty` は VERBATIM で返す」契約)
+- 解決済み binding の carrier 構築 (下流の `build_result` / `proj_sources` が op と source を
+  そのまま読むための実装不変条件。規範ではない — DR-045 は効果を `{op, operand?}` の純データと
+  定めるだけで、host 側がどの binding を運ぶかは規定していない)
 - 値源ラダー (`resolve_ladder_below_cli`) の照会。effects 射影は resolve 相を持たないので引けない (§4)
 
 ### 0.1 値状態と carrier を分けたのが本段の設計上の核
 
 旧 `resolve_entity_raw` は 1 個の `current : Binding?` に「セルの値」と「下流へ返す binding」を
-兼ねさせていた。`Default`/`Empty` の binding の `value` は **op で解釈される placeholder であって値
-ではない** (DR-045 の `EffectOp` doc comment) ため、これを `old` として読むと placeholder が漏れる。
-分離したことで F-3 / F-4 (下表) が構造的に閉じた。
+兼ねさせていた。`Default` の binding の `value` は **op で解釈される placeholder であって値では
+ない** (DR-045 が効果を `{op, operand?}` の純データと定めた帰結) ため、これを `old` として読むと
+placeholder が漏れる。分離したことで F-4 (下表) が構造的に閉じた。
 
 値の無い座を 2 状態に割ったのも同じ理由である。DR-114 §7 は old を「発火直前の cell 値、無ければ
 absent」と定めるが、**「値が無い」には落ち先の違う 2 種類がある**:
@@ -46,7 +48,7 @@ absent」と定めるが、**「値が無い」には落ち先の違う 2 種類
 
 ## 1. 差異表 — 発見した 4 件と、採った側の規範根拠
 
-全件、**effects 側 (front_door) が規範から外れていた**。判定は `incr` (`ctx.old` を読む唯一の
+3 件とも **effects 側 (front_door) が規範から外れていた**。判定は `incr` (`ctx.old` を読む唯一の
 builtin cell fn、`src/extension/cell_fns.mbt`) を使った実測で、一本化の前後を同じ定義・同じ args で
 比べている。「effects の operand」と「result の値」が食い違えば差異である。
 
@@ -54,23 +56,38 @@ builtin cell fn、`src/extension/cell_fns.mbt`) を使った実測で、一本�
 |---|---|---|---|---|---|---|
 | **F-1** | subcommand scope 配下の `default: 5` セルへ `:incr` | `set(1)` | `6` | `set(6)` | resolve | DR-114 §7「effect mode では**発火直前の cell 値**が old」。effects 射影は root scope の entity しか引けず (`root_entity` が `binding.scope.length() > 0` で即 `None`)、scope 配下では宣言 default を見失って `old` が absent → `incr` が 0 起点になっていた |
 | **F-2** | `:incr` → `clear:unset` → `:incr` | `set(6) set(null) invoke(-)` | `6` | `set(6) set(null) set(6)` | resolve | DR-131 §2b「`set(null)` = unset、席を開ける」。effects 射影は座に `null` を書き込んでいたため、次の `incr` が `Some(Null)` を受けて `invalid-range` で落ち、effect が operand なしの生 `invoke` に化けていた。席が開いた座の old は宣言 default (DR-114 §7) |
-| **F-3** | `:incr` → `clear:empty` → `:incr` | `set(6) empty(-) set(7)` | **resolve 自体が失敗** (`incr requires a number target`) | `set(6) empty(-) set(1)` | **どちらでもない (規範から導出)** | DR-131 §7 の `empty` は committed な空 → DR-114 §7「値が無ければ absent」で old は absent (`incr` は 0 起点で 1)。effects 射影は座を触らず古い 6 を残し、resolve は `Some({..b, op: Empty})` の **placeholder を old として読んで**型不一致で落ちていた |
 | **F-4** | `:incr` → `reset:default` → `:incr` | `set(6) default(-) set(7)` | `6` | `set(6) default(-) set(6)` | resolve | DR-081 §2「op=default は**その時点の書き換え済み default** をセルへ書く」。effects 射影は `Default` で座を更新しなかったため、次の `incr` が直前の 6 を old にしていた |
 
-**F-3 だけ「どちらかに揃える」では済まなかった** — 両側とも規範から外れており、DR-131 §7 +
-DR-114 §7 から第 3 の答え (old = absent) が導出できる。導出可能なので統括裁定は要していない。
+### 1.1 `empty` は scalar セルの fold へ合法には届かない (差異ではない)
 
-### 1.1 差異が既存 885 cases に 1 件も出なかった理由
+REFERENCE の `cell_fns` 表の `empty` 行は「`Sentinel(Empty)` を返し、**array / map / record を**
+committed=true で空にする。**scalar 等は definition-error `invalid-range`**」と規定する。collection
+セルの値解決は accumulator resident (`resolve_cli`) が持ち本 fold を通らないので、**scalar seat の
+fold に `ToEmpty` が届く合法な経路は無い**。したがって scalar fold はここで空セルの意味論を発明せず
+`abort` する (W2-3 の `value_str` と同じ precedent — 不変条件違反を silent に通さない)。
+
+ただし **`empty` の target 型検査を lowering が持っていない**ため、`{"type": "number", "long":
+[":incr", "clear:empty"]}` のような不正定義が現状 definition-error にならず parse を通ってしまう。
+これは本段が作った gap ではなく既存の未実装であり、`docs/issue/2026-08-02-cell-fn-empty-target-type-check-missing.md`
+へ起票した (W2-5 / W2-6 の value_type 整備で閉じる想定。spec 側にも
+`fixtures/definition-error/` の case が要る)。
+
+effects 射影側 (`projected_effect`) は collection セルの `empty` も通るので `ToEmpty` を扱い続ける。
+その座の `old` は本来「型別の空値」(`[]` / `{}`) だが、供給する consumer がまだ居ない
+(accumulator セルへ `ctx.old` を読む fn を置く定義 = `multiple` × `update` は `parse_definition`
+時点の definition-error) ため、store は absent を返す。consumer が入る段で差し替える。
+
+### 1.2 差異が既存 885 cases に 1 件も出なかった理由
 
 4 件とも「`ctx.old` を読む cell fn が、`default` / `empty` / `unset` / scope 配下の非ゼロ宣言
 default と組み合わさる」形でしか露出しない。fixture 側の `incr` 利用は `count` preset
 (`count-parse/basic.json` / `env-coexistence.json` / `final-filter-range.json`) だけで、count preset の
 宣言 default は **0 固定**である。`incr` は `ctx.old()` の absent を 0 として扱う
 (`incr_fn` の `None => 0.0`) ので、**old が absent か `Number(0)` かを区別できない** —
-F-1 の scope 差はここに吸われて観測不能だった。F-2〜F-4 は count preset に `unset`/`empty`/`default`
+F-1 の scope 差はここに吸われて観測不能だった。F-2 / F-4 は count preset に `unset`/`default`
 variant が無いので組合せ自体が現れない。
 
-したがって本段は「conformance 上は不可視だった 4 件の乖離を、可視化せずに閉じた」ことになる。
+したがって本段は「conformance 上は不可視だった 3 件の乖離を、可視化せずに閉じた」ことになる。
 可視化 (fixture 化) は複合値の産出者が入る W2-5 以降と同じウィンドウでよい (§5)。
 
 ## 2. 差異ではなかったもの (照合して同値を確認した全件)
@@ -86,6 +103,7 @@ variant が無いので組合せ自体が現れない。
 | cell fn 未登録 / 失敗時の effect | 生の `Invoke` op、operand なし、座は不変 | `unknown-vocab` / 当該 reason で **Err** | **両立させた** — 遷移 `FnMissing`/`FnFailed` を返し、失敗時に座を触らないのは共通、Err にするかは呼び手の方針として残す (effects 射影は parse 相の観測なので解決失敗で止まれない) |
 | 同一セルの複数発火 / 複数セルの交互発火 | 座 key ごとに独立 | entity ごとに独立 | 同値 (実測: `--n --m --n` が `set(6) set(8) set(7)` / result `{m:8, n:7}` で前後不変) |
 | `Remove` / `Splice` | `Remove` は座を更新、`Splice` は不変 | 両方 `abort` (scalar seat には届かない、DR-080 §1) | 差異なし。共有 fold は `Remove`→`ToValue` / `Splice`→`NoChange` に写し、resolve 側は呼び出し**前**に防御 abort を置いて到達しないことを保つ |
+| `empty` (scalar target) | `ToEmpty` を扱う (座を空へ) | 旧: carrier `Some(b)` で placeholder が old へ漏れる | **差異ではなく不正定義** (§1.1)。scalar fold は `abort` へ倒し、effects 射影側は collection セルのために `ToEmpty` を扱い続ける |
 | accum セル (`e.accum is Some`) | 座 key は同じだが `old` を読む住人が居ない | 専用分岐 (`resident.resolve_cli`) で本 fold を通らない | 対象外。`multiple` × `update` は `parse_definition` 時点の definition-error なので、accum セルで `ctx.old` を読む経路が構造的に無い |
 
 ## 3. 一本化前後で意図的に変えなかったもの (残差)
@@ -151,16 +169,24 @@ write は元の値を変えず差し替え済みの新しい値を作る (`value
 1. **W2-8 は §3.3 を先に決める。** `eval.mbt` の committed fold を共有側へ寄せるか、parse 相専用の
    別概念として分離するか。3 つ目の fold を足す段そのものなので、ここを曖昧にしたまま実装すると
    本段が閉じた乖離が別の形で復活する。
-2. **F-1〜F-4 は conformance に 1 件も出ていない。** wbtest (`cell_fold_wbtest.mbt`) が唯一の網で
-   あり、他実装が読む規範ではない。`ctx.old` × `default`/`empty`/`unset` の組合せは
+2. **F-1 / F-2 / F-4 は conformance に 1 件も出ていない。** wbtest (`cell_fold_wbtest.mbt`) が唯一の網で
+   あり、他実装が読む規範ではない。`ctx.old` × `default`/`unset` の組合せは
    fixture 語彙として存在しうる (count preset に variant を足すだけで書ける) ので、
    W2-5 / W2-9 で複合値の fixture を起こすウィンドウで一緒に落とすのが安い。
 3. **§3.2 の残差は `project_effects` の公開 API 形と一体**。W2-9 が effects の `path` を触るので、
    同じ段で env/config 供給の要否を判断する。
-4. **W2-7 (vivify) は `CellSeats::set_at` の `SeatAbsent` / `SeatMissingField` /
-   `SeatNotContainer` を「器を作る」側へ変える段**になる。どの fault が vivify 対象で、どれが
-   Reject のままかは DR-127 §3 の「record 段まで、`set` 専用」が決める — 本表の 7 行が
-   その分岐点の一覧である。
+4. **W2-7 (vivify) は `CellSeats::set_at` の signature と契約を拡張する段**になる。現在の
+   `set_at` は「segment 列を辿って既存の座を差し替える」だけで、DR-127 §3 が vivify の条件と
+   する 2 つの情報を**受け取っていない**:
+
+   - **ValueType** — 「器 `{}` を record 段まで auto-vivify、`map` / `value` / 宣言なしは枝
+     Reject」は、その座の宣言型を知らないと判定できない。今の `set_at` は実行時の `Value` の
+     形しか見ない (`SeatNotContainer` は「今スカラが座っている」であって「型が primitive」ではない)
+   - **op gate** — vivify は `set` 専用 (DR-127 §3)。今の `set_at` は呼び出し元の op を知らない
+
+   したがって W2-7 は「`SeatAbsent` / `SeatMissingField` を器生成へ倒す」だけの差分にはならず、
+   `set_at(key, path, value)` → `set_at(key, path, value, value_type~, op~)` 相当の契約拡張が要る。
+   本表の 7 行はその拡張後にどの入力がどちらへ分岐するかの一覧として使う。
 
 ## 関連
 
@@ -171,3 +197,5 @@ write は元の値を変えず差し替え済みの新しい値を作る (`value
 - spec `docs/decisions/DR-081-default-seat-rewrite-and-source.md` §2 (op=default の落ち先)
 - spec `docs/decisions/DR-045-effect-descriptors.md` (効果語彙と committed)
 - spec `docs/decisions/DR-127-link-fixed-path-dsl.md` §2.2 / §3 / §6 (値空間降下・vivify・index 正規化)
+- spec `docs/REFERENCE.md` の `cell_fns` 表 (`empty` の target 型規定)
+- `docs/issue/2026-08-02-cell-fn-empty-target-type-check-missing.md` (§1.1 で起票した既存 gap)
