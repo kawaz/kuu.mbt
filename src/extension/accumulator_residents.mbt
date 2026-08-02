@@ -409,6 +409,11 @@ impl AccumulatorExt for KvMapAccumulator with fn collect(_self, values) {
   for value in values {
     let raw = match value {
       @abi.String(text) => text
+      // A composite piece has no `key=value` spelling to split, and folding it to "" would put
+      // every such piece on one empty key. This is a cell-value path, so a W2-5 producer can
+      // deliver one — abort rather than corrupt the map silently.
+      @abi.Array(_) | @abi.Object(_) =>
+        abort("a kv_map piece cannot be a composite value")
       _ => ""
     }
     let (key, rest) = split_first_eq(raw)
@@ -430,6 +435,8 @@ impl AccumulatorExt for KvMapAccumulator with fn collect_sources(_self, values) 
   for item in values {
     let raw = match item.0 {
       @abi.String(text) => text
+      @abi.Array(_) | @abi.Object(_) =>
+        abort("a kv_map piece cannot be a composite value")
       _ => ""
     }
     let (key, _) = split_first_eq(raw)
