@@ -237,6 +237,9 @@ fn parse_legacy(
   env? : (String) -> String? = fn(_) { None },
   config? : (String) -> @abi.ConfigVal? = fn(_) { None },
   tty? : (String) -> Bool? = fn(_) { None },
+  // DR-114 §6.1 の一本化: 勝ち経路ごとの FiringRecord 台帳の配達口。渡すと parse 相 fold の
+  // 実行記録が集まり、effects 射影と resolve 相が record の消費者になる (cell fn は発火 1 回)。
+  firings? : @fold.FiringDeliveries,
 ) -> @engine.Outcome {
   let root = @engine.ScopeNode(ast.root)
   let checked = apply_requires_filter_with_export(
@@ -245,6 +248,11 @@ fn parse_legacy(
       args,
       defs=ast.templates,
       extensions=ast.extensions.extensions(),
+      // 明示 `default` 効果の落ち先 (DR-081 §2) を resolve 相と同じ full ladder で供給する —
+      // `parse` に渡した値源 (env/config/tty) が parse 相 fold にも効く (ValueSources の
+      // 「両相で同一値」契約の下で record と resolve の old が一致する)。
+      ladder=parse_fold_ladder(ast, env, config, tty, args.length()),
+      firings?,
     ),
     root,
     ast.templates,
@@ -254,6 +262,7 @@ fn parse_legacy(
     tty,
     ast.ekmap,
     ast.extensions,
+    firings?,
   )
   checked
 }
@@ -290,6 +299,9 @@ fn resolve_legacy(
   env? : (String) -> String? = fn(_) { None },
   config? : (String) -> @abi.ConfigVal? = fn(_) { None },
   tty? : (String) -> Bool? = fn(_) { None },
+  // DR-114 §6.1: parse が配達した勝ち経路の FiringRecord 台帳。resolve 相の CLI seat fold が
+  // 消費者になり、record のある発火の cell fn を再実行しない。
+  firings? : @fold.FiringLedger,
 ) -> @engine.Outcome {
   match outcome {
     @engine.Success(binds) =>
@@ -306,6 +318,7 @@ fn resolve_legacy(
           ast.ekmap,
           ast.extensions,
           true,
+          firings?,
         ) {
         // `resolve_scope_tree` は accum entity scope (`@engine.Scoped(name, ...)` node、command でない)
         // 下の `#row`/`#fire` sentinel を path 単位の here フィルタで落とす — build_result の
@@ -333,6 +346,9 @@ pub fn parse(
   args : Array[String],
   sources? : ValueSources = value_sources(),
 ) -> ParsedOutcome {
+  // DR-114 §6.1: parse 相 fold の実行記録 (FiringRecord) を経路ごとに受け取り、payload の
+  // side payload として運ぶ (Binding / 経路 identity には参加しない)。
+  let deliveries = @fold.FiringDeliveries::new()
   match
     parse_legacy(
       ast,
@@ -340,13 +356,18 @@ pub fn parse(
       env=sources.env_,
       config=sources.config_,
       tty=sources.tty_,
+      firings=deliveries,
     ) {
-    @engine.Success(bindings) => Success({ raw: bindings })
+    @engine.Success(bindings) =>
+      Success({ raw: bindings, firings: deliveries.ledger_for(bindings) })
     @engine.Failure(failure) => Failure(parse_failure(failure))
     @engine.Ambiguous(ambiguity) => {
       let interpretations : Array[Interpretation] = []
       for interpretation in ambiguity.interpretations {
-        interpretations.push({ raw: interpretation })
+        interpretations.push({
+          raw: interpretation,
+          firings: deliveries.ledger_for(interpretation.binds),
+        })
       }
       Ambiguous({ interpretations, help_entry: ambiguity.help_entry })
     }
@@ -370,9 +391,10 @@ pub fn resolve(
       env=sources.env_,
       config=sources.config_,
       tty=sources.tty_,
+      firings?=bindings.firings,
     ) {
     @engine.Success(resolved) =>
-      Success({ raw: resolved, effects_: bindings.raw })
+      Success({ raw: resolved, effects_: bindings.raw, firings: bindings.firings })
     @engine.Failure(failure) => Failure(parse_failure(failure))
     @engine.Ambiguous(_) =>
       abort("resolve of one parsed binding path cannot be ambiguous")
@@ -388,7 +410,12 @@ pub fn resolve_interpretation(
   args : Array[String],
   sources? : ValueSources = value_sources(),
 ) -> ResolvedOutcome {
-  resolve(ast, { raw: interpretation.raw.binds }, args, sources~)
+  resolve(
+    ast,
+    { raw: interpretation.raw.binds, firings: interpretation.firings },
+    args,
+    sources~,
+  )
 }
 
 ///|
@@ -701,6 +728,11 @@ fn projected_effect(
   defaults : Array[DefaultSeat],
   types : Array[TypeSeat],
   extensions : @node.Registry,
+  // DR-114 §6.1: parse 相 fold の実行記録。ある場合は cell fn を再実行せず、記録された遷移と
+  // 解決済み観測アドレスを消費する (観測は best-effort なので gate なしの無条件消費 — record の
+  // 実行こそが「発火時の 1 回」の実体)。record が無い発火 (fold の保守的スキップ等) は従来
+  // どおりこの場で実行する。
+  record : @fold.FiringRecord?,
 ) -> OutputEffect {
   let key = effect_cell_key(binding)
   let (entity, path) = match binding.observation {
@@ -727,28 +759,37 @@ fn projected_effect(
     // 失敗で停止できないため effect の綴りをそのまま観測に落とす。
     let registry = extensions.extensions()
     let declared_ty = declared_type_seat(types, binding)
-    resolved_residual = seats.resolved_residual(key, binding.value_residual)
-    let container_present = seats.value_at(key, []) is Ok(_)
-    let old : @abi.Value? = if container_present {
-      match
-        seats.value_at_declared(
-          key,
-          binding.value_residual,
-          declared_ty,
-          registry,
-        ) {
-        Ok(value) => Some(value)
-        Err(_) => None
-      }
-    } else {
-      None
+    resolved_residual = match record {
+      Some(r) => r.resolved_residual
+      None => seats.resolved_residual(key, binding.value_residual)
     }
-    let (transition, _) = @fold.fold_seat_effect(
-      binding,
-      old,
-      binding.key,
-      extensions.extensions(),
-    )
+    let container_present = seats.value_at(key, []) is Ok(_)
+    let transition = match record {
+      Some(r) => r.transition
+      None => {
+        let old : @abi.Value? = if container_present {
+          match
+            seats.value_at_declared(
+              key,
+              binding.value_residual,
+              declared_ty,
+              registry,
+            ) {
+            Ok(value) => Some(value)
+            Err(_) => None
+          }
+        } else {
+          None
+        }
+        let (transition, _) = @fold.fold_seat_effect(
+          binding,
+          old,
+          binding.key,
+          extensions.extensions(),
+        )
+        transition
+      }
+    }
     match transition {
       @fold.ToValue(value) =>
         // `unset` (null 返し) の空座適用は座を触らない no-op (DR-131 §7 / DR-127 §3)。
@@ -770,13 +811,19 @@ fn projected_effect(
     }
     transition
   } else {
-    let old = seats.old(key, declared)
-    let (transition, _) = @fold.fold_seat_effect(
-      binding,
-      old,
-      binding.key,
-      extensions.extensions(),
-    )
+    let transition = match record {
+      Some(r) => r.transition
+      None => {
+        let old = seats.old(key, declared)
+        let (transition, _) = @fold.fold_seat_effect(
+          binding,
+          old,
+          binding.key,
+          extensions.extensions(),
+        )
+        transition
+      }
+    }
     match @fold.seat_after(transition, declared) {
       Some(state) => seats.put(key, state)
       None => ()
@@ -815,6 +862,7 @@ fn projected_effect(
 fn project_effects(
   ast : AtomicAST,
   binds : Array[@abi.Binding],
+  firings? : @fold.FiringLedger,
 ) -> Array[OutputEffect] {
   let none_cells = @engine.selected_none_cells(ast.root, ast.templates, binds)
   let config_file_cells : Array[ConfigFileCell] = []
@@ -825,7 +873,11 @@ fn project_effects(
   collect_default_seats(ast.root, [], binds, default_seats)
   let type_seats : Array[TypeSeat] = []
   collect_type_seats(ast.root, [], binds, type_seats)
+  // DR-114 §6.1: record の出現順カーソル。スキップされる binding も (record 対象なら) カーソルを
+  // 通してから落とす — 位置ずれ防止 (`FiringCursor` doc comment)。
+  let firing_cursor = @fold.FiringCursor::new()
   for binding in binds {
+    let record = firing_cursor.next(firings, binding)
     if (is_sentinel(binding.key) && binding.observation is None) ||
       output_internal_cell(
         binding.scope,
@@ -853,6 +905,7 @@ fn project_effects(
         default_seats,
         type_seats,
         ast.extensions,
+        record,
       ),
     )
   }
@@ -895,6 +948,7 @@ fn output_legacy(
   effects~ : Array[@abi.Binding],
   resolved? : Array[@abi.Binding] = effects,
   complete_static? : Bool = true,
+  firings? : @fold.FiringLedger,
 ) -> OutputView {
   let result = build_result_export(
     ast.root,
@@ -906,7 +960,7 @@ fn output_legacy(
   )
   {
     result,
-    effects: project_effects(ast, effects),
+    effects: project_effects(ast, effects, firings?),
     sources: project_sources(ast, resolved, result),
   }
 }
@@ -918,7 +972,12 @@ fn output_legacy(
 /// sources を個別に組み合わせず、解釈 1 件の表示意味論を玄関から直接得られる。
 /// `resolved` may only be combined with the `ast` whose parse produced it; mixing another AST is undefined.
 pub fn output(ast : AtomicAST, resolved : ResolvedBindings) -> OutputView {
-  output_legacy(ast, effects=resolved.effects_, resolved=resolved.raw)
+  output_legacy(
+    ast,
+    effects=resolved.effects_,
+    resolved=resolved.raw,
+    firings?=resolved.firings,
+  )
 }
 
 ///|
@@ -926,7 +985,7 @@ pub fn ParsedBindings::effects(
   self : ParsedBindings,
   ast : AtomicAST,
 ) -> Array[OutputEffect] {
-  project_effects(ast, self.raw)
+  project_effects(ast, self.raw, firings?=self.firings)
 }
 
 ///|
@@ -935,7 +994,12 @@ pub fn output_of_interpretation(
   ast : AtomicAST,
   interp : Interpretation,
 ) -> @abi.ResultValue {
-  let view = output_legacy(ast, effects=interp.raw.binds, complete_static=false)
+  let view = output_legacy(
+    ast,
+    effects=interp.raw.binds,
+    complete_static=false,
+    firings?=interp.firings,
+  )
   filter_interpretation_result(view.result, view.sources)
 }
 

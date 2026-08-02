@@ -2838,6 +2838,7 @@ fn resolve_scope_tree_with_export_impl(
   ek : @engine.ExportScopeMap,
   extensions : @node.Registry,
   include_default : Bool,
+  firings? : @fold.FiringLedger,
 ) -> Result[Array[@abi.Binding], @abi.ParseError] {
   let here : Array[@abi.Binding] = []
   for b in binds {
@@ -2859,6 +2860,7 @@ fn resolve_scope_tree_with_export_impl(
       ek,
       extensions,
       include_default,
+      firings?,
     ) {
     Ok(rb) => rb
     Err(pe) => return Err(pe)
@@ -2913,7 +2915,7 @@ fn resolve_scope_tree_with_export_impl(
     let nested_resolved = match
       resolve_scope_config_with_export(
         nested_scope, nested_here, env_map, provider, runtime_path, child_outer_values,
-        at_pos, tty, nested_ek, extensions, include_default,
+        at_pos, tty, nested_ek, extensions, include_default, firings?,
       ) {
       Ok(rb) => rb
       Err(pe) => return Err(pe)
@@ -2979,6 +2981,7 @@ fn resolve_scope_tree_with_export_impl(
               ek.command_child(name, ordinal),
               extensions,
               include_default,
+              firings?,
             ) {
             Ok(cb) =>
               for b in cb {
@@ -3082,6 +3085,7 @@ fn resolve_scope_tree_with_export(
   ek : @engine.ExportScopeMap,
   extensions : @node.Registry,
   include_default : Bool,
+  firings? : @fold.FiringLedger,
 ) -> Result[Array[@abi.Binding], @abi.ParseError] {
   let bindings = match
     resolve_child_default_seats(
@@ -3092,7 +3096,7 @@ fn resolve_scope_tree_with_export(
   }
   resolve_scope_tree_with_export_impl(
     sc, bindings, env_map, provider, path, outer_values, at_pos, tty, ek, extensions,
-    include_default,
+    include_default, firings?,
   )
 }
 
@@ -3130,6 +3134,9 @@ fn apply_requires_filter_with_export(
   tty : (String) -> Bool?,
   ek : @engine.ExportScopeMap,
   extensions : @node.Registry,
+  // DR-114 §6.1: parse_tree が配達した経路ごとの FiringRecord 台帳。候補経路の resolve も
+  // record を消費して cell fn を再実行しない (経路の binds 構造等価で自分の ledger を引く)。
+  firings? : @fold.FiringDeliveries,
 ) -> @engine.Outcome {
   let table = @engine.collect_scopes(root, defs)
   let violations_of = fn(
@@ -3137,6 +3144,10 @@ fn apply_requires_filter_with_export(
   ) -> Array[@abi.ParseError] {
     if table.length() == 0 {
       return []
+    }
+    let path_firings : @fold.FiringLedger? = match firings {
+      Some(deliveries) => deliveries.ledger_for(binds)
+      None => None
     }
     match root {
       @engine.ScopeNode(sc) =>
@@ -3153,6 +3164,7 @@ fn apply_requires_filter_with_export(
             ek,
             extensions,
             true,
+            firings?=path_firings,
           ) {
           Ok(resolved) => {
             let out : Array[@abi.ParseError] = []
@@ -3359,11 +3371,12 @@ fn resolve_entity(
   tty_map : (String) -> Bool?,
   extensions : @node.Registry,
   include_default : Bool,
+  firings? : @fold.FiringLedger,
 ) -> Result[Array[@abi.Binding], @abi.ParseError] {
   match
     resolve_entity_raw(
       e, cli, env_map, config_obj, config_path, at_pos, epath, tty_map, extensions,
-      include_default,
+      include_default, firings?,
     ) {
     Ok(bs) =>
       if !include_default && bs.length() == 0 {
@@ -3506,6 +3519,7 @@ fn resolve_entity_raw(
   tty_map : (String) -> Bool?,
   extensions : @node.Registry,
   include_default : Bool,
+  firings? : @fold.FiringLedger,
 ) -> Result[Array[@abi.Binding], @abi.ParseError] {
   // cli seat (DR-015 last-wins + DR-077 §1 update fold): fold every same-name CLI effect in args
   // order, not just peek at the last one. `update`'s result is OLD-DEPENDENT — a single "read the
@@ -3606,8 +3620,12 @@ fn resolve_entity_raw(
   // last-winner (carrier の単一 `source` タグ) なので shadow を張らない (= None へ戻す)。
   let mut seat_shadow : @abi.ResultValue? = None
   let mut committed_now = false
+  // DR-114 §6.1: parse 相 fold の実行記録 (FiringRecord) の出現順カーソル。record 対象 binding
+  // (`records_firing`) をこのセルの効果列順にカウントし、対応する record を引く。
+  let firing_cursor = @fold.FiringCursor::new()
   for b in cli {
     if b.key == e.name {
+      let firing_record = firing_cursor.next(firings, b)
       // DR-080 §2: a `@abi.Remove`/`@abi.Splice` piece only ever fires for a `multiple` element
       // whose `accumulator` is `"merge"` — a merge accumulator REQUIRES `multiple` (DR-080 §1), so
       // no scalar (non-multiple) entity's CLI seat can ever carry one. Unreachable in practice;
@@ -3662,12 +3680,15 @@ fn resolve_entity_raw(
         } else {
           None
         }
-        let (transition, old_consulted) = @fold.fold_seat_effect(
-          b,
-          old,
-          e.name,
-          extensions.extensions(),
-        )
+        // DR-114 §6.1: parse 相 fold の実行記録があり、自席で計算した old と一致するなら fn を
+        // 再実行しない (record の消費)。不一致 (parse/resolve に別の値源を渡した契約違反、または
+        // ladder closure の縮退) は従来どおり再実行する — 未供給・不整合経路の現行挙動を
+        // この値比較 gate が構造的に保つ。
+        let (transition, old_consulted) = match firing_record {
+          Some(record) if record.old_used == old =>
+            (record.transition, record.old_consulted)
+          _ => @fold.fold_seat_effect(b, old, e.name, extensions.extensions())
+        }
         match transition {
           @fold.NoChange => ()
           @fold.FnMissing(name) =>
@@ -3835,12 +3856,12 @@ fn resolve_entity_raw(
       // (「上位ラダー席まで解決した現在値」) であり、ここは effect mode (「発火直前の cell 値」)。
       // 下の `default_seat` が ladder を引くのは `default` 効果が明示発火した場合に限る (DR-081 §2)。
       let old = seats.old(e.name, default_scalar(e))
-      let (transition, _) = @fold.fold_seat_effect(
-        b,
-        old,
-        e.name,
-        extensions.extensions(),
-      )
+      // DR-114 §6.1: record 消費 gate は値残余分岐と同じ (old 一致時のみ fn を再実行しない)。
+      let (transition, _) = match firing_record {
+        Some(record) if record.old_used == old =>
+          (record.transition, record.old_consulted)
+        _ => @fold.fold_seat_effect(b, old, e.name, extensions.extensions())
+      }
       // REFERENCE の `cell_fns` 表 (`empty` 行): `Sentinel(Empty)` は **array / map / record を
       // committed=true で空にする** fn であり、scalar 等を target にした定義は definition-error
       // `invalid-range` である。collection セルはこの関数の冒頭で `resident.resolve_cli` へ抜けて
@@ -4236,6 +4257,104 @@ fn resolve_ladder_below_cli(
 }
 
 ///|
+/// parse 相 fold (DR-127 §4.2 の枝ローカル fold / 裁定後の 1 回 fold) が明示 `default` 効果の
+/// 落ち先 (DR-081 §2 の書き換え済み default) を引くための ladder closure
+/// (`@engine.parse_tree` の `ladder?`、DR-114 §6.1 の一本化)。resolve 相の
+/// `resolve_scope_config_with_export` と同じ素材 — config_file セルの cli > env > default 解決 →
+/// provider 読み → `resolve_ladder_below_cli` — を対象セルの scope についてだけ再現する。
+/// parse と resolve に同じ `ValueSources` を渡す契約 (facade doc) の下で両相の落ち先が一致する。
+///
+/// scope が引けない / ladder が Err になる形は宣言 default へ縮退する — その場合 FiringRecord の
+/// `old_used` が resolve 相の old と一致しなくなり record は消費されない (resolve 相が従来どおり
+/// 自分で解決し、Err も従来どおり resolve 相が報告する) ので、縮退が観測を変えることはない。
+fn parse_fold_ladder(
+  ast : AtomicAST,
+  env : (String) -> String?,
+  provider : (String) -> @abi.ConfigVal?,
+  tty : (String) -> Bool?,
+  args_len : Int,
+) -> (@engine.Entity, Array[String], Array[@abi.Binding]) -> @abi.Value? {
+  fn(entity, scope_path, eff) {
+    // 対象 scope へ command 名で降下する (scope_path は branch fold の宣言 index 由来の
+    // command path — index segment を含まない)。
+    let mut sc = ast.root
+    for segment in scope_path {
+      let mut child_scope : @engine.Scope? = None
+      for node in sc.greedy {
+        match node {
+          @engine.CommandSatisfied(name, _, child) if name == segment => {
+            child_scope = Some(child)
+            break
+          }
+          _ => ()
+        }
+      }
+      match child_scope {
+        Some(child) => sc = child
+        None => return default_scalar(entity)
+      }
+    }
+    // config_file セルの path 解決 (`resolve_scope_config_with_export` Phase 1/2 と同素材)。
+    // committed path の読み失敗 Error はここでは合成しない — その入力では resolve 相自身が
+    // 同じ Err を出すので、ここは供給なしとして縮退すれば十分。
+    let mut cf_path : String? = None
+    for e in sc.entities {
+      if e.is_config_file {
+        let mut done = false
+        for b in eff {
+          if b.key == e.name && path_eq(b.scope, scope_path) && b.op is @abi.Set {
+            cf_path = Some(@extension.value_str(b.value))
+            done = true
+          }
+        }
+        if !done {
+          match e.env_key {
+            Some(k) =>
+              match env(k) {
+                Some(v) => {
+                  cf_path = Some(v)
+                  done = true
+                }
+                None => ()
+              }
+            None => ()
+          }
+        }
+        if !done {
+          match default_scalar(e) {
+            Some(v) => cf_path = Some(@extension.value_str(v))
+            None => ()
+          }
+        }
+      }
+    }
+    let config_obj : @abi.ConfigVal? = match cf_path {
+      Some(p) => provider(p)
+      None => None
+    }
+    match
+      resolve_ladder_below_cli(
+        entity,
+        env,
+        config_obj,
+        config_path_of(entity, scope_path),
+        args_len,
+        scope_path,
+        tty,
+        ast.extensions,
+      ) {
+      Ok(bs) =>
+        if bs.length() > 0 {
+          Some(bs[bs.length() - 1].value)
+        } else {
+          None
+        }
+      Err(_) => default_scalar(entity)
+    }
+  }
+}
+
+///|
 fn config_path_of(e : @engine.Entity, path : Array[String]) -> Array[String] {
   match e.config_key {
     Some(k) => k
@@ -4494,6 +4613,7 @@ fn resolve_scope_config_with_export(
   ek : @engine.ExportScopeMap,
   extensions : @node.Registry,
   include_default : Bool,
+  firings? : @fold.FiringLedger,
 ) -> Result[Array[@abi.Binding], @abi.ParseError] {
   // Phase 1: resolve the config_file element's path (cli > env > default), track committed-ness.
   let mut cf_path : String? = None
@@ -4573,6 +4693,7 @@ fn resolve_scope_config_with_export(
       match
         resolve_entity(
           e, cli, env_map, config_obj, cpath, at_pos, path, tty, extensions, false,
+          firings?,
         ) {
         Ok(bs) =>
           if bs.length() > 0 {
@@ -4632,6 +4753,7 @@ fn resolve_scope_config_with_export(
           let cpath = config_path_of(e, path)
           resolve_entity(
             e, cli, env_map, config_obj, cpath, at_pos, path, tty, extensions, true,
+            firings?,
           )
         }
         match resolved {

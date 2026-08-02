@@ -38,8 +38,11 @@ pub struct Candidate {
 
 ///|
 /// CLI bindings produced by parse before value-source resolution.
+/// `firings` (DR-114 §6.1) is the parse-phase fold's per-firing execution ledger — a side payload
+/// outside the bindings' Eq/identity; `effects()`/`resolve()` consume it so a cell fn runs once.
 pub struct ParsedBindings {
   priv raw : Array[@abi.Binding]
+  priv firings : @fold.FiringLedger?
 }
 
 ///|
@@ -47,12 +50,14 @@ pub struct ParsedBindings {
 pub struct ResolvedBindings {
   priv raw : Array[@abi.Binding]
   priv effects_ : Array[@abi.Binding]
+  priv firings : @fold.FiringLedger?
 }
 
 ///|
 /// One parse interpretation. It may only be combined with the AtomicAST that produced it.
 pub struct Interpretation {
   priv raw : @engine.AmbiguousInterpretation
+  priv firings : @fold.FiringLedger?
 }
 
 ///|
