@@ -17,9 +17,9 @@
 
 第 1 波計画は「`Value` に variant を足せばコンパイラが漏れを全部指す」ことを前提に D1 を 800〜1500 行と
 見積もっていた。ところが **null 反転で実際に `Value` へ variant を 1 つ足した commit `a1038c923abd` は
-10 ファイル / 40 行**である。理由は、`Value` を網羅 match している prod 箇所が 6 つしかないこと
-(`abi/value.mbt` の `value_str`、`extension/filter.mbt`、`extension/accumulator_residents.mbt`、
-`internal/engine/node_residents.mbt`、`internal/engine/eval.mbt`、`extension/config_value.mbt` 系)。
+10 ファイル / 40 行**である。理由は、`Value` を網羅 match している prod 箇所が 4 つしかないこと
+(`abi/value.mbt` の `value_str` と `value_to_configval`、`extension/accumulator_residents.mbt` の
+`result_value_json`、`internal/engine/node_residents.mbt` の `value_json`)。
 他は全部 `value_str` 経由か、値を不透明に運ぶだけである。
 
 したがって Array/Object 追加の機械的コストは **150〜300 行**が現実的な線。しかし同時に、
@@ -28,15 +28,17 @@
 複合値を足せば同じ形の arm を足すことになり、**「スカラを仮定した既存コードが複合を受け取ったら
 実行時 abort する」経路が生まれる**。コンパイル通過は安全の証明にならない。
 
-`value_str` の call site は 136 (prod 約 100)。ただし内訳が救いになる:
+`value_str` の綴りは全 28 箇所に出るが、**prod の実 call site は 6 つだけ**である (残りは test /
+conformance harness 側の表明 16、re-export 2、コメント 3、定義 1)。その 6 つの内訳が救いになる:
 
-| 経路 | ファイル | 件数 | 複合が来るか |
+| 経路 | 箇所 | 件数 | 複合が来るか |
 |---|---|---|---|
-| 宣言経路 (default リテラル・enum 値・help 表示) | `kuu/wire_decode.mbt` 35 / `kuu/help.mbt` 31 / `abi/declaration_types.mbt` 14 / `internal/engine/lowering.mbt` 12 / `builtins/installer_residents.mbt` 10 | 約 102 | 来ない (DR-130 §3.1 で定義側に複合リテラルの席が限られる) |
-| **実行時セル値経路** | `kuu/resolve.mbt` 2 (`:3959` / `:3983`) / `internal/engine/eval.mbt` 2 (`:4300` / `:4396`、RequiresIf 比較) / `extension/accumulator_residents.mbt` 1 (`:564`) | **5** | **来る** |
+| 宣言経路 (宣言 default リテラル) | `kuu/resolve.mbt` 1 (`:3983`、config_file 要素の `default_scalar`) / `internal/engine/lowering.mbt` 1 (`:920`、`child_default_seat_key`) | **2** | 来ない (DR-130 §3.1 で定義側に複合リテラルの席がない) |
+| **実行時セル値経路** | `kuu/resolve.mbt` 1 (`:3959`) / `internal/engine/eval.mbt` 2 (`:4300` / `:4396`、RequiresIf 比較) / `extension/accumulator_residents.mbt` 1 (`:585`、`result_key`) | **4** | **来る** |
 
-D1 の本体は「150〜300 行の機械変更」ではなく「**この 5 箇所 + 網羅 match 6 箇所が複合を正しく扱うことの
-証明**」である。段の受け入れ条件はそこに置く。
+D1 の本体は「150〜300 行の機械変更」ではなく「**この 4 箇所 + 網羅 match (prod 4 / test 5) が複合を
+正しく扱うことの証明**」である。段の受け入れ条件はそこに置く。全件の対処と「abort が到達しない根拠」は
+`docs/findings/2026-08-02-w2-3-value-composite-inventory.md` が正本。
 
 ### 1.2 kuu.mbt には既に同型の複合値が 3 つある — うち 1 つは統合してはいけない
 
@@ -132,7 +134,7 @@ Stage E を後半に置いていたのは効きが悪い。前倒しする。
 | **W2-0** | **§4.2 fold の spike (捨てる前提)**。`eval.mbt:4816` の `Accept` アームに「常に解決不能な link binding があれば枝を落とし ParseError を合成する」を仮実装し、(a) 兄弟枝が勝つこと (b) 既存 880 cases が不変であること (c) 全枝落ちの失敗レポートに原因が載ること を wbtest で確認して**捨てる** | spike wbtest が 3 点を示す。commit しない (findings に結果だけ残す) | 高だが捨てるので実害なし。**ここが崩れると W2-8 以降の段構成が変わる**ので最初に打つ | fable5-worker-high |
 | **W2-1** | **第 1 波 fixture 債務の返済**。spec に (1) セル降下 / (7-cell) effects path のセル空間分 / (8) nameless 位置指定着地 を新設。実装変更は §6 の統括裁定 3 (負 index の観測アドレス正規化) のみ | 新 fixture が現行実装で pass (= 第 1 波の挙動がそのまま規範として立つ)。ran_cases が 880 → 883+ | 低。落ちたら第 1 波の実装か fixture の読みが誤っている signal であり、それ自体が価値 | codex-sol-worker (wbtest 25 本が期待値の出所として使える) |
 | **W2-2** | **value_type 体系のモデル化** (DR-126 §1)。`value_type := primitive \| {array} \| {map} \| {record} \| union` を導入。type 参照 registry 解決 (registry 空間のみ、`definitions.types` に shadow されない — DR-126 §1)、依存グラフの循環検査 `circular-ref` (DR-067 の参照層に type edge を追加)。`TypeOutputShape` を value_type へ置換 (既定は名乗らない = 現 `Opaque` 相当) | wbtest: 参照解決 / 未登録参照 = `unknown-vocab` / 循環 = `circular-ref` / bare 名の builtin ns 糖衣。**既存 880 cases 不変** (record を名乗る住人がまだ居ないため) | 中。体系設計そのもの。DR-128 §7 と共有するので**入力側 (`io_type.input`) の席も同時に見込んだ形にする** | 体系設計 fable5-worker-high → 実装 codex-sol-worker |
-| **W2-3** | **`Value` の複合化 (器のみ)**。`Array(Array[Value])` / `Object(Array[(String, Value)])` を追加。産出者は作らないので挙動不変。**`ConfigVal` は統合せず、非統合の理由 (DR-130 §9.1) を design rationale として明記**。`ResultValue` は触らない | 既存 609 tests + 880 cases 完全不変。§1.1 の「実行時 5 箇所 + 網羅 6 箇所」の全件に arm があることを棚卸し表で示す。追加 wbtest は器の構築 / JSON 往復 / Eq | **中**。量は小さいが**コンパイラが守ってくれない**。受け入れ条件を「コンパイル通過」でなく「棚卸し表の全件確認」にする | opus5-worker-medium (機械作業でなく監査が本体) |
+| **W2-3** | **`Value` の複合化 (器のみ)**。`Array(Array[Value])` / `Object(Array[(String, Value)])` を追加。産出者は作らないので挙動不変。**`ConfigVal` は統合せず、非統合の理由 (DR-130 §9.1) を design rationale として明記**。`ResultValue` は触らない | 既存 tests + cases 完全不変。§1.1 の「実行時 4 箇所 + 網羅 match prod 4 / test 5」の全件に arm があることを棚卸し表 (`docs/findings/2026-08-02-w2-3-value-composite-inventory.md`) で示す。追加 wbtest は器の構築 / JSON 往復 / Eq | **中**。量は小さいが**コンパイラが守ってくれない**。受け入れ条件を「コンパイル通過」でなく「棚卸し表の全件確認」にする | opus5-worker-medium (機械作業でなく監査が本体) |
 | **W2-4** | **効果適用 fold の一本化**。`front_door.mbt:689` の `current` map と resolve のセル fold を 1 つの共有関数へ。map の値を複合対応にし、座への部分更新 API (segment 列での get / set) を 1 箇所に置く。挙動不変 | 既存 tests / cases 完全不変。wbtest: 部分更新 API の単体 (record 座 / array index / 負 index / 未 vivify) | 中〜高。既存 2 fold の微妙な差異 (default 値の扱い、`Invoke` の `ctx.old` 供給) を潰す作業が本体 | opus5-worker-high |
 | **W2-5** | **産出者を通す + 乖離検査**。`TypeExt::parse_token` の戻り型を複合対応へ (extension ABI の破壊的変更)。DR-126 §4 の乖離検査を**射影で null 補形する前の生出力に対し** (DR-130 §4.1) — (a) 宣言外キー / (b) フィールド type の `out` 不一致 = Error、(c) 宣言済みキー不在 = 正常。sources の構造分解 (DR-127 §6 / DR-122 §3) | wbtest: 複合産出型を wbtest 内に立て、result / sources の構造分解、乖離 (a)(b) が held-error、(c) が正常。→ spec fixture **(6)** の前提が立つ | 中〜高。`parse_token` の signature 変更は `docs/issue/2026-07-18-api-surface-contract-triage.md` と当たる。**`ResultValue` 統合の是非をここで裁定**する | opus5-worker-medium |
 | **W2-6** | **値空間残余の静的解決** (DR-127 §2.2 遷移表)。`resolve_link_path` の `Residual(shape)` を value_type ごとの降下へ。record = フィールド当たり判定 (外れは `absent-ref`)、array = `[int]` は構造静的続行 / `.name` は definition-error、map・value = 以降全部実行時、primitive = definition-error (現状維持)、union = 含有 variant 1 つ以上 + 型一致検査。**型の依存グラフを辿る**降下。§6 の統括裁定 1 により **accumulator セルへの値空間パスはここで `Unsupported` に倒す** | wbtest: 遷移表 6 行それぞれの静的判定 + accumulator セルの `Unsupported`。→ spec fixture **(3)** の静的部分 | 中。union 行 (含有 variant 間の型一致 = operand のパース型が定まるか) が唯一の設計判断 | fable5-worker-high |
@@ -168,8 +170,11 @@ fixture を足すとローカルが即 UNEXPECTED 落ち、pin bump した瞬間
 
 2. **複合 `Value` の silent hole (W2-3)。** §1.1 のとおりコンパイラが守らない。`value_str` が複合に対して
    `abort` する形を選ぶなら、**abort が到達しないことの根拠**を棚卸し表として残す必要がある。
-   `value_str` を `Result` 返しへ変えて呼び出し側に判断を強いる案 (影響 136 箇所) もあるが、宣言経路
-   約 102 箇所は複合が来ないことが構造的に言えるので、棚卸し + abort 維持を推す。
+   `value_str` を `Result` 返しへ変えて呼び出し側に判断を強いる案 (影響は prod 6 箇所) もあるが、
+   **abort 維持で確定** (統括裁定 2026-08-02)。理由はコストではなく構造 — 複合が座る位置は上流の型判定が
+   既に壊れている位置なので、`Result` を配っても書けるのは到達不能な分岐だけであり、逆に abort は W2-5 で
+   産出者が入った瞬間に不変条件違反を即座に露出させる。棚卸しの結果は
+   `docs/findings/2026-08-02-w2-3-value-composite-inventory.md`。
 
 3. **3 つの fold の乖離 (W2-4)。** 一本化を先にやらずに W2-7 (vivify) へ進むと、「effects に出た値」と
    「result に出た値」が複合値について食い違う事故が起きる。しかも conformance は両方を pin しているので
@@ -189,7 +194,7 @@ fixture を足すとローカルが即 UNEXPECTED 落ち、pin bump した瞬間
 | W2-0 | `src/internal/engine/eval.mbt` (spike、捨てる) | 80〜150 |
 | W2-1 | spec `fixtures/link-parse/` 3 本 + pin bump + `lowering.mbt` の index 正規化 | 150〜250 (spec 側) + 20〜40 (実装側) |
 | W2-2 | value_type の新規モジュール + `src/extension/node_traits.mbt` + 参照層 (DR-067) | 400〜700 |
-| W2-3 | `src/abi/value.mbt` 起点、実行時 5 箇所 + 網羅 6 箇所 | **150〜300** (第 1 波見積 800〜1500 を下方修正) |
+| W2-3 | `src/abi/value.mbt` 起点、実行時 4 箇所 + 網羅 match prod 4 / test 5 | **150〜300** (第 1 波見積 800〜1500 を下方修正) |
 | W2-4 | `src/kuu/front_door.mbt` + `src/kuu/resolve.mbt` + 共有 fold の新設 | 350〜550 |
 | W2-5 | `src/extension/node_traits.mbt` + 全 TypeExt 実装 + `src/kuu/resolve.mbt` (sources 分解) + 乖離検査 | 500〜750 |
 | W2-6 | `src/internal/engine/lowering.mbt` (`resolve_link_path` の値空間降下) | 250〜400 |
