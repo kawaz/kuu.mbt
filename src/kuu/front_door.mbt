@@ -570,111 +570,95 @@ fn effect_cell_key(binding : @abi.Binding) -> String {
 }
 
 ///|
-fn root_entity(ast : AtomicAST, binding : @abi.Binding) -> @engine.Entity? {
-  if binding.scope.length() > 0 {
-    return None
+/// 宣言 default を持つ座。effects 射影は resolve 相を持たないので値源ラダー (env / config) を
+/// 引けないが、DR-114 §7 の `ctx.old`「発火直前の cell 値」は宣言 default までは静的に分かる。
+/// `path` は宣言名軸 (`effect_cell_key` / `output_internal_cell` と同じ軸)。
+priv struct DefaultSeat {
+  path : Array[String]
+  name : String
+  value : @abi.Value
+}
+
+///|
+/// `collect_config_file_cells` と同じ走査で宣言 default 席を集める。structural wrapper 配下の
+/// セルは `Entity::declaring_path` が宣言名軸の相対パスを持つので、command path へ継ぎ足す。
+fn collect_default_seats(
+  scope : @engine.Scope,
+  path : Array[String],
+  out : Array[DefaultSeat],
+) -> Unit {
+  for entity in scope.entities {
+    match default_scalar(entity) {
+      Some(value) => {
+        let seat = path.copy()
+        for segment in entity.declaring_path {
+          seat.push(segment)
+        }
+        out.push({ path: seat, name: entity.name, value })
+      }
+      None => ()
+    }
   }
-  for entity in ast.root.entities {
-    if entity.name == binding.key {
-      return Some(entity)
+  for node in scope.greedy {
+    match node {
+      @engine.CommandSatisfied(name, child) =>
+        collect_default_seats(child, output_path_push(path, name), out)
+      _ => ()
+    }
+  }
+}
+
+///|
+/// 当該 binding の座が持つ宣言 default。席は「どのセルか」なので、`output_internal_cell` と
+/// 同じ理由で runtime index segment を落としてから照合する。
+fn declared_default_seat(
+  seats : Array[DefaultSeat],
+  binding : @abi.Binding,
+) -> @abi.Value? {
+  let seat = drop_index_segments(binding.scope)
+  for candidate in seats {
+    if candidate.name == binding.key && path_eq(candidate.path, seat) {
+      return Some(candidate.value)
     }
   }
   None
 }
 
 ///|
+/// 効果 1 件を「座の値状態の更新」と「観測される OutputEffect」の両方へ落とす。値状態の計算は
+/// `fold_seat_effect` が唯一持ち (`resolve_entity_raw` の CLI seat と共有)、本関数に残るのは
+/// 観測面の綴りだけである — cell fn を呼ぶのは `Invoke` だけなので、op が呼び出し結果で決まるのも
+/// `Invoke` に限る (DR-114 §2)。
 fn projected_effect(
-  ast : AtomicAST,
   binding : @abi.Binding,
-  current : Map[String, @abi.Value],
+  seats : CellSeats,
+  defaults : Array[DefaultSeat],
+  extensions : @node.Registry,
 ) -> OutputEffect {
   let key = effect_cell_key(binding)
   let (entity, path) = match binding.observation {
     Some(address) => (address.entity, address.path)
     None => (binding.key, [])
   }
-  match binding.op {
-    @abi.Invoke(invocation) => {
-      let old = match current.get(key) {
-        Some(value) => Some(value)
-        None =>
-          match root_entity(ast, binding) {
-            Some(entity) =>
-              match entity.default_values {
-                Some([value]) => Some(value)
-                _ => None
-              }
-            None => None
-          }
-      }
-      match ast.extensions.lookup_cell_fn(invocation.name) {
-        Some(descriptor) => {
-          let observes = match descriptor.concrete_observes(invocation) {
-            Ok(edges) => edges
-            Err(_) => []
-          }
-          let ctx = @extension.FnCtx::for_effect(
-            binding.key,
-            binding.key,
-            old~,
-            observes~,
-          )
-          match descriptor.invoke(invocation.to_call(), ctx) {
-            Ok(@extension.FnOutput::Value(value)) => {
-              current.set(key, value)
-              return {
-                entity,
-                path: path.copy(),
-                op: @abi.Set,
-                operand: Some(value),
-                source: binding.source,
-              }
-            }
-            Ok(@extension.FnOutput::Sentinel(sentinel)) => {
-              let op = match sentinel {
-                @extension.CellSentinel::UseDefault => @abi.EffectOp::Default
-                @extension.CellSentinel::Empty => @abi.EffectOp::Empty
-              }
-              return {
-                entity,
-                path: path.copy(),
-                op,
-                operand: None,
-                source: binding.source,
-              }
-            }
-            Err(_) => ()
-          }
-        }
-        None => ()
-      }
-      {
-        entity,
-        path: path.copy(),
-        op: binding.op,
-        operand: None,
-        source: binding.source,
-      }
-    }
-    @abi.Set | @abi.Remove => {
-      current.set(key, binding.value)
-      {
-        entity,
-        path: path.copy(),
-        op: binding.op,
-        operand: Some(binding.value),
-        source: binding.source,
-      }
-    }
-    _ =>
-      {
-        entity,
-        path: path.copy(),
-        op: binding.op,
-        operand: None,
-        source: binding.source,
-      }
+  let declared = declared_default_seat(defaults, binding)
+  let old = seats.old(key, declared)
+  let transition = fold_seat_effect(binding, old, binding.key, extensions)
+  match seat_after(transition, declared) {
+    Some(state) => seats.put(key, state)
+    None => ()
   }
+  let (op, operand) = match binding.op {
+    @abi.Invoke(_) =>
+      match transition {
+        ToValue(value) => (@abi.EffectOp::Set, Some(value))
+        ToDefault => (@abi.EffectOp::Default, None)
+        ToEmpty => (@abi.EffectOp::Empty, None)
+        NoChange | FnMissing(_) | FnFailed(_) => (binding.op, None)
+      }
+    @abi.Set | @abi.Remove => (binding.op, Some(binding.value))
+    _ => (binding.op, None)
+  }
+  { entity, path: path.copy(), op, operand, source: binding.source }
 }
 
 ///|
@@ -686,7 +670,9 @@ fn project_effects(
   let config_file_cells : Array[ConfigFileCell] = []
   collect_config_file_cells(ast.root, [], config_file_cells)
   let effects : Array[OutputEffect] = []
-  let current : Map[String, @abi.Value] = Map([])
+  let seats = CellSeats::new()
+  let default_seats : Array[DefaultSeat] = []
+  collect_default_seats(ast.root, [], default_seats)
   for binding in binds {
     if (is_sentinel(binding.key) && binding.observation is None) ||
       output_internal_cell(
@@ -708,7 +694,9 @@ fn project_effects(
     if binding.source is (@abi.Default | @abi.Const) {
       continue
     }
-    effects.push(projected_effect(ast, binding, current))
+    effects.push(
+      projected_effect(binding, seats, default_seats, ast.extensions),
+    )
   }
   effects
 }

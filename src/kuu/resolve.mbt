@@ -3223,133 +3223,98 @@ fn resolve_entity_raw(
     }
     None => ()
   }
+  // 値状態 (`seat`) と、下流へ返す binding (`current`) は別物である。前者は DR-114 §7 の
+  // `ctx.old` を決め、後者は DR-045 の「@abi.Set/@abi.Default/@abi.Empty は VERBATIM で返す」
+  // 契約を担う (@abi.Empty の `value` は op で解釈される placeholder であり、値ではない)。
+  // 両者を 1 個の `current : Binding?` に兼ねさせると placeholder が `old` として漏れる —
+  // `empty` 済みのセルへ `incr` が来ると「値が無い」ではなく placeholder を見てしまう。
+  // 値状態の遷移計算そのものは `cell_fold.mbt` の `fold_seat_effect` が持ち、effects 射影
+  // (`projected_effect`) と共有する。
   let mut current : @abi.Binding? = None
+  let seats = CellSeats::new()
   let mut committed_now = false
   for b in cli {
     if b.key == e.name {
-      match b.op {
-        @abi.Set => {
-          current = Some(b)
-          committed_now = true
-        }
-        @abi.Default =>
-          // DR-081 §2: op=default sets the CURRENT (already-rewritten) default value — env/
-          // config doesn't "win as a lower seat" here, it has already rewritten the
-          // cell's default (§1's model) by the time this fires, so querying the SAME ladder
-          // `resolve_ladder_below_cli` runs for a normal fall-through gets exactly that value.
-          // `source` stays on the firing binding (`cli` for the element's own entry, `link` for a
-          // routed entry): DR-081 §2 records WHO committed the default, while DR-121 §4 preserves
-          // which explicit path reached that same top ladder seat.
-          match
-            resolve_ladder_below_cli(
-              e, env_map, config_obj, config_path, at_pos, epath, tty_map, extensions,
-            ) {
-            Ok(bs2) => {
-              current = if bs2.length() > 0 {
-                Some(
-                  @abi.Binding::new(
-                    e.name,
-                    bs2[bs2.length() - 1].value,
-                    b.source,
-                  ),
-                )
-              } else {
-                // no declared default AND no env/config supply — nothing to rewrite to,
-                // same degenerate fallback the pre-DR-081 code used (the placeholder binding
-                // itself, committed as-is; this element simply has no meaningful default here).
-                Some(b)
-              }
-              committed_now = true
+      // DR-080 §2: a `@abi.Remove`/`@abi.Splice` piece only ever fires for a `multiple` element
+      // whose `accumulator` is `"merge"` — a merge accumulator REQUIRES `multiple` (DR-080 §1), so
+      // no scalar (non-multiple) entity's CLI seat can ever carry one. Unreachable in practice;
+      // `abort` matches the sibling accum branch's own defensive arm.
+      if b.op is (@abi.Remove | @abi.Splice) {
+        abort(
+          "unreachable: a @abi.Remove/@abi.Splice piece only fires for a multiple(merge) entity (DR-080 §1) — this is the scalar (non-multiple) fold",
+        )
+      }
+      let old = seats.old(e.name, default_scalar(e))
+      let transition = fold_seat_effect(b, old, e.name, extensions)
+      // `@abi.Default` / Sentinel(use_default) の落ち先は値源ラダー (DR-081 §2: op=default は
+      // 「その時点の書き換え済み default」をセルへ書く — env/config が下位席として後から勝つのでは
+      // なく、発火時点で既にセルの default を書き換えている)。
+      let default_seat : @abi.Value? = if transition is ToDefault {
+        match
+          resolve_ladder_below_cli(
+            e, env_map, config_obj, config_path, at_pos, epath, tty_map, extensions,
+          ) {
+          Ok(bs2) =>
+            if bs2.length() > 0 {
+              Some(bs2[bs2.length() - 1].value)
+            } else {
+              None
             }
-            Err(pe) => return Err(pe)
-          }
-        @abi.Empty => {
-          current = Some(b)
-          committed_now = true
+          Err(pe) => return Err(pe)
         }
-        // NOT committed: resets the running value to default so a LATER update in the same
-        // fold sees the right "old" — but this seat stays eligible to fall through to
-        // env/config if nothing commits after it (unchanged pre-DR-077 contract).
-        @abi.Unset => {
-          current = match default_scalar(e) {
-            Some(v) => Some(@abi.Binding::new(e.name, v, @abi.Default))
-            None => None
-          }
-          committed_now = false
-        }
-        @abi.Invoke(invocation) => {
-          let old : @abi.Value? = match current {
-            Some(binding) => Some(binding.value)
-            None => default_scalar(e)
-          }
-          let descriptor = match extensions.lookup_cell_fn(invocation.name) {
-            Some(descriptor) => descriptor
-            None =>
-              return Err(
-                ladder_err(
-                  e.name,
-                  at_pos,
-                  "unknown-vocab",
-                  "cell fn '" + invocation.name + "' is not registered",
-                  epath,
-                ),
-              )
-          }
-          let observes = match descriptor.concrete_observes(invocation) {
-            Ok(observes) => observes
-            Err({ reason, message, .. }) =>
-              return Err(ladder_err(e.name, at_pos, reason, message, epath))
-          }
-          let ctx = @extension.FnCtx::for_effect(
-            e.name,
-            e.name,
-            old~,
-            observes~,
+      } else {
+        None
+      }
+      match transition {
+        FnMissing(name) =>
+          return Err(
+            ladder_err(
+              e.name,
+              at_pos,
+              "unknown-vocab",
+              "cell fn '" + name + "' is not registered",
+              epath,
+            ),
           )
-          match descriptor.invoke(invocation.to_call(), ctx) {
-            Err({ reason, message, .. }) =>
-              return Err(ladder_err(e.name, at_pos, reason, message, epath))
-            Ok(@extension.FnOutput::Value(value)) =>
-              if value is @abi.Null {
-                current = None
-                committed_now = false
-              } else {
-                current = Some({ ..b, op: @abi.Set, value })
-                committed_now = true
+        FnFailed({ reason, message, .. }) =>
+          return Err(ladder_err(e.name, at_pos, reason, message, epath))
+        NoChange => ()
+        _ => {
+          match seat_after(transition, default_seat) {
+            Some(state) => seats.put(e.name, state)
+            None => ()
+          }
+          committed_now = !(transition is ToValue(@abi.Null))
+          current = match (b.op, transition) {
+            // 値を運ぶ効果 (@abi.Set) は VERBATIM。
+            (@abi.Set, _) => Some(b)
+            // `unset` は席を開けるだけ — commit しないので、この carrier が下流へ出ることはない
+            // (後続が commit すれば上書きされ、しなければラダーへ落ちる)。DR-077 以前と同じ契約。
+            (@abi.Unset, _) => None
+            // `@abi.Default` は DR-081 §2 の「WHO committed the default」を記録する新しい binding
+            // (`source` は発火した入口のまま = 自入口なら cli、routed なら link、DR-121 §4)。
+            // ラダーが何も供給しなければ書き換え先が無いので placeholder のまま commit する
+            // (DR-081 以前と同じ degenerate fallback)。
+            (@abi.EffectOp::Default, _) =>
+              match default_seat {
+                Some(value) => Some(@abi.Binding::new(e.name, value, b.source))
+                None => Some(b)
               }
-            Ok(@extension.FnOutput::Sentinel(@extension.UseDefault)) =>
-              match
-                resolve_ladder_below_cli(
-                  e, env_map, config_obj, config_path, at_pos, epath, tty_map, extensions,
-                ) {
-                Ok(defaults) => {
-                  current = if defaults.length() > 0 {
-                    Some({
-                      ..b,
-                      op: @abi.Set,
-                      value: defaults[defaults.length() - 1].value,
-                    })
-                  } else {
-                    Some({ ..b, op: @abi.Default })
-                  }
-                  committed_now = true
-                }
-                Err(error) => return Err(error)
+            (@abi.Empty, _) => Some(b)
+            // cell fn の出力は、Value なら通常の set 束縛、Sentinel なら対応する直接操作の
+            // 束縛へ (DR-114 §2)。
+            (@abi.Invoke(_), ToValue(@abi.Null)) => None
+            (@abi.Invoke(_), ToValue(value)) =>
+              Some({ ..b, op: @abi.Set, value })
+            (@abi.Invoke(_), ToDefault) =>
+              match default_seat {
+                Some(value) => Some({ ..b, op: @abi.Set, value })
+                None => Some({ ..b, op: @abi.Default })
               }
-            Ok(@extension.FnOutput::Sentinel(@extension.CellSentinel::Empty)) => {
-              current = Some({ ..b, op: @abi.Empty })
-              committed_now = true
-            }
+            (@abi.Invoke(_), ToEmpty) => Some({ ..b, op: @abi.Empty })
+            _ => current
           }
         }
-        @abi.Remove | @abi.Splice =>
-          // DR-080 §2: a `@abi.Remove`/`@abi.Splice` piece only ever fires for a `multiple` element whose
-          // `accumulator` is `"merge"` — a merge accumulator REQUIRES `multiple` (DR-080 §1), so
-          // no scalar (non-multiple) entity's CLI seat can ever carry one. Unreachable in
-          // practice; `abort` matches the sibling accum branch's own defensive arm.
-          abort(
-            "unreachable: a @abi.Remove/@abi.Splice piece only fires for a multiple(merge) entity (DR-080 §1) — this is the scalar (non-multiple) fold",
-          )
       }
     }
   }
