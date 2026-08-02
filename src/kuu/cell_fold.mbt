@@ -63,30 +63,33 @@ fn fold_seat_effect(
   old : @abi.Value?,
   target : String,
   extensions : @node.Registry,
-) -> SeatTransition {
+) -> (SeatTransition, Bool) {
   match binding.op {
-    @abi.Set | @abi.Remove => ToValue(binding.value)
-    @abi.EffectOp::Default => ToDefault
-    @abi.Empty => ToEmpty
-    @abi.Unset => ToValue(@abi.Null)
-    @abi.Splice => NoChange
+    @abi.Set | @abi.Remove => (ToValue(binding.value), false)
+    @abi.EffectOp::Default => (ToDefault, false)
+    @abi.Empty => (ToEmpty, false)
+    @abi.Unset => (ToValue(@abi.Null), false)
+    @abi.Splice => (NoChange, false)
     @abi.Invoke(invocation) => {
       let descriptor = match extensions.lookup_cell_fn(invocation.name) {
         Some(descriptor) => descriptor
-        None => return FnMissing(invocation.name)
+        None => return (FnMissing(invocation.name), false)
       }
       let observes = match descriptor.concrete_observes(invocation) {
         Ok(observes) => observes
-        Err(reason) => return FnFailed(reason)
+        Err(reason) => return (FnFailed(reason), false)
       }
       let ctx = @extension.FnCtx::for_effect(target, target, old~, observes~)
-      match descriptor.invoke(invocation.to_call(), ctx) {
+      let transition = match descriptor.invoke(invocation.to_call(), ctx) {
         Err(reason) => FnFailed(reason)
         Ok(@extension.FnOutput::Value(value)) => ToValue(value)
         Ok(@extension.FnOutput::Sentinel(@extension.UseDefault)) => ToDefault
         Ok(@extension.FnOutput::Sentinel(@extension.CellSentinel::Empty)) =>
           ToEmpty
       }
+      // DR-127 §3: 値残余の空座では「ctx.old を要する」Value fn の適用が解決失敗になる。
+      // descriptor に old 依存の宣言席が無いので、実行時に old() が参照されたかで判定する。
+      (transition, ctx.old_consulted())
     }
   }
 }
@@ -288,6 +291,329 @@ fn value_with_at(
           }
         _ => Err(SeatNotContainer)
       }
+  }
+}
+
+///|
+/// 宣言 ValueType の record 段からフィールドの型参照を引く。union は「当該フィールドを持つ
+/// record variant」の最初の 1 つ (DR-127 §2.2 union 行 — FieldType 終端の静的一致検査 (W2-6) を
+/// 通過済みのパスでは、どの含有 variant を選んでも operand のパース実体は同一)。
+fn declared_field_reference(
+  declared : @abi.ValueType,
+  field : String,
+) -> String? {
+  match declared {
+    @abi.ValueType::Record(fields) => {
+      for entry in fields {
+        if entry.0 == field {
+          return Some(entry.1)
+        }
+      }
+      None
+    }
+    @abi.ValueType::Union(members) => {
+      for variant_member in members {
+        match declared_field_reference(variant_member, field) {
+          Some(reference) => return Some(reference)
+          None => ()
+        }
+      }
+      None
+    }
+    _ => None
+  }
+}
+
+///|
+/// 宣言 ValueType を値空間残余 segment 列で降りたときの「その段の宣言型」。record フィールドは
+/// type 参照ホップ (DR-126 §1) を挟むので registry を引く。辿れない段があれば `None`
+/// (= 静的検査 (W2-6) を通過した routed パスでは起きない構造だが、防御として握りつぶさず None)。
+fn declared_type_at(
+  declared : @abi.ValueType?,
+  path : ArrayView[@abi.ObservationSegment],
+  registry : @extension.Registry,
+) -> @abi.ValueType? {
+  match path {
+    [] => declared
+    [segment, .. rest] =>
+      match (segment, declared) {
+        (@abi.ObservationName(field), Some(current)) =>
+          match declared_field_reference(current, field) {
+            Some(reference) =>
+              match registry.resolve_type_reference(reference) {
+                Some(resident) =>
+                  declared_type_at(resident.output_type(), rest, registry)
+                None => None
+              }
+            None => None
+          }
+        (@abi.ObservationIndex(_), Some(@abi.ValueType::Array(item))) =>
+          declared_type_at(Some(item), rest, registry)
+        (@abi.ObservationIndex(_), Some(@abi.ValueType::Union(members))) => {
+          for variant_member in members {
+            if variant_member is @abi.ValueType::Array(item) {
+              return declared_type_at(Some(item), rest, registry)
+            }
+          }
+          None
+        }
+        _ => None
+      }
+  }
+}
+
+///|
+/// 値残余終端のフィールド type が名乗る `out` (DR-127 §3.2 — 座に座る値の適合検査の规準)。
+fn residual_terminal_out(
+  declared : @abi.ValueType?,
+  path : Array[@abi.ObservationSegment],
+  registry : @extension.Registry,
+) -> @abi.ValueType? {
+  declared_type_at(declared, path[:], registry)
+}
+
+///|
+/// 宣言型で record 段と言える (= 器 `{}` を vivify してよい) か。union は含有 variant に record が
+/// あれば器を作れる (DR-127 §2.2 vivify 列 — 構造的なので variant 選択は不要)。
+fn declared_vivifies_record(declared : @abi.ValueType?) -> Bool {
+  match declared {
+    Some(@abi.ValueType::Record(_)) => true
+    Some(@abi.ValueType::Union(members)) => {
+      for variant_member in members {
+        if declared_vivifies_record(Some(variant_member)) {
+          return true
+        }
+      }
+      false
+    }
+    _ => false
+  }
+}
+
+///|
+/// 宣言型併走の値空間読み (DR-130 §4.1): record の宣言済み座で物理的に欠落しているものは
+/// 論理的に `null` と読む。器そのものが無い座は従来どおり `SeatAbsent` (空座 — DR-127 §3 の
+/// Reject 判定素材として区別が要る)。
+fn typed_value_at(
+  value : @abi.Value,
+  declared : @abi.ValueType?,
+  path : ArrayView[@abi.ObservationSegment],
+  registry : @extension.Registry,
+) -> Result[@abi.Value, SeatFault] {
+  match path {
+    [] => Ok(value)
+    [segment, .. rest] =>
+      match (segment, value) {
+        (@abi.ObservationName(field), @abi.Object(fields)) => {
+          for entry in fields {
+            if entry.0 == field {
+              return typed_value_at(
+                entry.1,
+                declared_type_at(declared, path[0:1], registry),
+                rest,
+                registry,
+              )
+            }
+          }
+          // 宣言済みフィールドの欠落は論理 null (DR-130 §4.1)。パスがさらに続くなら
+          // null の中は辿れないので、その先の座は器なし (= SeatAbsent) である。
+          match declared {
+            Some(current) =>
+              if declared_field_reference(current, field) is Some(_) {
+                if rest is [] {
+                  Ok(@abi.Null)
+                } else {
+                  Err(SeatAbsent)
+                }
+              } else {
+                Err(SeatMissingField(field))
+              }
+            None => Err(SeatMissingField(field))
+          }
+        }
+        (@abi.ObservationIndex(index), @abi.Array(items)) =>
+          match normalized_index(index, items.length()) {
+            Some(resolved) =>
+              typed_value_at(
+                items[resolved],
+                declared_type_at(declared, path[0:1], registry),
+                rest,
+                registry,
+              )
+            None => Err(SeatIndexOutOfRange(index))
+          }
+        _ => Err(SeatNotContainer)
+      }
+  }
+}
+
+///|
+/// 宣言型併走の値空間書き (DR-127 §3)。`value` None = 器なし。vivify (器 `{}` の生成) が働くのは
+/// (a) `vivify` = true (op gate: `set` 専用) かつ (b) その段の宣言型が record (union は含有
+/// variant の器) の場合のみ。既存 record 器への宣言済みフィールドの追記は器生成ではないので
+/// vivify gate に依らない。array / map / value の器は作らない (DR-127 §2.2 vivify 列)。
+fn typed_value_with_at(
+  value : @abi.Value?,
+  declared : @abi.ValueType?,
+  path : ArrayView[@abi.ObservationSegment],
+  replacement : @abi.Value,
+  registry : @extension.Registry,
+  vivify : Bool,
+) -> Result[@abi.Value, SeatFault] {
+  match path {
+    [] => Ok(replacement)
+    [segment, .. rest] =>
+      match segment {
+        @abi.ObservationName(field) => {
+          let field_declared = declared_type_at(declared, path[0:1], registry)
+          match value {
+            None =>
+              // 器なし → record 段なら vivify (器 `{}` を作って降下を続ける)。
+              if vivify && declared_vivifies_record(declared) {
+                match
+                  typed_value_with_at(
+                    None,
+                    field_declared,
+                    rest,
+                    replacement,
+                    registry,
+                    vivify,
+                  ) {
+                  Ok(inner) => Ok(@abi.Object([(field, inner)]))
+                  Err(fault) => Err(fault)
+                }
+              } else {
+                Err(SeatAbsent)
+              }
+            Some(@abi.Object(fields)) => {
+              let out : Array[(String, @abi.Value)] = []
+              let mut hit = false
+              for entry in fields {
+                if entry.0 == field && !hit {
+                  match
+                    typed_value_with_at(
+                      Some(entry.1),
+                      field_declared,
+                      rest,
+                      replacement,
+                      registry,
+                      vivify,
+                    ) {
+                    Ok(updated) => out.push((entry.0, updated))
+                    Err(fault) => return Err(fault)
+                  }
+                  hit = true
+                } else {
+                  out.push(entry)
+                }
+              }
+              if hit {
+                return Ok(@abi.Object(out))
+              }
+              // 宣言済みフィールドの欠落座への書き = キーの追記 (器は既にあるので vivify gate 外)。
+              // ただしパスがさらに続く場合、中間器の生成は vivify の領分に戻る。
+              match declared {
+                Some(current) if declared_field_reference(current, field)
+                  is Some(_) =>
+                  match
+                    typed_value_with_at(
+                      None,
+                      field_declared,
+                      rest,
+                      replacement,
+                      registry,
+                      vivify,
+                    ) {
+                    Ok(inner) => {
+                      out.push((field, inner))
+                      Ok(@abi.Object(out))
+                    }
+                    Err(fault) => Err(fault)
+                  }
+                _ => Err(SeatMissingField(field))
+              }
+            }
+            Some(_) => Err(SeatNotContainer)
+          }
+        }
+        @abi.ObservationIndex(index) =>
+          match value {
+            // array の要素は実行時にしか存在しない — 器を vivify しない (DR-127 §2.2)。
+            None => Err(SeatAbsent)
+            Some(@abi.Array(items)) =>
+              match normalized_index(index, items.length()) {
+                Some(resolved) => {
+                  let element_declared = declared_type_at(
+                    declared,
+                    path[0:1],
+                    registry,
+                  )
+                  let out : Array[@abi.Value] = []
+                  for offset in 0..<items.length() {
+                    if offset == resolved {
+                      match
+                        typed_value_with_at(
+                          Some(items[offset]),
+                          element_declared,
+                          rest,
+                          replacement,
+                          registry,
+                          vivify,
+                        ) {
+                        Ok(updated) => out.push(updated)
+                        Err(fault) => return Err(fault)
+                      }
+                    } else {
+                      out.push(items[offset])
+                    }
+                  }
+                  Ok(@abi.Array(out))
+                }
+                None => Err(SeatIndexOutOfRange(index))
+              }
+            Some(_) => Err(SeatNotContainer)
+          }
+      }
+  }
+}
+
+///|
+/// 座の値空間残余への読み (宣言型併走、DR-130 §4.1 の論理 null 込み)。
+fn CellSeats::value_at_declared(
+  self : CellSeats,
+  key : String,
+  path : Array[@abi.ObservationSegment],
+  declared : @abi.ValueType?,
+  registry : @extension.Registry,
+) -> Result[@abi.Value, SeatFault] {
+  match self.states.get(key) {
+    Some(Seated(value)) => typed_value_at(value, declared, path[:], registry)
+    _ => Err(SeatAbsent)
+  }
+}
+
+///|
+/// 座の値空間残余への書き (宣言型併走、vivify は `set` 専用の op gate を呼び手が `vivify~` で渡す)。
+fn CellSeats::set_at_declared(
+  self : CellSeats,
+  key : String,
+  path : Array[@abi.ObservationSegment],
+  value : @abi.Value,
+  declared : @abi.ValueType?,
+  registry : @extension.Registry,
+  vivify~ : Bool,
+) -> Result[Unit, SeatFault] {
+  let current : @abi.Value? = match self.states.get(key) {
+    Some(Seated(seated)) => Some(seated)
+    _ => None
+  }
+  match
+    typed_value_with_at(current, declared, path[:], value, registry, vivify) {
+    Ok(updated) => {
+      self.states.set(key, Seated(updated))
+      Ok(())
+    }
+    Err(fault) => Err(fault)
   }
 }
 

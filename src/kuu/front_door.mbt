@@ -625,6 +625,57 @@ fn declared_default_seat(
 }
 
 ///|
+/// 座 (cell) が宣言する出力 ValueType の台帳 (DR-126 §1)。値空間残余 (DR-127 §2.2) の効果適用が
+/// vivify 判定・論理 null 読みに使う。`DefaultSeat` と同じ (path, name) 席の写像。
+priv struct TypeSeat {
+  path : Array[String]
+  name : String
+  value_type : @abi.ValueType
+}
+
+///|
+fn collect_type_seats(
+  scope : @engine.Scope,
+  path : Array[String],
+  out : Array[TypeSeat],
+) -> Unit {
+  for entity in scope.entities {
+    match entity.ty.output_type() {
+      Some(value_type) => {
+        let seat = path.copy()
+        for segment in entity.declaring_path {
+          seat.push(segment)
+        }
+        out.push({ path: seat, name: entity.name, value_type })
+      }
+      None => ()
+    }
+  }
+  for node in scope.greedy {
+    match node {
+      @engine.CommandSatisfied(name, child) =>
+        collect_type_seats(child, output_path_push(path, name), out)
+      _ => ()
+    }
+  }
+}
+
+///|
+/// 当該 binding の座が宣言する出力 ValueType。`declared_default_seat` と同じ席合わせ。
+fn declared_type_seat(
+  seats : Array[TypeSeat],
+  binding : @abi.Binding,
+) -> @abi.ValueType? {
+  let seat = drop_index_segments(binding.scope)
+  for candidate in seats {
+    if candidate.name == binding.key && path_eq(candidate.path, seat) {
+      return Some(candidate.value_type)
+    }
+  }
+  None
+}
+
+///|
 /// 効果 1 件を「座の値状態の更新」と「観測される OutputEffect」の両方へ落とす。値状態の計算は
 /// `fold_seat_effect` が唯一持ち (`resolve_entity_raw` の CLI seat と共有)、本関数に残るのは
 /// 観測面の綴りだけである — cell fn を呼ぶのは `Invoke` だけなので、op が呼び出し結果で決まるのも
@@ -633,6 +684,7 @@ fn projected_effect(
   binding : @abi.Binding,
   seats : CellSeats,
   defaults : Array[DefaultSeat],
+  types : Array[TypeSeat],
   extensions : @node.Registry,
 ) -> OutputEffect {
   let key = effect_cell_key(binding)
@@ -641,11 +693,67 @@ fn projected_effect(
     None => (binding.key, [])
   }
   let declared = declared_default_seat(defaults, binding)
-  let old = seats.old(key, declared)
-  let transition = fold_seat_effect(binding, old, binding.key, extensions)
-  match seat_after(transition, declared) {
-    Some(state) => seats.put(key, state)
-    None => ()
+  let transition = if binding.value_residual.length() > 0 {
+    // DR-127 §4.1 — 値空間残余の座への操作。old は座の内側の現在値 (record の宣言済み欠落は
+    // 論理 null、DR-130 §4.1)。成立する書きだけ座へ反映する — Sentinel / 解決失敗で止まる
+    // 判断は resolve 相 (と DR-127 §4.2 の枝ローカル fold = W2-8) の領分で、parse 相の観測は
+    // 失敗で停止できないため effect の綴りをそのまま観測に落とす。
+    let registry = extensions.extensions()
+    let declared_ty = declared_type_seat(types, binding)
+    let container_present = seats.value_at(key, []) is Ok(_)
+    let old : @abi.Value? = if container_present {
+      match
+        seats.value_at_declared(
+          key,
+          binding.value_residual,
+          declared_ty,
+          registry,
+        ) {
+        Ok(value) => Some(value)
+        Err(_) => None
+      }
+    } else {
+      None
+    }
+    let (transition, _) = fold_seat_effect(
+      binding,
+      old,
+      binding.key,
+      extensions,
+    )
+    match transition {
+      ToValue(value) =>
+        // `unset` (null 返し) の空座適用は座を触らない no-op (DR-131 §7 / DR-127 §3)。
+        if !(value is @abi.Null && !container_present) {
+          match
+            seats.set_at_declared(
+              key,
+              binding.value_residual,
+              value,
+              declared_ty,
+              registry,
+              vivify=binding.op is @abi.Set,
+            ) {
+            Ok(_) => ()
+            Err(_) => ()
+          }
+        }
+      _ => ()
+    }
+    transition
+  } else {
+    let old = seats.old(key, declared)
+    let (transition, _) = fold_seat_effect(
+      binding,
+      old,
+      binding.key,
+      extensions,
+    )
+    match seat_after(transition, declared) {
+      Some(state) => seats.put(key, state)
+      None => ()
+    }
+    transition
   }
   let (op, operand) = match binding.op {
     @abi.Invoke(_) =>
@@ -673,6 +781,8 @@ fn project_effects(
   let seats = CellSeats::new()
   let default_seats : Array[DefaultSeat] = []
   collect_default_seats(ast.root, [], default_seats)
+  let type_seats : Array[TypeSeat] = []
+  collect_type_seats(ast.root, [], type_seats)
   for binding in binds {
     if (is_sentinel(binding.key) && binding.observation is None) ||
       output_internal_cell(
@@ -695,7 +805,13 @@ fn project_effects(
       continue
     }
     effects.push(
-      projected_effect(binding, seats, default_seats, ast.extensions),
+      projected_effect(
+        binding,
+        seats,
+        default_seats,
+        type_seats,
+        ast.extensions,
+      ),
     )
   }
   effects
@@ -712,13 +828,16 @@ fn project_sources(
   resolved : Array[@abi.Binding],
   result : @abi.ResultValue,
 ) -> @abi.ResultValue {
-  result_sources(
-    ast.root,
-    resolved,
-    ast.ekmap,
+  align_sources_to_result(
     result,
-    ast.extensions,
-    templates=ast.templates,
+    result_sources(
+      ast.root,
+      resolved,
+      ast.ekmap,
+      result,
+      ast.extensions,
+      templates=ast.templates,
+    ),
   )
 }
 

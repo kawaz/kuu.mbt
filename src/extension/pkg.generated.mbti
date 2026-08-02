@@ -119,6 +119,8 @@ pub fn regex_match_filter() -> FilterDescriptor
 
 pub fn round_mode_of(String) -> @abi.RoundMode?
 
+pub fn seat_fn_output_breach(@abi.Value, @abi.ValueType, String, Registry) -> (String, String)?
+
 pub fn sep_binds(String, String, String?, &TypeExt, Array[@abi.FnInvocation], Int, Bool, Registry) -> Result[Array[@abi.Binding], ReadingFail]
 
 pub fn short_combine(String, Array[ShortEntry], combine? : Bool) -> &MatcherExt
@@ -140,6 +142,8 @@ pub fn type_parse_error(String, Int, @abi.TypeParseFail) -> @abi.ParseError
 pub fn unique_array_filter() -> ArrayFilterDescriptor
 
 pub fn unwrap_single_collector() -> &CollectorExt
+
+pub fn value_conforms(@abi.Value, @abi.ValueType, Registry) -> Bool
 
 pub fn value_str(@abi.Value) -> String
 
@@ -275,6 +279,7 @@ pub fn FnCtx::for_default(String, old? : @abi.Value?, observes? : Array[String],
 pub fn FnCtx::for_effect(String, String, old? : @abi.Value?, observes? : Array[String], option? : (String) -> @abi.Value?, env? : (String) -> @abi.Value?, system? : (String) -> @abi.Value?) -> Self
 pub fn FnCtx::observes(Self) -> Array[String]
 pub fn FnCtx::old(Self) -> @abi.Value?
+pub fn FnCtx::old_consulted(Self) -> Bool
 pub fn FnCtx::option(Self, String) -> @abi.Value?
 pub fn FnCtx::system(Self, String) -> @abi.Value?
 

@@ -65,6 +65,10 @@ priv enum FnPhase {
 pub struct FnCtx {
   priv phase : FnPhase
   priv old_ : Value?
+  // DR-127 §3 / DR-131 §7: 「ctx.old を要する fn」の判定素材。descriptor は old 依存を宣言しない
+  // (io_type 席が無い) ので、実行時に `old()` が参照されたかを記録し、値残余の空座への適用を
+  // 呼び手 (cell_fold の効果適用) が Reject へ倒せるようにする。
+  priv mut old_consulted_ : Bool
   priv observes_ : Array[String]
   priv option_ : (String) -> Value?
   priv env_ : (String) -> Value?
@@ -102,6 +106,7 @@ fn make_fn_ctx(
   {
     phase,
     old_: old,
+    old_consulted_: false,
     observes_: observes.copy(),
     option_: option,
     env_: env,
@@ -202,7 +207,15 @@ pub fn FnCtx::as_filter(self : FnCtx) -> FilterCtx? {
 
 ///|
 pub fn FnCtx::old(self : FnCtx) -> Value? {
+  self.old_consulted_ = true
   self.old_
+}
+
+///|
+/// Whether the fn consulted `old()` during its run (DR-127 §3: a Value fn that
+/// requires the seat's current value cannot apply to an empty value-space seat).
+pub fn FnCtx::old_consulted(self : FnCtx) -> Bool {
+  self.old_consulted_
 }
 
 ///|

@@ -289,7 +289,8 @@ test "record を名乗る型がスカラを産んだら held Error" {
 ///|
 /// 保証 (DR-126 §4 表 (c) / DR-130 §4.1): 宣言済みキーが生出力に無いのは**正常**。乖離検査は
 /// 射影の null 補形より前に生出力を見るので、パーサが宣言済みフィールドを 1 つ落として返すことは
-/// 従来どおり許される。
+/// 従来どおり許される。射影層が欠落フィールドを `null` で補い、sources も同じ座に `null` を
+/// 持って result と同型を保つ (DR-130 §4.1 / §5)。
 test "宣言済みキーの欠落は正常 (DR-126 §4 (c), DR-130 §4.1)" {
   let src =
     #|{"options": [{"name": "span", "type": "range", "long": true}]}
@@ -299,8 +300,11 @@ test "宣言済みキーの欠落は正常 (DR-126 §4 (c), DR-130 §4.1)" {
   match outcome {
     @engine.Success(bindings) => {
       let view = output_legacy(ast, effects=bindings)
-      assert_eq(render_rval_sorted(view.result), "{span={since=1}}")
-      assert_eq(render_rval_sorted(view.sources), "{span={since=cli}}")
+      assert_eq(render_rval_sorted(view.result), "{span={since=1,until=null}}")
+      assert_eq(
+        render_rval_sorted(view.sources),
+        "{span={since=cli,until=null}}",
+      )
     }
     other =>
       fail(

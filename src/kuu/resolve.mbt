@@ -298,6 +298,48 @@ fn walk_export_path(
 /// segments (command scope names) are renamed / promoted the same way. Keeps a flag's preset default
 /// subject to the same export transform as its fired value (so `--verbose` with export null neither
 /// appears as a value nor re-appears as an injected `false`).
+/// `apply_export_to_defaults` の TypeSeat 版 — 宣言名軸で集めた「座の宣言 ValueType」台帳を
+/// 露出キー軸へ写す (result / sources の record null 補形 (DR-130 §4.1) が露出軸で座を引くため)。
+fn apply_export_to_types(
+  types : Array[TypeSeat],
+  ek : @engine.ExportScopeMap,
+) -> Array[TypeSeat] {
+  let out : Array[TypeSeat] = []
+  for t in types {
+    let (new_path, node) = walk_export_path(t.path, ek)
+    if !node.has_occupancy() || node.cell_is_occupied(t.name) {
+      match node.exposed_cell(t.name) {
+        None | Some("") => ()
+        Some(new_name) =>
+          out.push({ path: new_path, name: new_name, value_type: t.value_type })
+      }
+    } else if node.scope_is_occupied(t.name) {
+      match node.exposed_scope(t.name) {
+        None | Some("") => ()
+        Some(new_name) =>
+          out.push({ path: new_path, name: new_name, value_type: t.value_type })
+      }
+    }
+  }
+  out
+}
+
+///|
+/// 露出軸台帳から (path, key) の座の宣言 ValueType を引く。
+fn declared_cell_type(
+  types : Array[TypeSeat],
+  path : Array[String],
+  key : String,
+) -> @abi.ValueType? {
+  for candidate in types {
+    if candidate.name == key && path_eq(candidate.path, path) {
+      return Some(candidate.value_type)
+    }
+  }
+  None
+}
+
+///|
 fn apply_export_to_defaults(
   defaults : Array[DefaultCell],
   ek : @engine.ExportScopeMap,
@@ -609,6 +651,109 @@ fn result_object_has_key(
 /// cell's value and `ResultValue` stays the type of a projection-tree node (a scope's kv, a repeat
 /// row, a source tag) — the wrapper is where a cell value enters the tree, which is why the two
 /// types are not merged.
+/// DR-130 §4.1 — record の補形は射影層で行い、parser の出力は書き換えない。宣言 ValueType を
+/// 併走させて、record 座の宣言済み欠落フィールドを `null` で埋めた**新しい値**を作る (元の
+/// Binding の値には触れない)。record は宣言 ValueType のどの深さに現れても対象 (array 要素 /
+/// map 値 / union variant の中も再帰する)。`null` の中は埋めない (値が無い座に内側は無い)。
+fn null_fill_value(
+  value : @abi.Value,
+  declared : @abi.ValueType?,
+  registry : @extension.Registry,
+) -> @abi.Value {
+  match (declared, value) {
+    (Some(@abi.ValueType::Record(fields)), @abi.Object(entries)) => {
+      let out : Array[(String, @abi.Value)] = []
+      for entry in entries {
+        let mut field_declared : @abi.ValueType? = None
+        for field in fields {
+          if field.0 == entry.0 {
+            field_declared = match registry.resolve_type_reference(field.1) {
+              Some(resident) => resident.output_type()
+              None => None
+            }
+            break
+          }
+        }
+        out.push((entry.0, null_fill_value(entry.1, field_declared, registry)))
+      }
+      for field in fields {
+        let mut present = false
+        for entry in entries {
+          if entry.0 == field.0 {
+            present = true
+            break
+          }
+        }
+        if !present {
+          out.push((field.0, @abi.Null))
+        }
+      }
+      @abi.Object(out)
+    }
+    (Some(@abi.ValueType::Array(item)), @abi.Array(items)) =>
+      @abi.Array(items.map(v => null_fill_value(v, Some(item), registry)))
+    (Some(@abi.ValueType::Map(value_type)), @abi.Object(entries)) =>
+      @abi.Object(
+        entries.map(entry => {
+          (entry.0, null_fill_value(entry.1, Some(value_type), registry))
+        }),
+      )
+    (Some(@abi.ValueType::Union(members)), _) => {
+      for variant_member in members {
+        if @extension.value_conforms(value, variant_member, registry) {
+          return null_fill_value(value, Some(variant_member), registry)
+        }
+      }
+      value
+    }
+    _ => value
+  }
+}
+
+///|
+/// DR-130 §5 / DR-122 §1 — sources は result の shadow tree でキー集合が完全一致する。record の
+/// null 補形 (DR-130 §4.1) は result 側だけで座を増やすので、射影の最後に result と zip して
+/// 補形分の座を sources 側へ `null` として写す (補形で増えた座に産出発火は無い — タグではなく
+/// null が正しい)。物理的に present な座のタグには触れない。
+fn align_sources_to_result(
+  result : @abi.ResultValue,
+  shadow : @abi.ResultValue,
+) -> @abi.ResultValue {
+  match (result, shadow) {
+    (@abi.Object(result_fields), @abi.Object(shadow_fields)) => {
+      let out : Array[(String, @abi.ResultValue)] = []
+      for field in result_fields {
+        let mut matched : @abi.ResultValue? = None
+        for candidate in shadow_fields {
+          if candidate.0 == field.0 {
+            matched = Some(candidate.1)
+            break
+          }
+        }
+        match matched {
+          Some(nested) =>
+            out.push((field.0, align_sources_to_result(field.1, nested)))
+          None => out.push((field.0, @abi.Scalar(@abi.Null)))
+        }
+      }
+      @abi.Object(out)
+    }
+    (@abi.Array(result_items), @abi.Array(shadow_items)) => {
+      let out : Array[@abi.ResultValue] = []
+      for index, item in result_items {
+        if index < shadow_items.length() {
+          out.push(align_sources_to_result(item, shadow_items[index]))
+        } else {
+          out.push(@abi.Scalar(@abi.Null))
+        }
+      }
+      @abi.Array(out)
+    }
+    _ => shadow
+  }
+}
+
+///|
 fn result_of_value(value : @abi.Value) -> @abi.ResultValue {
   match value {
     @abi.Array(items) => @abi.Array(items.map(result_of_value))
@@ -652,6 +797,7 @@ fn build_result(
   extensions? : @node.Registry = canonical_registry(),
   shape? : @engine.ExportScopeMap? = None,
   complete_static? : Bool = false,
+  types? : Array[TypeSeat] = [],
 ) -> @abi.ResultValue {
   // ROW-GROUP (DR-078 §1 ref テンプレ result 写像, issue 2026-07-09-ref-template-result-shape):
   // a "#row" sentinel at this level (installer.mbt's `ref_row_head`) marks one repetition's row
@@ -674,6 +820,7 @@ fn build_result(
           extensions~,
           shape~,
           complete_static~,
+          types~,
         ),
       )
     }
@@ -707,6 +854,7 @@ fn build_result(
                 extensions~,
                 shape~,
                 complete_static~,
+                types~,
               ),
             )
           }
@@ -724,6 +872,7 @@ fn build_result(
               extensions~,
               shape~,
               complete_static~,
+              types~,
             ),
           )
         }
@@ -842,8 +991,17 @@ fn build_result(
             Err(_) => vals
           }
       }
+      // DR-130 §4.1 の補形は accumulator の要素にも効く (要素 type が record を名乗る場合)。
+      // accum_filters は生の値を見る (補形前)、collector と射影は補形後を見る。
+      let filled_vals = match declared_cell_type(types, path, k) {
+        Some(element_type) =>
+          filtered_vals.map(v => {
+            null_fill_value(v, Some(element_type), extensions.extensions())
+          })
+        None => filtered_vals
+      }
       let accumulated = match accumulator_here(cells, path, k) {
-        Some(resident) => resident.collect(filtered_vals)
+        Some(resident) => resident.collect(filled_vals)
         None => abort("unreachable: an accumulated cell has no resident")
       }
       let collected = match collector_here(cells, path, k) {
@@ -859,7 +1017,20 @@ fn build_result(
           v = b.value
         }
       }
-      obj.push((k, result_of_value(v)))
+      // DR-130 §4.1: record 座の宣言済み欠落フィールドは射影層で null 補形する (値そのものは
+      // 書き換えず、射影に入るこの点で埋めた新しい値を作る)。
+      obj.push(
+        (
+          k,
+          result_of_value(
+            null_fill_value(
+              v,
+              declared_cell_type(types, path, k),
+              extensions.extensions(),
+            ),
+          ),
+        ),
+      )
     }
   }
   for seg in segs {
@@ -922,6 +1093,7 @@ fn build_result(
               extensions~,
               shape=child_shape,
               complete_static~,
+              types~,
             ),
           )
         }
@@ -949,6 +1121,7 @@ fn build_result(
         extensions~,
         shape=child_shape,
         complete_static~,
+        types~,
       )
       let collected = if is_accum {
         match collector_here(cells, path, seg) {
@@ -1501,6 +1674,9 @@ fn build_result_export(
 ) -> @abi.ResultValue {
   let projected = apply_export_keys(active_link_bindings(binds), ek)
   command_projection_bindings(sc, binds, [], [], ek, projected)
+  let declared_types : Array[TypeSeat] = []
+  collect_type_seats(sc, [], declared_types)
+  let types = apply_export_to_types(declared_types, ek)
   build_result(
     projected,
     accum_cells(sc, ek, binds),
@@ -1510,6 +1686,7 @@ fn build_result_export(
     extensions~,
     shape=Some(ek),
     complete_static~,
+    types~,
   )
 }
 
@@ -3309,6 +3486,151 @@ fn resolve_entity_raw(
           "unreachable: a @abi.Remove/@abi.Splice piece only fires for a multiple(merge) entity (DR-080 §1) — this is the scalar (non-multiple) fold",
         )
       }
+      // DR-127 §4.1 — 値空間残余の座への操作。共有 fold の座の中を segment 列で部分更新し、
+      // 下流 carrier はセル全体の複合値で作り直す。解決失敗はその枝の Reject だが、裁定前の
+      // 枝ローカル判定 (DR-127 §4.2、W2-8) が入るまでは resolve 相の Err として表面化する
+      // (単枝では「他に成立する解釈が無ければ全体パース失敗」(§4) と同じ観測になる)。
+      if b.value_residual.length() > 0 {
+        let registry = extensions.extensions()
+        let declared = e.ty.output_type()
+        let container_present = seats.value_at(e.name, []) is Ok(_)
+        let residual_pos = match b.at_pos {
+          Some(pos) => pos
+          None => at_pos
+        }
+        // DR-114 §7 の ctx.old を座の現在値から供給する。record の宣言済み欠落座は論理 null
+        // (DR-130 §4.1)、器そのものが無い座 (未 vivify) は absent。
+        let old : @abi.Value? = if container_present {
+          match
+            seats.value_at_declared(
+              e.name,
+              b.value_residual,
+              declared,
+              registry,
+            ) {
+            Ok(value) => Some(value)
+            Err(_) => None
+          }
+        } else {
+          None
+        }
+        let (transition, old_consulted) = fold_seat_effect(
+          b,
+          old,
+          e.name,
+          extensions,
+        )
+        match transition {
+          NoChange => ()
+          FnMissing(name) =>
+            return Err(
+              ladder_err(
+                e.name,
+                residual_pos,
+                "unknown-vocab",
+                "cell fn '" + name + "' is not registered",
+                epath,
+              ),
+            )
+          FnFailed({ reason, message, .. }) =>
+            return Err(ladder_err(e.name, residual_pos, reason, message, epath))
+          // DR-127 §4.1 / DR-131 §7: Sentinel 返し (default / empty) と op=default/empty の
+          // 値残余座への適用は発火時 Reject。座は退化セル — set と Value 返し fn だけを受ける。
+          ToDefault | ToEmpty =>
+            return Err(
+              ladder_err(
+                e.name,
+                residual_pos,
+                "invalid-range",
+                "a sentinel operation cannot apply to a value-space seat of '" +
+                e.name +
+                "' (DR-127 §4.1: the seat accepts set and Value-returning fns only)",
+                epath,
+              ),
+            )
+          ToValue(value) => {
+            // DR-127 §3.2: fn 戻り値も座のフィールド type の out への適合検査を通る
+            // (set の operand はフィールド type のパーサを通過済みなので二重検査しない)。
+            if b.op is @abi.Invoke(invocation) && !(value is @abi.Null) {
+              match
+                residual_terminal_out(declared, b.value_residual, registry) {
+                Some(out) =>
+                  match
+                    @extension.seat_fn_output_breach(
+                      value,
+                      out,
+                      invocation.name,
+                      registry,
+                    ) {
+                    Some((reason, message)) =>
+                      return Err(
+                        ladder_err(e.name, residual_pos, reason, message, epath),
+                      )
+                    None => ()
+                  }
+                None => ()
+              }
+            }
+            if value is @abi.Null && !container_present {
+              // DR-131 §7: `unset` (null 返し) は ctx.old を要さず空座でも成立する。座は
+              // 論理 null のまま (DR-130 §4.1)、器は作らない (vivify は set 専用、DR-127 §3)
+              // — セルは未 commit のままラダーへ落ちる。
+              ()
+            } else {
+              match
+                seats.set_at_declared(
+                  e.name,
+                  b.value_residual,
+                  value,
+                  declared,
+                  registry,
+                  // DR-127 §3: vivify (器 `{}` の生成) は set (部分書き) 専用の op gate。
+                  vivify=b.op is @abi.Set,
+                ) {
+                Ok(_) => {
+                  committed_now = true
+                  let composite = match seats.value_at(e.name, []) {
+                    Ok(current_value) => current_value
+                    Err(_) =>
+                      abort(
+                        "unreachable: set_at_declared succeeded so the seat holds a value",
+                      )
+                  }
+                  current = Some({
+                    ..b,
+                    op: @abi.Set,
+                    value: composite,
+                    value_residual: [],
+                  })
+                }
+                Err(fault) => {
+                  let hint = if !container_present && old_consulted {
+                    " (a Value fn that reads ctx.old cannot apply to an empty seat — DR-127 §3)"
+                  } else if !container_present {
+                    " (the seat's container is absent and vivify is set-only — DR-127 §3)"
+                  } else {
+                    ""
+                  }
+                  return Err(
+                    ladder_err(
+                      e.name,
+                      residual_pos,
+                      "invalid-range",
+                      "the value-space seat of '" +
+                      e.name +
+                      "' did not resolve: " +
+                      seat_fault_message(fault) +
+                      hint,
+                      epath,
+                    ),
+                  )
+                }
+              }
+            }
+          }
+        }
+        continue
+      }
       // 席が開いた座の `old` は **宣言 default** であって、ラダー解決済みの値ではない。
       // DR-077 §1: 「old は CLI 席内の畳みの現在値 (初回は default 起点)。値源ラダー (DR-031) は
       // 『席の独立解決 + 選択』であって合成ではないので、他席 (env / config) の値は old に
@@ -3318,7 +3640,7 @@ fn resolve_entity_raw(
       // (「上位ラダー席まで解決した現在値」) であり、ここは effect mode (「発火直前の cell 値」)。
       // 下の `default_seat` が ladder を引くのは `default` 効果が明示発火した場合に限る (DR-081 §2)。
       let old = seats.old(e.name, default_scalar(e))
-      let transition = fold_seat_effect(b, old, e.name, extensions)
+      let (transition, _) = fold_seat_effect(b, old, e.name, extensions)
       // REFERENCE の `cell_fns` 表 (`empty` 行): `Sentinel(Empty)` は **array / map / record を
       // committed=true で空にする** fn であり、scalar 等を target にした定義は definition-error
       // `invalid-range` である。collection セルはこの関数の冒頭で `resident.resolve_cli` へ抜けて

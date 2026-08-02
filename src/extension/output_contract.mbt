@@ -295,6 +295,72 @@ pub fn output_contract_breach(
 }
 
 ///|
+/// Whether a value satisfies one declared value type (no diagnostic). The projection layer's
+/// record null補形 (DR-130 §4.1) uses this to pick the union variant a value structurally
+/// matches before enumerating that variant's declared fields.
+pub fn value_conforms(
+  value : @abi.Value,
+  declared : @abi.ValueType,
+  extensions : Registry,
+) -> Bool {
+  value_type_breach(value, declared, "$", extensions) is None
+}
+
+///|
+/// DR-127 §3.2 — the value a cell fn returns into a value-space seat must satisfy the seat's
+/// field-type `out`, the same conformance a set operand gets by parsing through the field type.
+/// Reuses the DR-126 §4 breach vocabulary (reason strings) with the fn as the producer.
+/// Returns `(reason, message)` for the caller's ParseError, or None when the value conforms.
+pub fn seat_fn_output_breach(
+  value : @abi.Value,
+  declared : @abi.ValueType,
+  fn_name : String,
+  extensions : Registry,
+) -> (String, String)? {
+  match value_type_breach(value, declared, "$", extensions) {
+    None => None
+    Some(Shape(path, detail)) =>
+      Some(
+        (
+          "output_shape_mismatch",
+          "cell fn '" + fn_name + "' returned " + detail + " at " + path,
+        ),
+      )
+    Some(FieldType(path, detail)) =>
+      Some(
+        (
+          "field_type_mismatch",
+          "cell fn '" + fn_name + "' returned " + detail + " at " + path,
+        ),
+      )
+    Some(Undeclared(path, field)) =>
+      Some(
+        (
+          "undeclared_field",
+          "cell fn '" +
+          fn_name +
+          "' returned key '" +
+          field +
+          "' that the seat's record declaration does not name, at " +
+          path,
+        ),
+      )
+    Some(Duplicate(path, field)) =>
+      Some(
+        (
+          "duplicate_field",
+          "cell fn '" +
+          fn_name +
+          "' returned key '" +
+          field +
+          "' more than once at " +
+          path,
+        ),
+      )
+  }
+}
+
+///|
 /// `parse_token` with DR-126 §4 applied. Every runtime seat that turns a token into a cell value
 /// goes through here, so a resident whose output contradicts its own declaration surfaces as a held
 /// Error at the seat that produced it instead of flowing on as a cell value.
