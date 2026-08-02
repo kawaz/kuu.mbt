@@ -13,15 +13,32 @@
 // end of this file.
 
 ///|
-/// A resolved value that can land in the result object.
+/// A resolved value that can land in the result object. `Array`/`Object` are the composite
+/// containers DR-127 §2.2 needs for the value-space residual: a cell whose value is itself a
+/// tree that a fixed link path can descend into and write a seat of.
+///
+/// Design rationale (DR-130 §9.1): this shape now spells the same as `ConfigVal` below, but the
+/// two types stay separate. `ConfigVal::Null` means "this config seat supplies nothing" (DR-050),
+/// a layer above the value space; `Value::Null` means "the value is null". A config null never
+/// flows into the value space as `null` — `config_to_value`
+/// (`src/extension/config_value.mbt`) is the single place that guards the crossing, and folding
+/// the two types together would erase that asymmetry from the type level and leave the guard with
+/// nothing to guard.
 pub(all) enum Value {
   Null
   String(String)
   Number(Double)
   Bool(Bool)
+  Array(Array[Value])
+  Object(Array[(String, Value)])
 } derive(Eq, Debug)
 
 ///|
+/// The scalar spelling of a value. Composites have none: every call site sits either on the
+/// declaration path (default literals / enum values / help rendering), where DR-130 §3.1 keeps
+/// composite literals out, or on a runtime cell path that is scalar by construction because no
+/// producer builds a composite yet. `docs/findings/2026-08-02-w2-3-value-composite-inventory.md`
+/// enumerates both sets and the argument that each abort is unreachable.
 pub fn value_str(value : Value) -> String {
   match value {
     Null => abort("null has no scalar string representation")
@@ -35,6 +52,8 @@ pub fn value_str(value : Value) -> String {
         number.to_string()
       }
     }
+    Array(_) => abort("an array value has no scalar string representation")
+    Object(_) => abort("an object value has no scalar string representation")
   }
 }
 
@@ -248,6 +267,9 @@ pub fn value_to_configval(v : Value) -> ConfigVal {
     String(s) => String(s)
     Number(d) => Number(d)
     Bool(b) => Bool(b)
+    Array(items) => Array(items.map(value_to_configval))
+    Object(fields) =>
+      Object(fields.map(fn(f) { (f.0, value_to_configval(f.1)) }))
   }
 }
 

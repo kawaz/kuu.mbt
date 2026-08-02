@@ -351,6 +351,8 @@ pub(all) enum Value {
   String(String)
   Number(Double)
   Bool(Bool)
+  Array(Array[Value])
+  Object(Array[(String, Value)])
 } derive(Eq, @debug.Debug)
 
 pub(all) enum ValueType {
