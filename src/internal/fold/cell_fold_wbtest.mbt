@@ -189,20 +189,29 @@ fn fold_test_registry() -> @extension.Registry {
 }
 
 ///|
-/// 保証 (DR-045 / DR-131 §2b, §7): 共有 fold は直接操作を値状態の遷移へ全列挙で写す。
-/// `unset` の旧 op carrier も通常値 null と同じ `ToValue(Null)` に正規化し、`default` / `empty`
-/// はそれぞれ default 席 / committed な空へ遷移する。`splice` は accumulator piece のため
-/// scalar 座の値状態を変えない。これは lowering の到達性ではなく fold 自体の遷移表を固定する単体 pin。
-test "fold_seat_effect: 直接操作を SeatTransition へ全列挙する (DR-045 / DR-131)" {
+/// 保証 (DR-045 / DR-080 §2 / DR-131 §7): 共有 fold は現行の直接操作語彙を値状態の遷移へ
+/// 全列挙で写す。`set` / `remove` は operand を座らせ、`default` / `empty` は default 席 / committed
+/// な空へ遷移し、`splice` は accumulator piece のため scalar 座の値状態を変えない。DR-131 §6 で
+/// 廃止された直接 `Unset` carrier はここで規範化せず、正規経路の `Invoke(unset) → Value(null)` を別 test が固定する。
+test "fold_seat_effect: 現行の直接操作を SeatTransition へ全列挙する (DR-045 / DR-080 / DR-131)" {
   let registry = @extension.Registry::new()
-  let (unset, unset_old) = fold_seat_effect(
-    fold_test_binding(@abi.Unset),
+  let (set, set_old) = fold_seat_effect(
+    fold_test_binding(@abi.Set),
     None,
     "cell",
     registry,
   )
-  assert_true(unset is ToValue(@abi.Null))
-  assert_false(unset_old)
+  assert_true(set is ToValue(@abi.Bool(false)))
+  assert_false(set_old)
+
+  let (remove, remove_old) = fold_seat_effect(
+    fold_test_binding(@abi.Remove),
+    None,
+    "cell",
+    registry,
+  )
+  assert_true(remove is ToValue(@abi.Bool(false)))
+  assert_false(remove_old)
 
   let (use_default, default_old) = fold_seat_effect(
     fold_test_binding(@abi.EffectOp::Default),
@@ -233,53 +242,91 @@ test "fold_seat_effect: 直接操作を SeatTransition へ全列挙する (DR-04
 }
 
 ///|
-/// 保証 (DR-114 §2 / §7、DR-131 §2b / §7): `Invoke` は registry resident を共有 fold の中で
-/// 一度だけ発火し、Value(null) / UseDefault / Empty を直接操作と同じ遷移へ落とす。未知名と resident
-/// failure は座を変えない失敗遷移として区別し、現行 lowering が先に弾く経路にも fold 単体の防衛網を持つ。
-test "fold_seat_effect: Invoke の Value/Sentinel/未知名/失敗を全分類する (DR-114 / DR-131)" {
+/// 保証 (DR-114 §2 / §7、DR-127 §3、DR-131 §2b / §7): `Invoke` は registry resident を共有
+/// fold の中で一度だけ発火し、非 null Value / Value(null) / UseDefault / Empty を分類する。失敗は
+/// registry 不在、observes 具体化失敗、resident 本体失敗を区別し、`ctx.old()` の参照事実も返す。
+test "fold_seat_effect: Invoke の出力・失敗段・old 参照を全分類する (DR-114 / DR-127 / DR-131)" {
   let registry = fold_test_registry()
   let invoke = fn(name : String, args : Array[String]) {
     fold_test_binding(@abi.Invoke({ name, args }))
   }
 
-  // unset resident は ordinary Value(null) を返すため、旧 Unset op と同じ席開放遷移になる。
-  let (unset, _) = fold_seat_effect(invoke("unset", []), None, "cell", registry)
-  assert_true(unset is ToValue(@abi.Null))
+  // incr は発火直前の old=4 を読み、非 null Value(5) を返す。old_consulted=true が空座 Reject の根拠。
+  let (incremented, increment_old) = fold_seat_effect(
+    invoke("incr", []),
+    Some(@abi.Number(4.0)),
+    "cell",
+    registry,
+  )
+  assert_true(incremented is ToValue(@abi.Number(5.0)))
+  assert_true(increment_old)
 
-  // default / empty resident の Sentinel は fold 境界で対応する直接操作へ正規化される。
-  let (use_default, _) = fold_seat_effect(
+  // unset resident は ordinary Value(null) を返して席を開くが、old は参照しない。
+  let (unset, unset_old) = fold_seat_effect(
+    invoke("unset", []),
+    None,
+    "cell",
+    registry,
+  )
+  assert_true(unset is ToValue(@abi.Null))
+  assert_false(unset_old)
+
+  // default / empty resident の Sentinel は対応する直接操作へ正規化され、old は参照しない。
+  let (use_default, default_old) = fold_seat_effect(
     invoke("default", []),
     None,
     "cell",
     registry,
   )
   assert_true(use_default is ToDefault)
-  let (empty, _) = fold_seat_effect(invoke("empty", []), None, "cell", registry)
+  assert_false(default_old)
+  let (empty, empty_old) = fold_seat_effect(
+    invoke("empty", []),
+    None,
+    "cell",
+    registry,
+  )
   assert_true(empty is ToEmpty)
+  assert_false(empty_old)
 
   // registry に無い名前は FnMissing。座の値状態を変更する遷移へ化けない。
-  let (missing, _) = fold_seat_effect(
+  let (missing, missing_old) = fold_seat_effect(
     invoke("not-registered", []),
     None,
     "cell",
     registry,
   )
   assert_true(missing is FnMissing("not-registered"))
+  assert_false(missing_old)
 
-  // env resident は観測先が無いと reject する。失敗理由を保持した FnFailed で返す。
-  let (failed, _) = fold_seat_effect(
+  // env の必須引数欠落は observes の具体化段で失敗し、resident 本体へ進まない。
+  let (observes_failed, observes_old) = fold_seat_effect(
+    invoke("env", []),
+    None,
+    "cell",
+    registry,
+  )
+  match observes_failed {
+    FnFailed(reason) => assert_eq(reason.reason, "invalid-argument")
+    _ => fail("missing env argument must fail while concretizing observes")
+  }
+  assert_false(observes_old)
+
+  // observes が具体化できても供給元が無ければ resident 本体が reject し、理由を保持する。
+  let (invoke_failed, invoke_old) = fold_seat_effect(
     invoke("env", ["MISSING"]),
     None,
     "cell",
     registry,
   )
-  match failed {
+  match invoke_failed {
     FnFailed(reason) => {
       assert_eq(reason.disposition, @abi.RecognizedButInvalid)
       assert_eq(reason.reason, "absent-source")
     }
     _ => fail("missing env source must remain a classified FnFailed transition")
   }
+  assert_false(invoke_old)
 }
 
 ///|
