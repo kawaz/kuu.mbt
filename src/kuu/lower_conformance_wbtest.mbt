@@ -649,6 +649,8 @@ fn proj_scope(sc : @engine.Scope, reg : Map[String, @engine.Node]) -> LSec {
 fn canonical_registry_for_test() -> @node.Registry {
   let registry = @node.Registry::new()
   install_canonical(registry)
+  // DR-132 §1: the conformance execution context must resolve `fixture/*` residents.
+  install_conformance_fixture_residents(registry)
   registry
 }
 
@@ -714,6 +716,8 @@ fn registry_with_installers(
   for descriptor in @builtins.cell_fn_descriptors() {
     ignore(registry.register_cell_fn(descriptor))
   }
+  // DR-132 §1: fixture corpus 横断の decode (順列不変検査) も conformance 実行文脈。
+  install_conformance_fixture_residents(registry)
   registry
 }
 

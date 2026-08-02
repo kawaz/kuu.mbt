@@ -132,7 +132,28 @@ fn json_to_value(json : Json) -> @abi.Value raise DecodeSkip {
     Some(value) => return @abi.Number(value)
     None => ()
   }
-  raise DecodeSkip("non-scalar value in effects/result")
+  // DR-132 §4: composite values appear in effects operands (raw producer output, pre-null-fill).
+  match json.j_arr() {
+    Some(items) => {
+      let values : Array[@abi.Value] = []
+      for item in items {
+        values.push(json_to_value(item))
+      }
+      return @abi.Array(values)
+    }
+    None => ()
+  }
+  match json.j_obj() {
+    Some(object) => {
+      let entries : Array[(String, @abi.Value)] = []
+      for key, value in object {
+        entries.push((key, json_to_value(value)))
+      }
+      return @abi.Object(entries)
+    }
+    None => ()
+  }
+  raise DecodeSkip("undecodable value in effects/result")
 }
 
 ///|
@@ -231,10 +252,24 @@ fn render_val(v : @abi.Value) -> String {
         }
       }
     }
-    // A composite operand has no conformance spelling yet: the fixture vocabulary for value-space
-    // composites lands with the producers (W2-5 / W2-9). Aborting keeps the gap loud.
-    @abi.Array(_) | @abi.Object(_) =>
-      abort("no conformance spelling for a composite value operand yet")
+    // DR-132 §4: composite operands are compared structurally — arrays keep order, object key
+    // order is non-normative (sorted render), and a missing key stays distinct from an explicit
+    // null (DR-130 §8.1 applies inside operand objects too: presence is part of the spelling).
+    @abi.Array(vs) => {
+      let items : Array[String] = []
+      for v2 in vs {
+        items.push(render_val(v2))
+      }
+      "[" + join_comma(items) + "]"
+    }
+    @abi.Object(kvs) => {
+      let items : Array[String] = []
+      for kv in kvs {
+        items.push(kv.0 + "=" + render_val(kv.1))
+      }
+      sort_items(items)
+      "{" + join_comma(items) + "}"
+    }
   }
 }
 
@@ -342,6 +377,8 @@ fn eff_op(op : @abi.EffectOp) -> String {
 fn canonical_registry_for_test() -> @node.Registry {
   let registry = @node.Registry::new()
   install_canonical(registry)
+  // DR-132 §1: the conformance execution context must resolve `fixture/*` residents.
+  install_conformance_fixture_residents(registry)
   registry
 }
 
@@ -1136,7 +1173,11 @@ fn expected_def_errors_str(expected : Array[DExpectedDefError]) -> String {
 
 ///|
 fn run_definition_error(fx : DDefErrorFixture, c : DDefErrorCase) -> String {
-  match @kuu.parse_definition(fx.definition) {
+  match
+    @kuu.parse_definition(
+      fx.definition,
+      extensions=canonical_registry_for_test(),
+    ) {
     Ok(_) => "EXPECTED-DEFINITION-ERROR got=ok"
     Err(@kuu.Malformed(reason)) =>
       "EXPECTED-DEFINITION-ERROR got=malformed:" + reason
@@ -1458,7 +1499,8 @@ fn dec_complete_fixture(j : Json) -> DCompleteFixture raise DecodeSkip {
     Some(d) => d
     None => raise DecodeSkip("missing 'definition'")
   }
-  let ast = match @kuu.parse_definition(defj) {
+  let ast = match
+    @kuu.parse_definition(defj, extensions=canonical_registry_for_test()) {
     Ok(value) => value
     Err(@kuu.Malformed(reason)) => raise DecodeSkip(reason)
     Err(@kuu.Rejected(errors)) =>
@@ -1573,7 +1615,8 @@ fn dec_help_fixture(j : Json) -> DHelpFixture raise DecodeSkip {
     Some(value) => value
     None => raise DecodeSkip("help fixture missing 'definition'")
   }
-  let ast = match @kuu.parse_definition(definition) {
+  let ast = match
+    @kuu.parse_definition(definition, extensions=canonical_registry_for_test()) {
     Ok(value) => value
     Err(@kuu.Malformed(reason)) => raise DecodeSkip(reason)
     Err(@kuu.Rejected(errors)) =>
@@ -2040,7 +2083,8 @@ fn dec_fixture(j : Json) -> DecodedFixture raise DecodeSkip {
   // MDR-005 §2 ドッグフーディング: definition の wire decode + lowering は production の
   // parse_definition (front_door.mbt) をそのまま使う — decode の挙動が変われば conformance が
   // 即座に検出する。
-  let ast = match @kuu.parse_definition(defj) {
+  let ast = match
+    @kuu.parse_definition(defj, extensions=canonical_registry_for_test()) {
     Ok(a) => a
     Err(@kuu.Malformed(reason)) => raise DecodeSkip(reason)
     Err(@kuu.Rejected(errs)) =>

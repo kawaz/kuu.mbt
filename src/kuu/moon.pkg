@@ -7,6 +7,7 @@ import {
   "kawaz/kuu/builtins",
   "moonbitlang/core/string",
   "moonbitlang/core/debug",
+  "moonbitlang/core/json",
 }
 
 import {

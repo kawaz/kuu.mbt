@@ -31,6 +31,10 @@ pub fn dispatch_help_query(AtomicAST, path? : Array[String], depth? : HelpDepth,
 
 pub fn env_from_map(Map[String, String]) -> (String) -> String?
 
+pub fn fixture_int_range_type() -> &@extension.TypeExt
+
+pub fn fixture_json_type() -> &@extension.TypeExt
+
 pub fn generate_completion_script(String, program_name~ : String, binary~ : String, uuid~ : String) -> Result[String, CompletionScriptError]
 
 pub fn help(AtomicAST, path? : Array[String], depth? : HelpDepth, category_mode? : HelpCategoryMode) -> Result[HelpModel, HelpQueryError]
@@ -38,6 +42,8 @@ pub fn help(AtomicAST, path? : Array[String], depth? : HelpDepth, category_mode?
 pub fn help_query_capability() -> &@extension.CapabilityExt
 
 pub fn install_canonical(@kuu-node.Registry) -> Unit
+
+pub fn install_conformance_fixture_residents(@kuu-node.Registry) -> Unit
 
 pub fn install_vocabulary(@kuu-node.Registry) -> Unit
 

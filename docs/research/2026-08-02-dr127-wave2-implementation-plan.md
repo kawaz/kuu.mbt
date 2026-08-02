@@ -149,14 +149,14 @@ Stage E を後半に置いていたのは効きが悪い。前倒しする。
 
 | # | fixture | 段 | 状態 |
 |---|---|---|---|
-| (1) | セル降下 (兄弟スコープの子への合流) | **W2-1** | 実装済・未 pin (債務) |
-| (2) | 値残余 (不透明複合値のフィールド書き) | W2-7 | 未着手 |
-| (3) | 負 index | 静的分 W2-6 / 実行時分 W2-8 | 静的分 (W2-6)・実行時分 (W2-8、現在長解決 / 範囲外 Reject / args_pos 帰属) とも wbtest pin 済み。conformance fixture は構造 out を名乗る builtin type 不在のため (6) と同じく **DR-132 実装窓 (#136) で移送** |
-| (4) | 値残余 absent → 枝 Reject → 他枝が勝つ | W2-8 | wbtest pin 済み (兄弟枝が勝つ / 全枝落ち + 原因合成)。conformance fixture は **DR-132 実装窓 (#136) で移送** |
-| (5) | 時系列上書き (部分書き ⇄ parser 産出、逆順両方) | W2-7 | 未着手 |
-| (6) | sources の座 re-tag | W2-9 | 座単位 re-tag の実装・wbtest pin 済み (W2-9)。conformance fixture は record を名乗る builtin type factory 不在のため **DR-132 実装窓 (#136) で移送** |
-| (7) | effects の `path` 表記 | セル空間分 **W2-1** / 値空間分 W2-9 | セル空間分は実装済・未 pin (債務)。値空間分 (解決済み非負 index) は実装・wbtest pin 済み (W2-9)、conformance fixture は **#136 窓で移送** |
-| (8) | nameless 透過子への位置指定着地 | **W2-1** | 実装済・未 pin (債務) |
+| (1) | セル降下 (兄弟スコープの子への合流) | W2-1 | **済** — `fixtures/link-parse/cell-descent.json` |
+| (2) | 値残余 (不透明複合値のフィールド書き) | W2-7 → #136 | **済** — `fixtures/link-parse/value-residual-field-write.json` (vivify + null 補形 + フィールド type operand 判別 + not_an_int_range Reject 位相) |
+| (3) | 負 index | 静的分 W2-6 / 実行時分 W2-8 → #136 | **済** — 実行時分 (現在長解決 / 範囲外 Reject / args_pos 帰属) は `fixtures/link-parse/value-runtime-resolution.json`。静的分 (セル空間) は definition-error 系の既存 pin |
+| (4) | 値残余 absent → 枝 Reject → 他枝が勝つ | W2-8 → #136 | **済** — `fixtures/link-parse/value-absent-branch-reject.json` (セル未確定 / キー不在の両形で兄弟解釈が勝つ) + 全枝落ち合成は value-runtime-resolution.json の failure 3 case |
+| (5) | 時系列上書き (部分書き ⇄ parser 産出、逆順両方) | W2-7 → #136 | **済** — `fixtures/link-parse/value-residual-timeline.json` (DR-127 §4 表 行 3 / 行 4 の両順) |
+| (6) | sources の座 re-tag | W2-9 → #136 | **済** — `fixtures/link-parse/value-residual-timeline.json::producer-then-field-write-retags-seat` |
+| (7) | effects の `path` 表記 | セル空間分 W2-1 / 値空間分 W2-9 → #136 | **済** — セル空間分は `effects-cell-path.json` / `nameless-index-target.json`、値空間分 (解決済み非負 index) は `value-runtime-resolution.json::negative-index-resolves-at-fire-time` |
+| (8) | nameless 透過子への位置指定着地 | W2-1 | **済** — `fixtures/link-parse/nameless-index-target.json` |
 
 **ロックステップ規律**: `just test` はローカルで隣接 spec リポの `fixtures/` を live 参照し、CI は spec を
 SHA-pin する (`.github/workflows/ci.yml`)。両台帳が空 = 完全適合なので、実装が追いつく前に spec へ
