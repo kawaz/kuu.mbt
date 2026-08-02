@@ -130,6 +130,32 @@ parse だけで完結する公開 API)。したがって `default` 効果の落�
 本段の「挙動完全不変」と噛み合わない。**未検証のまま残す部分ではなく、構造的に閉じられないと
 分かっている残差**として記録する。W2-9 の観測面仕上げで公開 API ごと判断するのが妥当。
 
+**射程はここだけである。** 「効果がまだ無い / `unset` で開いた座」のベースラインは env / config を
+引かないので、両 fold はそこで元から一致している (次節)。
+
+### 3.2.1 席が開いた座の old は宣言 default — ここは残差ではない
+
+DR-077 §1 が名指しで規定する:
+
+> **old は CLI 席内の畳みの現在値** (初回は default 起点)。値源ラダー (DR-031) は「席の独立解決 +
+> 選択」であって合成ではないので、他席 (env / config) の値は old に参加しない — 例: `VERBOSITY=5`
+> \+ CLI 1 発火は 6 ではなく 1 (CLI 席が 0→1 と畳まれ、ラダーで env に勝つ)
+
+`count-parse/env-coexistence.json::cli-fire-overrides-env` はこの一文の逐語 pin である
+(env `VERBOSITY=5` + `--verbose` → `effects: [{op: set, operand: 1}]` / `result: {verbose: 1}`)。
+DR-077 の `update` op 自体は DR-114 が廃止したが、**old の意味論は DR-114 §7 の effect mode
+「発火直前の cell 値」がそのまま継承している**。
+
+したがって両 fold とも席が開いた座のベースラインは**宣言 default** であり、`resolve_ladder_below_cli`
+を引かないのが正しい。実測でも、resolve 側を full ladder へ変えると当該 case が
+`got={verbose=number:6} want={verbose=number:1}` で落ちる。
+
+**§3.2 の `ToDefault` が full ladder なのと非対称に見えるが、矛盾しない**: `ToDefault` は
+`default` **効果が明示的に発火した**ときの落ち先で、DR-081 §2「op=default はその時点の書き換え済み
+default をセルへ書く」という別の規範が支配する。DR-114 §7 が old を default mode (「上位ラダー席まで
+解決した現在値」) と effect mode (「発火直前の cell 値」) で書き分けているのと同じ切り分けであり、
+**default mode の規定を effect mode に適用しない**ことが両者を分ける鍵である。
+
 ### 3.3 3 つ目の fold が `internal/engine` に居る
 
 `src/internal/engine/eval.mbt` の `is_committed` / `is_committed_in_subtree` /
@@ -174,7 +200,8 @@ write は元の値を変えず差し替え済みの新しい値を作る (`value
    fixture 語彙として存在しうる (count preset に variant を足すだけで書ける) ので、
    W2-5 / W2-9 で複合値の fixture を起こすウィンドウで一緒に落とすのが安い。
 3. **§3.2 の残差は `project_effects` の公開 API 形と一体**。W2-9 が effects の `path` を触るので、
-   同じ段で env/config 供給の要否を判断する。
+   同じ段で env/config 供給の要否を判断する。射程は `default` 効果の落ち先だけで、席が開いた座の
+   ベースライン (§3.2.1) は対象外 — こちらを ladder 化すると DR-077 §1 に反する。
 4. **W2-7 (vivify) は `CellSeats::set_at` の signature と契約を拡張する段**になる。現在の
    `set_at` は「segment 列を辿って既存の座を差し替える」だけで、DR-127 §3 が vivify の条件と
    する 2 つの情報を**受け取っていない**:
@@ -195,6 +222,7 @@ write は元の値を変えず差し替え済みの新しい値を作る (`value
 - spec `docs/decisions/DR-114-universal-fn-integration.md` §7 (`ctx.old` の規範)
 - spec `docs/decisions/DR-131-sentinel-reduction.md` §2b / §7 (`unset` = null Value / `empty` Sentinel)
 - spec `docs/decisions/DR-081-default-seat-rewrite-and-source.md` §2 (op=default の落ち先)
+- spec `docs/decisions/DR-077-update-effect-and-count-normal-form.md` §1 (old は CLI 席内の畳みの現在値、他席は参加しない)
 - spec `docs/decisions/DR-045-effect-descriptors.md` (効果語彙と committed)
 - spec `docs/decisions/DR-127-link-fixed-path-dsl.md` §2.2 / §3 / §6 (値空間降下・vivify・index 正規化)
 - spec `docs/REFERENCE.md` の `cell_fns` 表 (`empty` の target 型規定)
