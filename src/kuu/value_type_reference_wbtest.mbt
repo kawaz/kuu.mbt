@@ -698,11 +698,25 @@ test "code-side declarations enforce union uniqueness and reference lexical form
   )
   assert_eq(count_kind(spelling_errors, @abi.InvalidRange), 1)
   assert_eq(count_kind(spelling_errors, @abi.UnknownVocab), 0)
+  // Case p: one definition error reports every declaration violation in discovery order.
+  let multiple_violations = declared_type(
+    "multiple_violations",
+    Some(@abi.ValueType::Record([("x", "Bad"), ("x", "Worse")])),
+  )
+  let multiple_errors = rejected_type_errors(
+    "{\"options\":[{\"name\":\"value\",\"type\":\"multiple_violations\",\"long\":true}]}",
+    [multiple_violations as &@extension.TypeExt],
+  )
+  assert_eq(multiple_errors.length(), 1)
+  assert_eq(
+    multiple_errors[0].message,
+    "type 'multiple_violations' has an invalid value_type declaration: record field 'x' has invalid type reference 'Bad' at $; record field 'x' is duplicated at $; record field 'x' has invalid type reference 'Worse' at $",
+  )
 }
 
 ///|
 test "shared broken types report independently for every seed element" {
-  // Case p: traversal state is seed-local, while diagnostic dedup includes the element identity.
+  // Case q: traversal state is seed-local, while diagnostic dedup includes the element identity.
   let broken = declared_type(
     "brokenref",
     Some(@abi.ValueType::Record([("x", "nosuch")])),

@@ -4604,7 +4604,7 @@ fn validate_value_type_references(
         "type '" +
         owner +
         "' has an invalid value_type declaration: " +
-        violations[0],
+        violations.join("; "),
         "fix the value_type declaration",
         out,
         diagnostic_keys,
