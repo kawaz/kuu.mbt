@@ -2364,7 +2364,7 @@ fn classify_value_residual(
                 Some(resident) =>
                   if from + 1 == path.segments.length() {
                     return Terminal(
-                      FieldType(canonical_type_reference(spelling)),
+                      FieldType(extensions.canonical_type_reference(spelling)),
                     )
                   } else {
                     match resident.output_type() {
@@ -4529,15 +4529,6 @@ fn check_elem_absent_ref(
 }
 
 ///|
-fn canonical_type_reference(spelling : String) -> String {
-  if spelling.has_prefix("builtin/") {
-    spelling[8:].to_owned()
-  } else {
-    spelling
-  }
-}
-
-///|
 fn type_reference_cycle_path(stack : Array[String], target : String) -> String {
   let mut start = 0
   while start < stack.length() && stack[start] != target {
@@ -4570,7 +4561,7 @@ fn validate_value_type_references(
   diagnostic_keys : Map[String, Bool],
 ) -> Unit {
   let visited : Map[String, Bool] = Map([])
-  let stack : Array[String] = [canonical_type_reference(root_type)]
+  let stack : Array[String] = [extensions.canonical_type_reference(root_type)]
   fn emit(
     element : String,
     kind : DefErrorKind,
@@ -4624,7 +4615,7 @@ fn validate_value_type_references(
       Record(fields) =>
         for entry in fields {
           let (field, spelling) = entry
-          let canonical = canonical_type_reference(spelling)
+          let canonical = extensions.canonical_type_reference(spelling)
           match extensions.resolve_type_reference(spelling) {
             None =>
               emit(
