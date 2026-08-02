@@ -1994,10 +1994,11 @@ test "front_door.output: named or の結果スコープ path は command 無し�
 }
 
 ///|
-/// DR-131 §2b / §6: `unset` は通常の Value fn として null を返し、公開 effect は `set(null)` になる。
-/// parse-only 射影でも binding は CLI 発火そのものなので、`sources` は null 値を供給した `cli` を
-/// 報告する。値源ラダーを走らせる resolve 相とは別に、parse 相の観測だけでこの由来を固定する。
-test "front_door.output: unset の set(null) は parse-only 射影でも cli 由来 (DR-131)" {
+/// DR-131 §2b / §6: `unset` は通常の Value fn として null を返し、parse 相の公開 effect は
+/// `set(null)` / source=cli になる。cell 適用時に null がラダーを開くと、resolve 相の result は
+/// 宣言 default `auto`、sources はその値を供給した `default` になる。parse / resolve の位相を混ぜず、
+/// effects と result/sources の両方を公開 API で固定する。
+test "front_door: unset は parse で set(null)、resolve 後は default 席へ戻る (DR-131)" {
   let src =
     #|{"options":[{"name":"color","type":"string",
     #|  "long":[":set","no:unset","reset:default"],"default":"auto"}]}
@@ -2008,15 +2009,30 @@ test "front_door.output: unset の set(null) は parse-only 射影でも cli 由
       panic()
     }
   }
-  let binds = match parse_legacy(ast, ["--no-color"]) {
-    @engine.Success(bindings) => bindings
-    other => {
-      fail("should parse, got " + render_outcome(other))
+  let parsed = match parse(ast, ["--no-color"]) {
+    ParsedOutcome::Success(bindings) => bindings
+    _ => {
+      fail("unset variant should parse")
       panic()
     }
   }
-  let view = output_legacy(ast, effects=binds)
-  assert_eq(render_rval_sorted(view.sources), "{color=cli}")
+  let effects = parsed.effects(ast)
+  assert_eq(effects.length(), 1)
+  assert_eq(effects[0].entity, "color")
+  assert_eq(effects[0].op, @abi.Set)
+  assert_eq(effects[0].operand, Some(@abi.Null))
+  assert_eq(effects[0].source, @abi.Cli)
+
+  let resolved = match resolve(ast, parsed, ["--no-color"]) {
+    ResolvedOutcome::Success(bindings) => bindings
+    _ => {
+      fail("unset should resolve through the declared default seat")
+      panic()
+    }
+  }
+  let view = output(ast, resolved)
+  assert_eq(render_rval_sorted(view.result), "{color=auto}")
+  assert_eq(render_rval_sorted(view.sources), "{color=default}")
 }
 
 ///|
