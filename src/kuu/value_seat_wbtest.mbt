@@ -86,6 +86,22 @@ fn seat_registry() -> @node.Registry {
   ) else {
     abort("duplicate test cell fn: stringy")
   }
+  // 監査 M2 用: ctx.old を読んでから null を返す Value fn — 空座で「old を要する」と
+  // 「null 返し (unset 形)」が交差するケースを露出させる。
+  guard registry.register_cell_fn(
+    @extension.cell_fn_descriptor(
+      "peeky",
+      [],
+      @extension.CellFnOutput::Value,
+      @extension.FnFallibility::Total,
+      run=fn(_, ctx) {
+        let _ = ctx.old()
+        Ok(@extension.FnOutput::Value(@abi.Null))
+      },
+    ),
+  ) else {
+    abort("duplicate test cell fn: peeky")
+  }
   registry
 }
 
@@ -137,11 +153,12 @@ fn seat_view(src : String, args : Array[String]) -> String raise {
     }
   }
   let view = output_legacy(ast, effects=parse_binds, resolved=effects)
+  // DR-045: 効果は args 出現順の操作列 — effects の表明は sort せず順序込みで行う
+  // (統括裁定 2026-08-02、時系列 test の観測面)。
   let eff_items : Array[String] = []
   for effect in view.effects {
     eff_items.push(wbtest_effect_address(effect))
   }
-  test_sort_items(eff_items)
   "result=" +
   render_rval_sorted(view.result) +
   " sources=" +
@@ -179,12 +196,14 @@ fn seat_failure(src : String, args : Array[String]) -> String raise {
 const SEAT_SRC : String =
   #|{"options":[
   #|  {"name":"tr","type":"trange","long":true},
-  #|  {"name":"until","type":"string","long":true,"link":"tr.until"},
+  #|  {"name":"until","type":"string","long":true,"short":"u","link":"tr.until"},
   #|  {"name":"since","type":"string","long":true,"link":"tr.since"},
   #|  {"name":"bump","long":[":incr"],"link":"tr.until"},
   #|  {"name":"clear","long":[":unset"],"link":"tr.until"},
   #|  {"name":"reset","long":[":default"],"link":"tr.until"},
-  #|  {"name":"wreck","long":[":stringy"],"link":"tr.until"}
+  #|  {"name":"wreck","long":[":stringy"],"link":"tr.until"},
+  #|  {"name":"seven","long":[":set:7"],"link":"tr.until"},
+  #|  {"name":"peek","long":[":peeky"],"link":"tr.until"}
   #|]}
 
 ///|
@@ -203,7 +222,7 @@ test "DR-127 §4 行1: 部分書きが器を vivify し、欠落座は null 補�
 test "DR-127 §4 行2: 座ごとに set 更新" {
   assert_eq(
     seat_view(SEAT_SRC, ["--until", "5", "--since", "3"]),
-    "result={tr={since=3,until=5}} sources={tr={since=link,until=link}} effects=tr.since,tr.until",
+    "result={tr={since=3,until=5}} sources={tr={since=link,until=link}} effects=tr.until,tr.since",
   )
 }
 
@@ -212,7 +231,7 @@ test "DR-127 §4 行2: 座ごとに set 更新" {
 test "DR-127 §4 行3: parser 産出の丸ごと置換" {
   assert_eq(
     seat_view(SEAT_SRC, ["--until", "9", "--tr", "1..5"]),
-    "result={tr={since=1,until=5}} sources={tr={since=cli,until=cli}} effects=tr,tr.until",
+    "result={tr={since=1,until=5}} sources={tr={since=cli,until=cli}} effects=tr.until,tr",
   )
 }
 
@@ -231,7 +250,7 @@ test "DR-127 §4 行4: 産出の上への座更新" {
 test "DR-131 §2b: set(null) は座を null へ戻す (器は保つ)" {
   assert_eq(
     seat_view(SEAT_SRC, ["--tr", "1..5", "--clear"]),
-    "result={tr={since=1,until=null}} sources={tr={since=link,until=link}} effects=tr,tr.until",
+    "result={tr={since=1,until=null}} sources={tr={since=link,until=null}} effects=tr,tr.until",
   )
 }
 
@@ -349,4 +368,73 @@ test "effects の operand は null 補形しない (生出力のまま)" {
   // operand は {since: 1} のまま — until キーは補形されない。result 側は補形済み。
   assert_eq(seat_operand, Some(@abi.Object([("since", @abi.Number(1))])))
   assert_eq(render_rval_sorted(view.result), "{tr={since=1,until=null}}")
+}
+
+///|
+/// 監査 M2 (DR-127 §3): 空の座で `ctx.old()` を読んだ Value fn は、戻り値が null でも Reject —
+/// 「ctx.old を要する」の判定は参照事実で、返した値が偶然成立形 (unset の null) と同綴りでも
+/// Reject の理由は消えない。器がある座では同じ fn が成立する (交差の pin)。
+test "DR-127 §3: old を読んで null を返す fn も空座では Reject" {
+  let failure = seat_failure(SEAT_SRC, ["--peek"])
+  assert_true(failure.contains("invalid-range"))
+  assert_true(failure.contains("ctx.old"))
+  // 器があれば同じ fn は成立する (null を座へ書く = set(null) と同じ着地)。
+  assert_eq(
+    seat_view(SEAT_SRC, ["--tr", "1..5", "--peek"]),
+    "result={tr={since=1,until=null}} sources={tr={since=link,until=null}} effects=tr,tr.until",
+  )
+}
+
+///|
+/// 監査 M3 (DR-127 §3.2): `:set:VALUE` variant の literal も**フィールド側 type の
+/// pieceProcessor を実際に通す** — string を宣言する entry の `:set:7` が着地座の number
+/// パーサで読まれて Number(7) として座る (out 適合検査は parser 実行の代替ではない)。
+test "DR-127 §3.2: variant literal はフィールド type のパーサで decode される" {
+  assert_eq(
+    seat_view(SEAT_SRC, ["--seven"]),
+    "result={tr={since=null,until=7}} sources={tr={since=null,until=link}} effects=tr.until",
+  )
+}
+
+///|
+/// 監査 M4 (DR-126 §1): フィールド参照が指すのは registry の canonical 実体そのもの —
+/// definitions.types の shadow (送信元 entry の parse 設定) をフィールド type へ再適用しない。
+/// 送信元の "number" は base prefix opt-in で "0x10" を読めるが、着地座の canonical number は
+/// 同じ literal を拒否する。
+test "DR-126 §1: 送信元 type の shadow/config はフィールド type に再適用しない" {
+  let src =
+    #|{"definitions":{"types":{
+    #|  "number":{"name":"number_parser","config":{"number_allow_base_prefix":true}}
+    #|}},"options":[
+    #|  {"name":"tr","type":"trange","long":true},
+    #|  {"name":"plain","type":"number","long":true},
+    #|  {"name":"hexy","type":"number","long":true,"link":"tr.until"}
+    #|]}
+  let ast = seat_ast(src)
+  // 送信元世界の sanity: shadow された number は base-prefixed literal を読める。
+  match parse_legacy(ast, ["--plain", "0x10"]) {
+    @engine.Success(_) => ()
+    other => {
+      fail(
+        "the shadowed sender number must accept 0x10, got " +
+        render_outcome(other),
+      )
+      panic()
+    }
+  }
+  // 着地座の canonical number (registry 実体、DR-126 §1: shadow されない) は同じ literal を拒否。
+  match parse_legacy(ast, ["--hexy", "0x10"]) {
+    @engine.Success(_) =>
+      fail("the canonical field number must reject a base-prefixed literal")
+    _ => ()
+  }
+}
+
+///|
+/// 監査 m1 (DR-127 §3.2): eq-split / short cluster 入口でも parser identity の差し替えが
+/// 観測できる — string を宣言する entry の operand が着地座の number として座る。
+test "DR-127 §3.2: eq / short 入口でもフィールド type で読む" {
+  let expected = "result={tr={since=null,until=5}} sources={tr={since=null,until=link}} effects=tr.until"
+  assert_eq(seat_view(SEAT_SRC, ["--until=5"]), expected)
+  assert_eq(seat_view(SEAT_SRC, ["-u", "5"]), expected)
 }

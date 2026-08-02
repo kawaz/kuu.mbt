@@ -5,7 +5,7 @@
 > 実装: `src/kuu/cell_fold.mbt` (typed 降下) / `src/kuu/resolve.mbt` (残余分岐 + null 補形) /
 > `src/kuu/front_door.mbt` (effects 射影 + sources 整合) / `src/internal/engine/lowering.mbt`
 > (LinkRoute + parse 差し替え) / `src/abi/value.mbt` (`Binding.value_residual`)。
-> pin: `src/kuu/value_seat_wbtest.mbt` (12 本) + `src/kuu/output_contract_wbtest.mbt` (期待値更新)。
+> pin: `src/kuu/value_seat_wbtest.mbt` (18 本) + `src/kuu/output_contract_wbtest.mbt` (期待値更新)。
 
 ## 判明した事実
 
@@ -25,8 +25,10 @@
   (Long/Eq/Short) にも同じフィールドが通り、`bindings_through_link` が stamp する。
 - **operand のフィールド側 type パース (§3.2) は lowering の型差し替えで実現** — long space
   form / eq-split / short cluster / positional の 4 入口とも、FieldType 終端 entry の
-  parse identity を `LinkRoute.parse_ty` (registry 解決済みフィールド type) に差し替える。
-  `parse_token_checked` 経由なので DR-126 §4 の乖離検査も自動で効く。
+  parse identity を `LinkRoute.parse_ty` (registry 解決済みフィールド type、canonical —
+  送信元 factory config は再適用しない) に差し替える。`parse_token_checked` 経由なので
+  DR-126 §4 の乖離検査も自動で効く。`:set:VALUE` variant literal も normalize 相で同じ
+  差し替えを受ける (示唆節参照)。
 - **「ctx.old を要する fn」は実行時の old() 参照追跡で判定する** — cell fn descriptor には
   old 依存を宣言する席が無い (io_type 席自体が無い)。`FnCtx` に `old_consulted_` を持たせ、
   fn 実行後に参照有無を読む。unset は old を読まず null を返すので空座で成立し、incr は
@@ -55,11 +57,24 @@
 
 ## 実用的な示唆 / 段階実装の残余 (現在形)
 
-- **`:set:VALUE` variant の dsl literal は entry 自身の型で decode される** (normalize 相の
-  `classify_long_form`)。残余座に合わない値は発火時の乖離 Error (`seat_fn_output_breach` を
-  producer="set" で通す) が受け止める — decode 自体をフィールド type で行う静的化は未実装
-  (normalize 相は link 解決前で、やるなら normalize への route 供給が要る)。wbtest
-  「variant literal の out 不適合も発火時に乖離 Error」が現行挙動の pin。
+- **`:set:VALUE` variant の dsl literal もフィールド側 type で decode される** (監査 M3) —
+  `normalize_surface` が route を解決して `resolve_long` へ operand_ty を渡す (sugar 判定
+  (flag/count) は entry 自身の ty のまま)。パース不能な literal は `dsl_operand_value` の
+  String fallback に落ち、発火時の乖離 Error (`seat_fn_output_breach`) が受け止める。
+  wbtest「variant literal はフィールド type のパーサで decode される」(成功) と
+  「variant literal の out 不適合も発火時に乖離 Error」(fallback) が対で pin。
+  alias の `long_override` 由来 variant は entry ty のまま (発火時乖離検査が受ける) —
+  残余の静的化候補。
+- **フィールド参照は registry の canonical 実体** (監査 M4、DR-126 §1) — 送信元 entry の
+  factory config (int_round / bool_config / allow_base_prefix) も definitions.types の
+  shadow も、フィールド type へ再適用しない。4 入口とも parse 差し替え時は configure を
+  bypass する (`value_prim` の canonical gate / eq・short の raw 供給)。
+- **result で null の座は sources でも null** (監査 M1、DR-130 §5) — `align_sources_to_result`
+  の scalar arm が result の `Scalar(Null)` を無条件に sources 側へ写す。set(null) で
+  物理的に書かれた座も同じ (操作の provenance は effects が担う、DR-131 §2b)。
+- **空座で `ctx.old()` を読んだ fn は戻り値が null でも Reject** (監査 M2、DR-127 §3) —
+  「old を要する」の判定は参照事実で、成立形 (unset の null 返し) と同綴りの戻り値でも
+  Reject の理由は消えない。wbtest「old を読んで null を返す fn も空座では Reject」が pin。
 - **Enum body の残余 entry** は enum 値の exact match が消費構造なので parse 差し替えの対象外
   (enum 値は entry 宣言の語彙)。残余座への着地値は同じ発火時乖離検査が受ける。
 - **resident output contract の一般化** (issue `2026-08-02-resident-output-contract-generalization`)
@@ -101,8 +116,8 @@
 
 ## 検証 (2026-08-02 実測)
 
-- `just test`: 682 tests / 682 passed、conformance `decoded=396 ran_cases=889 skipped=0
-  mismatches=0`。known_divergences / expected_skips 両台帳は空のまま。
+- `just test`: 687 tests / 687 passed、conformance `decoded=396 ran_cases=889 skipped=0
+  mismatches=0` (独立監査 M1-M4/m1-m2 反映後も不変)。known_divergences / expected_skips 両台帳は空のまま。
 - `moon check --deny-warn` green、`moon info` 差分は matcher entry の labeled param 追加のみ。
 - 既存 pin 済みエラーメッセージの変更なし (新設メッセージのみ追加)。
 

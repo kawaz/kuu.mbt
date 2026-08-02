@@ -196,6 +196,9 @@ fn resolve_long(
   name : String,
   ty : &TypeExt,
   extensions : Registry,
+  // DR-127 §3.2: 値残余 entry の `:set:VALUE` variant literal はフィールド側 type の
+  // pieceProcessor で読む — sugar 判定 (flag/count) は entry 自身の ty のまま。
+  operand_ty? : &TypeExt = ty,
 ) -> (Array[String], Array[Variant]) {
   match decl {
     Bool(false) => ([], [])
@@ -218,7 +221,7 @@ fn resolve_long(
       let longs : Array[String] = []
       let vars : Array[Variant] = []
       for l in strs {
-        match classify_long_spelling(l, kebab(name), ty, extensions) {
+        match classify_long_spelling(l, kebab(name), operand_ty, extensions) {
           Main(n) => longs.push(n)
           Variant(v) => vars.push(v)
           Invalid(_, _) => ()
@@ -305,7 +308,14 @@ fn value_prim(
   separator? : String? = None,
   merge? : Bool = false,
   kv_map? : Bool = false,
+  canonical? : Bool = false,
 ) -> Node {
+  // DR-127 §3.2 / DR-126 §1: 値残余 entry の operand を読むのはフィールド type の registry
+  // 実体 (canonical) そのもの — 送信元 entry の factory config (int_round / bool_config /
+  // allow_base_prefix) は別の型の宣言であり、フィールド type へ再適用しない。
+  if canonical && separator is None && !merge && !kv_map {
+    return typed_arg(name, ty, piece_filters)
+  }
   let configured = configured_type(
     ty,
     int_round,
@@ -538,7 +548,14 @@ fn kebab(name : String) -> String {
 fn normalize_surface(def : Definition, extensions : Registry) -> Unit {
   let mut i = 0
   while i < def.options.length() {
-    def.options[i] = normalize_option(def.options[i], extensions)
+    // DR-127 §3.2: 値残余 (FieldType 終端) entry の variant literal はフィールド側 type で
+    // decode する。route 解決は def 全体を見るので normalize_option の外で引く。
+    let operand_ty : &TypeExt? = match
+      link_route_fields(def, def.options[i], extensions) {
+      Some(route) => route.parse_ty
+      None => None
+    }
+    def.options[i] = normalize_option(def.options[i], extensions, operand_ty~)
     i = i + 1
   }
   i = 0
@@ -566,11 +583,21 @@ fn normalize_surface(def : Definition, extensions : Registry) -> Unit {
 /// (`ensure_entity` のコメント参照) — 既存の型そのものが情報を運ぶ設計は崩さず、collapse のタイミングだけ
 /// 後ろにずらす。short/eq-split matcher (builtins/matcher_residents.mbt) は `count_type()` を `flag_type() | bool_type()` と並ぶ第 3 の
 /// 非消費挙動として扱う。
-fn normalize_option(e : ElementDef, extensions : Registry) -> ElementDef {
+fn normalize_option(
+  e : ElementDef,
+  extensions : Registry,
+  operand_ty? : &TypeExt? = None,
+) -> ElementDef {
   if e.is_dd {
     normalize_dd_name(e)
   } else {
-    let (longs, vars) = resolve_long(e.long, e.name, e.ty, extensions)
+    let (longs, vars) = resolve_long(
+      e.long,
+      e.name,
+      e.ty,
+      extensions,
+      operand_ty=operand_ty.unwrap_or(e.ty),
+    )
     // flag_type() は bool_type() へ書き換わり `ensure_entity` 到達時には元 flag_type() だったかを判別できなくなる
     // ため、flag preset の default:false (LOWERING §A.5) はこの型差し替えと同じ場所で確定させる
     // (issue group-inner-bool-default-false-duplicate-top-level: plain bool_type() は暗黙 default を
@@ -679,6 +706,7 @@ pub fn element_head(e : ElementDef, ty_override? : &TypeExt? = None) -> Node {
         separator=e.separator,
         merge=e.accumulator == Some("merge"),
         kv_map=e.accumulator == Some("kv_map"),
+        canonical=ty_override is Some(_),
       )
   }
 }
@@ -2036,6 +2064,7 @@ fn inst_long(
                         separator=e.separator,
                         merge=e.accumulator == Some("merge"),
                         kv_map=e.accumulator == Some("kv_map"),
+                        canonical=route.parse_ty is Some(_),
                       ),
                     ]),
                   ),
@@ -2125,12 +2154,18 @@ fn inst_long(
               eq_entry(
                 l,
                 e.name,
-                configured_type(
-                  entry_ty,
-                  e.int_round,
-                  e.bool_config,
-                  allow_base_prefix=e.allow_base_prefix,
-                ),
+                // DR-127 §3.2 / DR-126 §1: 値残余 entry はフィールド type の canonical 実体で
+                // 読む — 送信元の factory config を再適用しない。
+                if route.parse_ty is Some(_) {
+                  entry_ty
+                } else {
+                  configured_type(
+                    entry_ty,
+                    e.int_round,
+                    e.bool_config,
+                    allow_base_prefix=e.allow_base_prefix,
+                  )
+                },
                 e.piece_filters,
                 e.separator,
                 merge=e.accumulator == Some("merge"),
@@ -3012,6 +3047,7 @@ fn inst_short(
       link_target_residual,
       link_additional_levels,
       entry_ty,
+      entry_canonical,
     ) = match link_route_fields(def, e, extensions) {
       Some(route) => {
         // DR-127 §3.2: a value-space residual entry's operand is read by the FIELD-side type.
@@ -3028,6 +3064,7 @@ fn inst_short(
           route.residual,
           route.levels,
           entry_ty,
+          route.parse_ty is Some(_),
         )
       }
       None =>
@@ -3040,6 +3077,7 @@ fn inst_short(
           ([] : Array[ObservationSegment]),
           0,
           e.ty,
+          false,
         )
     }
     let matcher_link_levels = if link_target is Some(_) {
@@ -3065,12 +3103,18 @@ fn inst_short(
         short_entry(
           c,
           e.name,
-          configured_short_type(
-            entry_ty,
-            e.int_round,
-            e.allow_base_prefix,
-            e.bool_config,
-          ),
+          // DR-127 §3.2 / DR-126 §1: 値残余 entry はフィールド type の canonical 実体で読む —
+          // 送信元の factory config を再適用しない。
+          if entry_canonical {
+            entry_ty
+          } else {
+            configured_short_type(
+              entry_ty,
+              e.int_round,
+              e.allow_base_prefix,
+              e.bool_config,
+            )
+          },
           e.piece_filters,
           e.separator,
           deprecated=e.deprecated,

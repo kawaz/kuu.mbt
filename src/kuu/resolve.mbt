@@ -720,6 +720,10 @@ fn align_sources_to_result(
   shadow : @abi.ResultValue,
 ) -> @abi.ResultValue {
   match (result, shadow) {
+    // DR-130 §5: result で null の座は sources でも null。物理的な書き (set(null) = unset) が
+    // あっても同じ — 座に値が無い以上タグを付ける対象が無く、操作の provenance は effects 側が
+    // 担う (DR-131 §2b の観測順序)。
+    (@abi.Scalar(@abi.Null), _) => @abi.Scalar(@abi.Null)
     (@abi.Object(result_fields), @abi.Object(shadow_fields)) => {
       let out : Array[(String, @abi.ResultValue)] = []
       for field in result_fields {
@@ -3549,6 +3553,22 @@ fn resolve_entity_raw(
               ),
             )
           ToValue(value) => {
+            // DR-127 §3: 空の座 (未 vivify) で `ctx.old()` を読んだ Value fn は、戻り値に
+            // 依らず解決失敗 — 「ctx.old を要する fn」の判定は参照事実であって、返した値が
+            // 偶然 null (成立形と同綴り) でも Reject の理由は消えない。
+            if !container_present && old_consulted {
+              return Err(
+                ladder_err(
+                  e.name,
+                  residual_pos,
+                  "invalid-range",
+                  "a Value fn that reads ctx.old cannot apply to an empty value-space seat of '" +
+                  e.name +
+                  "' (DR-127 §3)",
+                  epath,
+                ),
+              )
+            }
             // DR-127 §3.2: 座に座る値の宣言適合は値を運んだ経路で変わらない — fn 戻り値も
             // set の operand も、フィールド type の out への適合検査を通る。main entry の
             // operand はフィールド type のパーサを通過済みで恒真だが、`:set:VALUE` variant の
@@ -3608,9 +3628,8 @@ fn resolve_entity_raw(
                   })
                 }
                 Err(fault) => {
-                  let hint = if !container_present && old_consulted {
-                    " (a Value fn that reads ctx.old cannot apply to an empty seat — DR-127 §3)"
-                  } else if !container_present {
+                  // ctx.old を読んだ fn の空座適用はこの上の早期 Reject が既に受けている。
+                  let hint = if !container_present {
                     " (the seat's container is absent and vivify is set-only — DR-127 §3)"
                   } else {
                     ""
