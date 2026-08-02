@@ -8,7 +8,7 @@ on:
 
 # spec fixtures の pin。test job と coverage job が同じ tree を読むので、bump はここ 1 箇所。
 env:
-  KUU_SPEC_REF: 5b2894726f4492e5d932bd927faa7a804b3c4da8
+  KUU_SPEC_REF: e535437932184ed5694f0da8a61986fd5c9722f9
 
 jobs:
   lint:
