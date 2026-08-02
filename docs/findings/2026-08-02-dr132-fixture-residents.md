@@ -38,10 +38,14 @@
   `--end 1.5` (link 経路、フィールド type int の `not_an_integer` = RecognizedButInvalid = Held)
   は errors に載り、`--r 1.5..3` (string 形、`not_an_int_range` = ValueSpaceMiss = Reject) は
   errors 空。fixture `value-residual-field-write.json` の case 4/5 が対で pin。
+  **`not_an_int_range` は死に語彙ではない** — eq-split 形 `--r=1.5..3` は committed な読み
+  (他の読みが operand を所有する余地が無い) で ValueSpaceMiss も Held 診断になり、
+  `r@0/parse/not_an_int_range` が errors に載る (実測、同 fixture の eq case が pin)。
 - **枝ローカル fold の合成 ParseError の element は合流先実体** (`j`) — link の binding は
   id 層の合流で合流先セルに属し (DR-045)、effects の entity と同じ宣言名軸 (DR-121 §5) に乗る。
   operand の型パース失敗 (合流前、binding 生成前) が入口 entry 名 (`end`) に帰属するのとは
-  位相が違う。`value-runtime-resolution.json` の failure 3 case が element=`j` で pin
+  位相が違う。**帰属層の区別 (統括裁定 2026-08-02)**: 定義時 fault (absent-ref 等) は link を
+  保持する entry へ、発火時 fault (経路解決・fold) は合流先セルへ帰属する。`value-runtime-resolution.json` の failure 3 case が element=`j` で pin
   (reason は実装の開いた語彙のため fixture では非表明)。
 - **DR-132 §4 の綴り例の link 入口 `{"name":"end","long":true}` は型なしのため canonical
   語彙では flag になり operand を食わない** — fixture は `"type":"string"` を明示した
