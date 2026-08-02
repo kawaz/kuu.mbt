@@ -42,14 +42,14 @@ dead code として削除するか、到達不能であることをコード上�
 
 ## 受け入れ条件
 
-- [ ] `default_claim_values_equal` および同一 export cell の equal/unequal
+- [x] `default_claim_values_equal` および同一 export cell の equal/unequal
       candidate 分岐について、現行 callers を洗い出す
-- [ ] DR-120 §1/§6 の制約と export-key collision 検査により本当に到達不能か
+- [x] DR-120 §1/§6 の制約と export-key collision 検査により本当に到達不能か
       裏取りする (実装・型システム両面から確認)
-- [ ] 到達不能が確認できた場合: dead code として削除する、または
+- [x] 到達不能が確認できた場合: dead code として削除する、または
       到達不能であることを invariant として明示する (assert / コメントでの
       構造説明等) のいずれかを選び適用する
-- [ ] 判断の根拠 (削除 or 明示、その理由) を記録する
+- [x] 判断の根拠 (削除 or 明示、その理由) を記録する
 
 ## TODO
 
