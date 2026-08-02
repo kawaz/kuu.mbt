@@ -1,6 +1,6 @@
 ---
 title: DR-120 後に到達不能な default claim 比較分岐を整理する
-status: open
+status: resolved
 category: task
 created: 2026-08-02T17:31:31+09:00
 last_read: 2026-08-02T17:43:40+09:00
@@ -9,10 +9,10 @@ wip_entered:
 blocked_entered:
 pending_entered:
 discarded_entered:
-resolved_entered:
+resolved_entered: 2026-08-02T17:48:57+09:00
 discard_reason:
 pending_reason:
-close_reason:
+close_reason: ["done: DR-120 §7/§10 と fixtures/export-key/collision-default-divergent.json の definition-error 境界を裏取りし、default_claim_values_equal と同一 export cell の equal/unequal candidate 分岐を削除。just test: 713 passed、decoded=400 ran_cases=904 skipped=0 mismatches=0。"]
 blocked_by:
 origin: kuu (spec repo) coverage-analysis 起票
 ---
