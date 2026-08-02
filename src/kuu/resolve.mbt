@@ -597,6 +597,47 @@ fn result_object_has_key(
 }
 
 ///|
+/// Lift a cell value into the projection tree. A composite value (W2-3's `Array`/`Object`) becomes
+/// the projection's own composite arms rather than staying inside a `Scalar`.
+///
+/// Design rationale: `Scalar(Object([...]))` and `Object([...])` would otherwise be two spellings of
+/// the same JSON, and the choice is not free. DR-122 §1 requires `sources` to be a shadow tree of
+/// the same shape as `result`, and DR-127 §6 requires a value_parser's composite to be decomposed
+/// seat by seat rather than collapsed onto one leaf tag. Keeping the composite inside `Scalar` makes
+/// both impossible at once, because `source_shadow`'s scalar arm has exactly one tag to give. So the
+/// invariant is: after projection, no `Scalar` holds a composite. `Value` stays the type of one
+/// cell's value and `ResultValue` stays the type of a projection-tree node (a scope's kv, a repeat
+/// row, a source tag) — the wrapper is where a cell value enters the tree, which is why the two
+/// types are not merged.
+fn result_of_value(value : @abi.Value) -> @abi.ResultValue {
+  match value {
+    @abi.Array(items) => @abi.Array(items.map(result_of_value))
+    @abi.Object(entries) =>
+      @abi.Object(entries.map(entry => (entry.0, result_of_value(entry.1))))
+    _ => @abi.Scalar(value)
+  }
+}
+
+///|
+/// The provenance shadow of one cell value (DR-122 §3 / DR-127 §6): the value's own structure, with
+/// the producing firing's tag at every seat. Per-seat re-tagging (a `link` partial write leaving its
+/// siblings on the producer's tag) rides the same shape and lands with the value-space writes.
+fn value_source_shadow(
+  value : @abi.Value,
+  source : @abi.Source,
+) -> @abi.ResultValue {
+  match value {
+    @abi.Array(items) =>
+      @abi.Array(items.map(item => value_source_shadow(item, source)))
+    @abi.Object(entries) =>
+      @abi.Object(
+        entries.map(entry => (entry.0, value_source_shadow(entry.1, source))),
+      )
+    _ => source_tag(source)
+  }
+}
+
+///|
 /// Build the nested result value from the winning flat bindings. `cells` locates every
 /// accumulate cell by result path (so an empty cell still renders `[]`, DR-044 uniform array);
 /// `path` is the current result-scope path. `shape` is the DR-120 declaration occupancy tree;
@@ -744,7 +785,7 @@ fn build_result(
         v = b.value
       }
     }
-    return @abi.Scalar(v)
+    return result_of_value(v)
   }
   // OBJECT: named leaves (folding accum keys into a list) + nested scopes.
   let obj : Array[(String, @abi.ResultValue)] = []
@@ -818,7 +859,7 @@ fn build_result(
           v = b.value
         }
       }
-      obj.push((k, @abi.Scalar(v)))
+      obj.push((k, result_of_value(v)))
     }
   }
   for seg in segs {
@@ -964,7 +1005,7 @@ fn build_result(
         Some(value) => value
         None => @abi.Null
       }
-      obj.push((d.name, @abi.Scalar(value)))
+      obj.push((d.name, result_of_value(value)))
     }
   }
   // DR-130 §4: realized structural scopes/rows enumerate their statically declared seats. This
@@ -1653,9 +1694,8 @@ fn source_seats(
         guard seats[i].bindings.length() > 0 else {
           abort("source projection failed: scalar seat has no binding")
         }
-        seats[i].shadow = Some(
-          source_tag(seats[i].bindings[seats[i].bindings.length() - 1].source),
-        )
+        let winner = seats[i].bindings[seats[i].bindings.length() - 1]
+        seats[i].shadow = Some(value_source_shadow(winner.value, winner.source))
       }
     }
   }
@@ -1722,6 +1762,27 @@ fn source_shadow(
   extensions : @node.Registry,
   path : Array[String],
 ) -> @abi.ResultValue {
+  // A nameless cell holding a composite value projects that value's own structure as this node
+  // (build_result's nameless-seat arm), so the structural walk below would descend into seats that
+  // no declaration stands behind and find no provenance for them. The seat already carries the
+  // decomposed shadow; hand it over whole. Matching on the projected shape is what keeps this
+  // precise — a nameless seat that build_result passed over (because named children occupy this
+  // node) cannot match it.
+  if !(result is @abi.Scalar(_)) {
+    match source_seat(seats, path, "") {
+      Some(seat) =>
+        if seat.bindings.length() > 0 {
+          let winner = seat.bindings[seat.bindings.length() - 1]
+          if result_of_value(winner.value) == result {
+            match seat.shadow {
+              Some(shadow) => return shadow
+              None => ()
+            }
+          }
+        }
+      None => ()
+    }
+  }
   match result {
     @abi.Object(fields) => {
       let out : Array[(String, @abi.ResultValue)] = []
@@ -2103,7 +2164,10 @@ fn eval_requires(
     if is_none_entity(sc.entities, t) {
       @engine.is_committed(bindings, path, t)
     } else if is_bool_entity(sc.entities, t) {
-      @engine.element_value(resolved, path, t) == Some("true")
+      match @engine.element_value(resolved, path, t) {
+        Some(value) => @engine.value_matches_literal(value, "true")
+        None => false
+      }
     } else {
       @engine.element_value(resolved, path, t) != None
     }
@@ -2129,7 +2193,7 @@ fn eval_requires(
       RequiresIf(entity, branch_id, v, targets) => {
         let active = committed(entity) &&
           (match @engine.element_value(bindings, path, entity) {
-            Some(x) => x == v
+            Some(x) => @engine.value_matches_literal(x, v)
             None => false
           })
         if active {
@@ -2946,7 +3010,7 @@ fn env_value(
     Err({ reason, message: msg, .. }) =>
       return Err(filter_err(element, at_pos, reason, msg, epath))
   }
-  match ty.parse_token(s) {
+  match @extension.parse_token_checked(ty, s, extensions.extensions()) {
     Ok(value) => Ok(value)
     Err(fail) =>
       Err(

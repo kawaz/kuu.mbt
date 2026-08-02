@@ -58,7 +58,7 @@ pub fn config_to_value(
         Err({ reason, message: msg, .. }) =>
           Err({ kind: @abi.Filter, reason, message: msg })
         Ok(s) =>
-          match ty.parse_token(s) {
+          match parse_token_checked(ty, s, extensions) {
             Ok(value) => Ok(value)
             Err(fail) =>
               Err({

@@ -798,7 +798,8 @@ impl NodeExt for TypedNodeExt with fn eval(self, ctx, pos, acc, next) {
           token,
         ) {
         Ok(value) =>
-          match self.ty.parse_token(value) {
+          match
+            @extension.parse_token_checked(self.ty, value, ctx.extensions()) {
             Ok(parsed) =>
               next(
                 ctx,

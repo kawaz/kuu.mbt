@@ -4291,17 +4291,28 @@ pub fn element_value(
   bindings : Array[Binding],
   path : Array[String],
   name : String,
-) -> String? {
-  let mut v : String? = None
+) -> Value? {
+  let mut v : Value? = None
   for b in bindings {
     if b.key == name && scope_path_eq(b.scope, path) {
       match b.op {
         Set if b.value is Null => v = None
-        _ => v = Some(value_str(b.value))
+        _ => v = Some(b.value)
       }
     }
   }
   v
+}
+
+///|
+/// Does a cell value equal the literal a declaration spelled? `value_requires` (DR-055) writes its
+/// operand as a wire string, so the literal can only ever denote a scalar; a composite cell value
+/// answers "no" instead of being pushed through a scalar spelling it does not have.
+pub fn value_matches_literal(value : Value, literal : String) -> Bool {
+  match value {
+    Null | Array(_) | Object(_) => false
+    _ => value_str(value) == literal
+  }
 }
 
 ///|
@@ -4387,13 +4398,13 @@ pub fn element_value_in_subtree(
   path : Array[String],
   wrapper : String,
   name : String,
-) -> String? {
-  let mut v : String? = None
+) -> Value? {
+  let mut v : Value? = None
   for b in bindings {
     if b.key == name && scope_in_wrapped_subtree(b.scope, path, wrapper) {
       match b.op {
         Set if b.value is Null => v = None
-        _ => v = Some(value_str(b.value))
+        _ => v = Some(b.value)
       }
     }
   }
@@ -4456,7 +4467,7 @@ fn eval_constraints(
         let active = is_committed(bindings, path, entity) &&
           !has_pending_invoke(bindings, path, entity) &&
           (match element_value(bindings, path, entity) {
-            Some(x) => x == v
+            Some(x) => value_matches_literal(x, v)
             None => false
           })
         if active {

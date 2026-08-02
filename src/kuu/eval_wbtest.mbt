@@ -1875,7 +1875,10 @@ test "@engine.IndexedRepeat greedy-max backtracks for a following mandatory posi
   )
   match o {
     @engine.Success(bindings) => {
-      assert_eq(@engine.element_value(bindings, [], "tail"), Some("c"))
+      assert_eq(
+        @engine.element_value(bindings, [], "tail"),
+        Some(@abi.String("c")),
+      )
       assert_eq(bindings.length(), 4)
     }
     _ => fail("IndexedRepeat must leave the final token for tail")

@@ -93,6 +93,8 @@ pub fn none_type() -> &TypeExt
 
 pub fn number_type(allow_base_prefix? : Bool) -> &TypeExt
 
+pub fn output_contract_breach(@abi.Value, &TypeExt, Registry) -> @abi.TypeParseFail?
+
 pub fn parse_bool(String, config? : @abi.BoolConfig) -> Bool?
 
 pub fn parse_error_not_a_bool(String, String, Int) -> @abi.ParseError
@@ -110,6 +112,8 @@ pub fn parse_fn_invocation(@abi.FnInvocationForm) -> Result[@abi.FnInvocation, S
 pub fn parse_int_value(String, @abi.RoundMode, allow_base_prefix? : Bool) -> Result[Int64, @abi.TypeParseFail]
 
 pub fn parse_number(String, allow_base_prefix? : Bool) -> Double?
+
+pub fn parse_token_checked(&TypeExt, String, Registry) -> Result[@abi.Value, @abi.TypeParseFail]
 
 pub fn regex_match_filter() -> FilterDescriptor
 

@@ -493,7 +493,7 @@ fn run_eq_split(
             }.branch([]),
           ]
       }
-      match e.kind.parse_token(filtered) {
+      match parse_token_checked(e.kind, filtered, ctx.extensions()) {
         Ok(value) =>
           return [
             @abi.Accept(
@@ -632,7 +632,7 @@ fn short_val(
           ),
         })
     }
-    match e.kind.parse_token(filtered) {
+    match parse_token_checked(e.kind, filtered, ctx.extensions()) {
       Ok(value) =>
         Ok(
           route_entry_bindings(

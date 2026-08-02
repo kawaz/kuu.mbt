@@ -68,9 +68,9 @@ pub fn effect_mark(String, @abi.EffectOp) -> Node
 
 pub fn element_head(ElementDef) -> Node
 
-pub fn element_value(Array[@abi.Binding], Array[String], String) -> String?
+pub fn element_value(Array[@abi.Binding], Array[String], String) -> @abi.Value?
 
-pub fn element_value_in_subtree(Array[@abi.Binding], Array[String], String, String) -> String?
+pub fn element_value_in_subtree(Array[@abi.Binding], Array[String], String, String) -> @abi.Value?
 
 pub fn entity_ext(hidden? : Bool, completer? : String?) -> &@extension.EntityExt
 
@@ -185,6 +185,8 @@ pub fn type_parse_error(String, Int, @abi.TypeParseFail) -> @abi.ParseError
 pub fn typed_arg(String, &@extension.TypeExt, Array[@abi.FnInvocation]) -> Node
 
 pub fn unwrap_single_collector() -> &@extension.CollectorExt
+
+pub fn value_matches_literal(@abi.Value, String) -> Bool
 
 pub fn value_str(@abi.Value) -> String
 

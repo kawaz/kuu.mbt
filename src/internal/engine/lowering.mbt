@@ -33,6 +33,13 @@ pub(all) enum LongSpelling {
 /// parsers (DR-074/075/076 canonical lexicons) but with a permissive `String` fallback instead of an
 /// Error: a DSL operand is a literal the DEFINITION author wrote (not untrusted CLI input), so an
 /// unparseable operand degrading to a string is a defensive fallback, not a silent-coercion concern.
+///
+/// Design rationale: this is the one `parse_token` seat that does NOT run DR-126 §4's divergence
+/// check (`@extension.parse_token_checked`). That check asks "does the value this resident produced
+/// contradict the resident's own declaration", and its answer is a runtime held Error attributed to
+/// an args position. A DSL operand has no args position and no runtime seat — it is a definition
+/// literal being coerced at lowering time, and DR-130 §3.1 gives the declaration side no composite
+/// literal seat to begin with, so there is nothing here for the check to catch.
 fn dsl_operand_value(ty : &TypeExt, s : String) -> Value {
   match ty.parse_token(s) {
     Ok(value) => value

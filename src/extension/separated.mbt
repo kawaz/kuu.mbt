@@ -115,7 +115,7 @@ fn sep_piece_value(
         error: @abi.ParseError::filter(name, pos, reason, msg),
       })
     Ok(s) =>
-      match ty.parse_token(s) {
+      match parse_token_checked(ty, s, extensions) {
         Ok(value) => Ok(value)
         Err(fail) =>
           Err({

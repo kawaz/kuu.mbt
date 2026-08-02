@@ -41,8 +41,14 @@ test "default_fn observes dependency evaluates before its declaration-order pred
       let parsed = parse_legacy(ast, [])
       match resolve_legacy(ast, parsed, []) {
         @engine.Success(bindings) => {
-          assert_eq(@engine.element_value(bindings, [], "source"), Some("true"))
-          assert_eq(@engine.element_value(bindings, [], "target"), Some("true"))
+          assert_eq(
+            @engine.element_value(bindings, [], "source"),
+            Some(@abi.Bool(true)),
+          )
+          assert_eq(
+            @engine.element_value(bindings, [], "target"),
+            Some(@abi.Bool(true)),
+          )
         }
         _ => fail("borrow default must resolve in dependency order")
       }
