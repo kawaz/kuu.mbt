@@ -85,7 +85,7 @@ impl AccumulatorExt for AppendAccumulator with fn resolve_cli(
 impl AccumulatorExt for AppendAccumulator with fn collect(_self, values) {
   let out : Array[@abi.ResultValue] = []
   for value in values {
-    out.push(@abi.Scalar(value))
+    out.push(item_result(value))
   }
   @abi.Array(out)
 }
@@ -94,7 +94,7 @@ impl AccumulatorExt for AppendAccumulator with fn collect(_self, values) {
 impl AccumulatorExt for AppendAccumulator with fn collect_sources(_self, values) {
   let out : Array[@abi.ResultValue] = []
   for value in values {
-    out.push(source_result(value.1))
+    out.push(item_source_shadow(value.0, value.1))
   }
   @abi.Array(out)
 }
@@ -342,7 +342,7 @@ impl AccumulatorExt for MergeAccumulator with fn resolve_cli(
 impl AccumulatorExt for MergeAccumulator with fn collect(_self, values) {
   let out : Array[@abi.ResultValue] = []
   for value in values {
-    out.push(@abi.Scalar(value))
+    out.push(item_result(value))
   }
   @abi.Array(out)
 }
@@ -351,7 +351,7 @@ impl AccumulatorExt for MergeAccumulator with fn collect(_self, values) {
 impl AccumulatorExt for MergeAccumulator with fn collect_sources(_self, values) {
   let out : Array[@abi.ResultValue] = []
   for value in values {
-    out.push(source_result(value.1))
+    out.push(item_source_shadow(value.0, value.1))
   }
   @abi.Array(out)
 }

@@ -3,7 +3,7 @@
 > 対象段: `docs/research/2026-08-02-dr127-wave2-implementation-plan.md` §2 の W2-5 行。
 > 実測日: 2026-08-02。ベースライン `just test` = 646 tests / conformance
 > `decoded=394 ran_cases=885 skipped=0 mismatches=0`、両台帳空。
-> 本段適用後 = **655 tests** (新規 9 本) / `decoded=395 ran_cases=888 mismatches=0`
+> 本段適用後 = **656 tests** (新規 10 本) / `decoded=395 ran_cases=888 mismatches=0`
 > (増分 3 case はすべて同乗物 A の `variant-effects/` 由来で、乖離検査由来ではない)。
 
 ## 1. `parse_token` の ABI 破壊は起きなかった
@@ -116,12 +116,22 @@ W2-3 の申し送り §9-5 は「`parse_token` が重複キーを返せる設計
 決める必要がある」としていた。**返せない**で確定 (統括裁定 2026-08-02)。wire JSON object は重複キーを
 表現できず、conformance の result 射影にも乗らない。通せば result と sources で座の数が食い違う
 (W2-3 の実測: 素の JSON 綴りは後勝ちに潰れる一方 `value_to_configval` は両方の entry を保つ)。
-検査は record 座と map 座の両方で効く。
+検査は宣言型照合から独立した**生 Value 全構造走査**として先に走る (W2-5 事後監査の裁定) —
+重複キーはどの宣言の下でも wire 非表現なので、`value` 宣言・`Array(Value)` の要素・record フィールドの
+out=`value` のような「宣言型照合が Object の中を見ない」経路でも同じ `duplicate_field` になる。
 
 ### 3.4 `Null` はあらゆる宣言を満たす
 
 DR-130 §1 が null を「値が無い」の普遍表現とし、§7 が型導出を全座 `T | null` とするので、
 `null` の産出は宣言との矛盾ではない。検査はこれを最初に返す。
+
+### 3.5 適用範囲は type resident の `parse_token` まで — resident 一般は W2-7 送り (段階実装)
+
+DR-126 §4 は乖離検査を type パーサに限らず **io_type を名乗る resident 一般** (provider / filter /
+cell_fns / collector) に適用すると規定するが、現実装が通しているのは `parse_token_checked` の席だけで
+ある。resident 一般への配線は W2-7 の「値残余座への fn 戻り値がフィールド type の `out` への適合検査を
+通る」(DR-127 §3.2) と同じ共通インフラになるため、そちらへ合流させる (issue:
+`docs/issue/2026-08-02-resident-output-contract-generalization.md`)。
 
 ## 4. `element_value` の複合対応 (§9-1 の決着)
 

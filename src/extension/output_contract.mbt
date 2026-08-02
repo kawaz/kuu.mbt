@@ -139,10 +139,6 @@ fn value_type_breach(
     Map(item_type) =>
       match value {
         @abi.Object(entries) => {
-          match duplicate_key_breach(entries, path) {
-            Some(breach) => return Some(breach)
-            None => ()
-          }
           for entry in entries {
             match
               value_type_breach(
@@ -194,6 +190,41 @@ fn duplicate_key_breach(
 }
 
 ///|
+/// The duplicate-key invariant walks the raw produced value independently of
+/// the declared-type match (統括裁定 W2-5 事後監査): a `value` declaration, an
+/// `Array(Value)` item, or a record field whose referenced `out` is `value`
+/// would otherwise short-circuit before the object was ever inspected, and a
+/// duplicate key is undeliverable wire JSON under every declaration.
+fn value_duplicate_breach(value : @abi.Value, path : String) -> ContractBreach? {
+  match value {
+    @abi.Object(entries) => {
+      match duplicate_key_breach(entries, path) {
+        Some(breach) => return Some(breach)
+        None => ()
+      }
+      for entry in entries {
+        match value_duplicate_breach(entry.1, path + "." + entry.0) {
+          Some(breach) => return Some(breach)
+          None => ()
+        }
+      }
+      None
+    }
+    @abi.Array(items) => {
+      for index, item in items {
+        match
+          value_duplicate_breach(item, path + "[" + index.to_string() + "]") {
+          Some(breach) => return Some(breach)
+          None => ()
+        }
+      }
+      None
+    }
+    _ => None
+  }
+}
+
+///|
 /// DR-126 §2/§4: the record's key vocabulary is closed, so every produced key must be named by the
 /// declaration, and each named key's value must satisfy the `out` of the type it references.
 /// An unresolvable field reference is not judged here — that is a lowering-time definition-error
@@ -205,10 +236,6 @@ fn record_breach(
   path : String,
   extensions : Registry,
 ) -> ContractBreach? {
-  match duplicate_key_breach(entries, path) {
-    Some(breach) => return Some(breach)
-    None => ()
-  }
   for entry in entries {
     let mut reference : String? = None
     for field in fields {
@@ -253,6 +280,10 @@ pub fn output_contract_breach(
   ty : &TypeExt,
   extensions : Registry,
 ) -> @abi.TypeParseFail? {
+  match value_duplicate_breach(value, "$") {
+    Some(breach) => return Some(breach_fail(breach, ty.name()))
+    None => ()
+  }
   match ty.output_type() {
     None => None
     Some(declared) =>

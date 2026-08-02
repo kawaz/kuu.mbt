@@ -690,3 +690,64 @@ test "result_value_json keeps composite Value and composite ResultValue on the s
     result_value_json(@abi.Scalar(@abi.Null)),
   )
 }
+
+///|
+/// W2-5 監査 M1: a composite item is lifted into the projection's own composite
+/// arms rather than staying inside `Scalar` (DR-122 §1 / DR-127 §6 — the same
+/// invariant the scalar-cell projection keeps), and the sources shadow is the
+/// item's structure with the firing's tag at every seat, not one collapsed tag.
+test "append collect lifts composite items and decomposes their sources" {
+  let composite = @abi.Value::Object([
+    ("since", @abi.Number(1.0)),
+    ("tags", @abi.Value::Array([@abi.String("a")])),
+  ])
+  let collected = append_accumulator().collect([@abi.String("plain"), composite])
+  assert_eq(
+    collected,
+    @abi.Array([
+      @abi.Scalar(@abi.String("plain")),
+      @abi.Object([
+        ("since", @abi.Scalar(@abi.Number(1.0))),
+        ("tags", @abi.Array([@abi.Scalar(@abi.String("a"))])),
+      ]),
+    ]),
+  )
+  let sources = append_accumulator().collect_sources([
+    (@abi.String("plain"), @abi.Cli),
+    (composite, @abi.Env),
+  ])
+  assert_eq(
+    sources,
+    @abi.Array([
+      @abi.Scalar(@abi.String("cli")),
+      @abi.Object([
+        ("since", @abi.Scalar(@abi.String("env"))),
+        ("tags", @abi.Array([@abi.Scalar(@abi.String("env"))])),
+      ]),
+    ]),
+  )
+}
+
+///|
+/// merge shares append's collect/collect_sources shape rule; the shadow must
+/// stay congruent with the collected value item by item.
+test "merge collect lifts composite items and decomposes their sources" {
+  let composite = @abi.Value::Array([@abi.Bool(true), @abi.Null])
+  let collected = merge_accumulator().collect([composite])
+  assert_eq(
+    collected,
+    @abi.Array([
+      @abi.Array([@abi.Scalar(@abi.Bool(true)), @abi.Scalar(@abi.Null)]),
+    ]),
+  )
+  let sources = merge_accumulator().collect_sources([(composite, @abi.Link)])
+  assert_eq(
+    sources,
+    @abi.Array([
+      @abi.Array([
+        @abi.Scalar(@abi.String("link")),
+        @abi.Scalar(@abi.String("link")),
+      ]),
+    ]),
+  )
+}

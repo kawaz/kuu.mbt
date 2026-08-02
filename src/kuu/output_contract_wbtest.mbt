@@ -87,6 +87,13 @@ impl @extension.TypeExt for RangeTypeExt with fn default_seat_resolver(
 fn range_registry() -> @node.Registry raise {
   let registry = canonical_registry()
   assert_true(registry.register_type(RangeTypeExt::{  } as &@extension.TypeExt))
+  assert_true(registry.register_type(AnyTypeExt::{  } as &@extension.TypeExt))
+  assert_true(
+    registry.register_type(AnyListTypeExt::{  } as &@extension.TypeExt),
+  )
+  assert_true(
+    registry.register_type(PayloadTypeExt::{  } as &@extension.TypeExt),
+  )
   registry
 }
 
@@ -356,4 +363,257 @@ test "env 席の産出にも乖離検査が効く (DR-126 §4)" {
         render_outcome(other),
       )
   }
+}
+
+///|
+/// output が `value` を名乗る type — 宣言型照合が Object を素通しする側の代表 (W2-5 事後監査 M2)。
+priv struct AnyTypeExt {}
+
+///|
+impl @extension.TypeExt for AnyTypeExt with fn name(_self) {
+  "anything"
+}
+
+///|
+impl @extension.TypeExt for AnyTypeExt with fn has_value_slot(_self) {
+  true
+}
+
+///|
+impl @extension.TypeExt for AnyTypeExt with fn output_type(_self) {
+  Some(@abi.ValueType::Value)
+}
+
+///|
+impl @extension.TypeExt for AnyTypeExt with fn parse_token(_self, token) {
+  match token {
+    "dup" => Ok(@abi.Object([("k", @abi.Number(1.0)), ("k", @abi.Number(2.0))]))
+    _ => Ok(@abi.String(token))
+  }
+}
+
+///|
+impl @extension.TypeExt for AnyTypeExt with fn default_seat_resolver(_self, ctx) {
+  ctx.declared()
+}
+
+///|
+priv struct AnyListTypeExt {}
+
+///|
+impl @extension.TypeExt for AnyListTypeExt with fn name(_self) {
+  "anylist"
+}
+
+///|
+impl @extension.TypeExt for AnyListTypeExt with fn has_value_slot(_self) {
+  true
+}
+
+///|
+impl @extension.TypeExt for AnyListTypeExt with fn output_type(_self) {
+  Some(@abi.ValueType::Array(@abi.ValueType::Value))
+}
+
+///|
+impl @extension.TypeExt for AnyListTypeExt with fn parse_token(_self, token) {
+  match token {
+    "dup" =>
+      Ok(
+        @abi.Value::Array([
+          @abi.Object([("k", @abi.Number(1.0)), ("k", @abi.Number(2.0))]),
+        ]),
+      )
+    _ => Ok(@abi.Value::Array([@abi.String(token)]))
+  }
+}
+
+///|
+impl @extension.TypeExt for AnyListTypeExt with fn default_seat_resolver(
+  _self,
+  ctx,
+) {
+  ctx.declared()
+}
+
+///|
+priv struct PayloadTypeExt {}
+
+///|
+impl @extension.TypeExt for PayloadTypeExt with fn name(_self) {
+  "payload_holder"
+}
+
+///|
+impl @extension.TypeExt for PayloadTypeExt with fn has_value_slot(_self) {
+  true
+}
+
+///|
+impl @extension.TypeExt for PayloadTypeExt with fn output_type(_self) {
+  Some(@abi.ValueType::Record([("payload", "anything")]))
+}
+
+///|
+impl @extension.TypeExt for PayloadTypeExt with fn parse_token(_self, token) {
+  match token {
+    "dup" =>
+      Ok(
+        @abi.Object([
+          (
+            "payload",
+            @abi.Object([("k", @abi.Number(1.0)), ("k", @abi.Number(2.0))]),
+          ),
+        ]),
+      )
+    _ => Ok(@abi.Object([("payload", @abi.String(token))]))
+  }
+}
+
+///|
+impl @extension.TypeExt for PayloadTypeExt with fn default_seat_resolver(
+  _self,
+  ctx,
+) {
+  ctx.declared()
+}
+
+///|
+/// parse か resolve のどちらかで失敗した側の held Error 列を返す。
+fn divergence_errors(
+  src : String,
+  args : Array[String],
+  config? : (String) -> @abi.ConfigVal? = fn(_) { None },
+) -> Array[@abi.ParseError] raise {
+  let registry = range_registry()
+  let ast = match parse_definition(@json.parse(src), extensions=registry) {
+    Ok(ast) => ast
+    Err(_) => {
+      fail("the seat definition must lower")
+      panic()
+    }
+  }
+  let parsed = parse_legacy(ast, args, config~)
+  match parsed {
+    @engine.Failure(data) => data.errors
+    _ =>
+      match resolve_legacy(ast, parsed, args, config~) {
+        @engine.Failure(data) => data.errors
+        other => {
+          fail("a divergence must fail somewhere, got " + render_outcome(other))
+          panic()
+        }
+      }
+  }
+}
+
+///|
+/// 保証 (W2-5 事後監査 M2 裁定): 重複キー検査は宣言型照合から独立した生 Value 全構造走査として
+/// 先に走る。`value` 宣言 / `Array(Value)` の要素 / record フィールドの out=`value` は宣言型照合
+/// 側では Object の中を見ずに素通しになる 3 経路で、そこに座った重複キー Object も同じ
+/// duplicate_field の held Error になる。
+test "重複キー検査は value / array-of-value / field-out-value の素通し経路でも効く (M2)" {
+  let seats : Array[String] = ["anything", "anylist", "payload_holder"]
+  for ty in seats {
+    let errors = divergence_errors(
+      "{\"options\": [{\"name\": \"span\", \"type\": \"" +
+      ty +
+      "\", \"long\": true}]}",
+      ["--span", "dup"],
+    )
+    assert_eq(errors.length(), 1)
+    assert_eq(errors[0].reason, "duplicate_field")
+  }
+}
+
+///|
+/// 保証 (DR-053 §2 / DR-037): 乖離の held Error は kind=Parse で、args_pos が乖離を起こした
+/// operand のトークン位置に帰属する。長形の別トークン operand は index 1。
+test "乖離 Error は kind=parse で operand 位置に帰属する (CLI long 席)" {
+  let errors = divergence_errors(
+    (
+      #|{"options": [{"name": "span", "type": "range", "long": true}]}
+    ),
+    ["--span", "zoned"],
+  )
+  assert_eq(errors.length(), 1)
+  assert_eq(errors[0].kind, @abi.Parse)
+  assert_eq(errors[0].element, "span")
+  assert_eq(errors[0].args_pos, 1)
+  assert_eq(errors[0].reason, "undeclared_field")
+}
+
+///|
+/// separator 席: 分割後の各 piece が同じ parse_token 席を通るので、2 piece 目の乖離も
+/// 同じ held Error として同じトークン位置に帰属する。
+test "乖離 Error は separator の piece 席にも現れる" {
+  let errors = divergence_errors(
+    (
+      #|{"options": [{"name": "span", "type": "range", "multiple": {"accumulator": "append", "separator": ","}, "long": true}]}
+    ),
+    ["--span", "1..2,dup"],
+  )
+  assert_eq(errors.length(), 1)
+  assert_eq(errors[0].kind, @abi.Parse)
+  assert_eq(errors[0].args_pos, 1)
+  assert_eq(errors[0].reason, "duplicate_field")
+}
+
+///|
+/// eq-split 席: `--span=zoned` は 1 トークンに綴りと operand が同居する。帰属はそのトークン。
+test "乖離 Error は eq-split 席にも現れる" {
+  let errors = divergence_errors(
+    (
+      #|{"options": [{"name": "span", "type": "range", "long": true}]}
+    ),
+    ["--span=zoned"],
+  )
+  assert_eq(errors.length(), 1)
+  assert_eq(errors[0].kind, @abi.Parse)
+  assert_eq(errors[0].args_pos, 0)
+  assert_eq(errors[0].reason, "undeclared_field")
+}
+
+///|
+/// typed-node 席 (positional の型付き消費): option 綴りを介さない消費でも同じ検査が効く。
+test "乖離 Error は positional の typed 席にも現れる" {
+  let errors = divergence_errors(
+    (
+      #|{"positionals": [{"name": "when", "type": "range"}]}
+    ),
+    ["zoned"],
+  )
+  assert_eq(errors.length(), 1)
+  assert_eq(errors[0].kind, @abi.Parse)
+  assert_eq(errors[0].element, "when")
+  assert_eq(errors[0].args_pos, 0)
+  assert_eq(errors[0].reason, "undeclared_field")
+}
+
+///|
+/// config 席: 値源ラダーの config 供給も同じ resident の産出を通る。CLI トークンが無いので
+/// args_pos は攻めどころが無く 0 起点の帰属になる。
+test "乖離 Error は config 席にも現れる" {
+  let src =
+    #|{"options": [
+    #|  {"name": "conf", "type": "config_file", "long": true, "default": "/app.toml"},
+    #|  {"name": "span", "type": "range", "long": true, "config_key": ["span"]}
+    #|]}
+  let cfg = config_from_json(
+    @json.parse(
+      (
+        #|{"span": "zoned"}
+      ),
+    ),
+  )
+  let errors = divergence_errors(src, [], config=fn(_p) { Some(cfg) })
+  let mut found = false
+  for error in errors {
+    if error.reason == "undeclared_field" {
+      found = true
+      assert_eq(error.kind, @abi.Parse)
+      assert_eq(error.element, "span")
+    }
+  }
+  assert_true(found)
 }
