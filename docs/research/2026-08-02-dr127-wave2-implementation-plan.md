@@ -36,8 +36,11 @@ conformance harness 側の表明 16、re-export 2、コメント 3、定義 1)�
 | 宣言経路 (宣言 default リテラル) | `kuu/resolve.mbt` 1 (`:3983`、config_file 要素の `default_scalar`) / `internal/engine/lowering.mbt` 1 (`:920`、`child_default_seat_key`) | **2** | 来ない (DR-130 §3.1 で定義側に複合リテラルの席がない) |
 | **実行時セル値経路** | `kuu/resolve.mbt` 1 (`:3959`) / `internal/engine/eval.mbt` 2 (`:4300` / `:4396`、RequiresIf 比較) / `extension/accumulator_residents.mbt` 1 (`:585`、`result_key`) | **4** | **来る** |
 
-D1 の本体は「150〜300 行の機械変更」ではなく「**この 4 箇所 + 網羅 match (prod 4 / test 5) が複合を
-正しく扱うことの証明**」である。段の受け入れ条件はそこに置く。全件の対処と「abort が到達しない根拠」は
+D1 の本体は「150〜300 行の機械変更」ではなく「**この 4 箇所 + 網羅 match (prod 4 / test 5) + `value_str`
+を経由せず wildcard 付き match でスカラを取り出す箇所が複合を正しく扱うことの証明**」である。
+段の受け入れ条件はそこに置く。最後の類 (`match value { String(s) => s; _ => "" }` の形) は
+**`value_str` の call site 探索でもコンパイラエラーでも拾えない**ので、`match` ブロックの機械走査が要る。
+全件の対処と「abort が到達しない根拠」、走査手順は
 `docs/findings/2026-08-02-w2-3-value-composite-inventory.md` が正本。
 
 ### 1.2 kuu.mbt には既に同型の複合値が 3 つある — うち 1 つは統合してはいけない
