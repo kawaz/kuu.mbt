@@ -284,6 +284,42 @@ fn branch_fold_reject(
               ),
             )
           }
+          // 構造終端 (array 要素 / map 値型) の座に座る値は、その構造宣言への適合検査を
+          // 通ってから座る (統括裁定 2026-08-02 — DR-126 §4 系の「宣言に適合する値しか座に
+          // 座れない」は要素型宣言にも及ぶ)。これらの座は operand を entry 自身の型で読む
+          // (registry パース実体が無い) ため、well-formed な読みでも宣言不適合が起こりうる —
+          // record フィールド終端の乖離検査 (resolve 相の Error) と違い、ここは枝 Reject。
+          if !(value is Null) {
+            match
+              @fold.residual_terminal_structural(
+                declared,
+                b.value_residual[:],
+                extensions,
+              ) {
+              Some(structural) => {
+                let producer = match b.op {
+                  Invoke(invocation) => invocation.name
+                  _ => "set"
+                }
+                match
+                  @extension.seat_fn_output_breach(
+                    value, structural, producer, extensions,
+                  ) {
+                  Some((_, detail)) =>
+                    return Some(
+                      branch_fold_error(
+                        b,
+                        consumed_pos,
+                        decl.scope_path,
+                        detail,
+                      ),
+                    )
+                  None => ()
+                }
+              }
+              None => ()
+            }
+          }
           if value is Null && !container_present {
             // DR-131 §7: `unset` (null 返し) は空座でも成立する — 器は作らず座は論理 null。
             ()

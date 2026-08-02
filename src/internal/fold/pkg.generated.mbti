@@ -11,6 +11,8 @@ pub fn fold_seat_effect(@abi.Binding, @abi.Value?, String, @extension.Registry) 
 
 pub fn residual_terminal_out(@abi.ValueType?, Array[@abi.ObservationSegment], @extension.Registry) -> @abi.ValueType?
 
+pub fn residual_terminal_structural(@abi.ValueType?, ArrayView[@abi.ObservationSegment], @extension.Registry) -> @abi.ValueType?
+
 pub fn seat_after(SeatTransition, @abi.Value?) -> SeatState?
 
 pub fn seat_fault_message(SeatFault) -> String

@@ -576,9 +576,9 @@ test "DR-127 §3.2: eq / short 入口でもフィールド type で読む" {
 // ── W2-8: DR-127 §4.2 裁定前の枝ローカル効果列 fold ─────────────────────────────
 
 ///|
-/// 同じ綴り `--u` に operand 形 (`:set`) と bare 形 (`:incr`) が同居し、余りトークンは
-/// positional `rest` が吸えるため、`--u 5` は option-positional 境界をまたぐ 2 解釈になる
-/// (DESIGN §15.4 の real ambiguous の形)。片方の枝だけが値残余の解決に失敗する非対称を作る。
+/// 同じ綴り `--u` に operand 形 (`:set`) と bare 形 (`:incr`) が同居する形。実測では後続
+/// トークンがあるとき bare 変種 + rest の読みは完全経路にならず (`--u 5` は :set 読みのみ)、
+/// `--u` 単独では bare 読みだけが完全経路になる — 全枝落ち (§4.2 の合成義務) の素材。
 const BRANCH_SRC : String =
   #|{"options":[
   #|  {"name":"tr","type":"trange","long":true},
@@ -586,10 +586,10 @@ const BRANCH_SRC : String =
   #| "positionals":[{"name":"rest","type":"string","repeat":{"min":0}}]}
 
 ///|
-/// DR-127 §4.2: 裁定は枝ローカルの効果列 fold の後に来る。`--u 5` の 2 解釈のうち bare `:incr`
-/// 枝は空座 (未 vivify) への ctx.old 依存 fn で解決失敗 = 枝 Reject となり、operand `:set` 枝
-/// (座へ 5 を書く) が勝つ — Ambiguous にも Failure にもならない (DR-127 §4 / DR-029)。
-test "DR-127 §4.2: 値残余 Reject の枝が落ち、兄弟枝が勝つ" {
+/// `--u 5` は :set 読みだけが完全経路になり (bare 変種 + 後続トークンの読みは形成されない —
+/// 実測 2026-08-02)、その読みは fold を通過して成立する。枝間選別の実 2 読み pin は
+/// 下の「要素型に合わない operand の枝は Reject」(variable-arity or 構成) が持つ。
+test "DR-127 §4.2: 解決可能な値残余の読みは fold を通過して成立する" {
   assert_eq(
     seat_view(BRANCH_SRC, ["--u", "5"]),
     "result={rest=[],tr={since=null,until=5}} sources={rest=[],tr={since=null,until=link}} effects=tr.until",
@@ -612,6 +612,7 @@ const MAP_SRC : String =
   #|{"options":[
   #|  {"name":"m","type":"dict","long":true},
   #|  {"name":"wa","type":"number","long":true,"link":"m.a"},
+  #|  {"name":"ws","type":"string","long":true,"link":"m.a"},
   #|  {"name":"wz","type":"number","long":[":set",":incr"],"link":"m.zzz"}],
   #| "positionals":[{"name":"rest","type":"string","repeat":{"min":0}}]}
 
@@ -624,8 +625,8 @@ test "DR-127 §2.2 map: 実在するキーの座への部分書きは成立す�
 }
 
 ///|
-/// map キー不在は operand 形 (`set` の書き先不在) と bare 形 (`incr` の書き先不在) の両解釈で
-/// 解決失敗 — 全枝が落ち、失敗レポートに座の診断 (missing-field) が載る。
+/// map キー不在は解決失敗 = 枝 Reject。`--wz 5` は :set 読みだけが完全経路になる形なので、
+/// その唯一の完全枝が落ちて全体パース失敗になり、失敗レポートに座の診断 (missing-field) が載る。
 test "DR-127 §2.2 map: キー不在は枝 Reject、全枝落ちで原因が載る" {
   let failure = seat_failure(MAP_SRC, ["--m", "a=1", "--wz", "5"])
   assert_true(failure.contains("unresolvable_link_path"))
@@ -677,4 +678,58 @@ test "DR-127 §4.2: subcommand scope 配下でも枝選別が効く" {
     seat_view(src, ["go", "--u", "5"]),
     "result={go={rest=[],tr={since=null,until=5}}} sources={go={rest=[],tr={since=null,until=link}}} effects=tr.until",
   )
+}
+
+///|
+/// variable-arity or (`--c` = seq(number,number) | string) + optional positional `p` (link 付き)
+/// で `--c 5 7` が実 2 読みになる (取り分でなく構造の違い、DESIGN §15.4 — link 無し対照は
+/// ambiguous:2 を実測 2026-08-02)。string 読みでは `p` が "7" を消費して arr[0] へ書くが、
+/// 構造終端の座に座る値は構造宣言 (array の要素型) への適合検査を set 時に通る (統括裁定
+/// 2026-08-02 — DR-126 §4 系の「宣言に適合する値しか座に座れない」は要素型宣言にも及ぶ)。
+/// entry 型 (string) で読めた operand でも要素型 (number) に合わないため string 読みの枝は
+/// Reject され、seq 読みが勝つ — Ambiguous にも Failure にもならない (DR-127 §4.2 / DR-029)。
+const ARITY_LINK_SRC : String =
+  #|{"options":[
+  #|  {"name":"arr","type":"csv","long":true},
+  #|  {"name":"c","long":true,"or":[
+  #|    {"seq":[{"type":"number","name":"n1"},{"type":"number","name":"n2"}]},
+  #|    {"type":"string","name":"s1"}]}],
+  #| "positionals":[{"name":"p","type":"string","repeat":{"min":0,"max":1},"link":"arr[0]"}]}
+
+///|
+test "DR-126 §4 系: 要素型に合わない operand の枝は Reject、他枝が勝つ" {
+  assert_eq(
+    seat_view(ARITY_LINK_SRC, ["--arr", "1,2", "--c", "5", "7"]),
+    "result={arr=[1,2],c={n1=5,n2=7,s1=null}} sources={arr=[cli,cli],c={n1=cli,n2=cli,s1=null}} effects=arr,n1,n2",
+  )
+}
+
+///|
+/// 対極 (過剰枝刈りの防止): p の entry 型を number (要素型に適合) にすると string 読みも
+/// 解決可能なので、fold はどの枝も落とさず DR-038 どおり ambiguous:2 が保存される。
+test "DR-127 §4.2: 解決可能な枝は落とさない (ambiguous が保存される)" {
+  let src =
+    #|{"options":[
+    #|  {"name":"arr","type":"csv","long":true},
+    #|  {"name":"c","long":true,"or":[
+    #|    {"seq":[{"type":"number","name":"n1"},{"type":"number","name":"n2"}]},
+    #|    {"type":"string","name":"s1"}]}],
+    #| "positionals":[{"name":"p","type":"number","repeat":{"min":0,"max":1},"link":"arr[0]"}]}
+  let ast = seat_ast(src)
+  match parse_legacy(ast, ["--arr", "1,2", "--c", "5", "7"]) {
+    @engine.Ambiguous(data) => assert_eq(data.interpretations.length(), 2)
+    other => {
+      fail("expected Ambiguous, got " + render_outcome(other))
+      panic()
+    }
+  }
+}
+
+///|
+/// map の値型宣言too同様 (統括裁定 2026-08-02)。単枝なので全体パース失敗になり、
+/// 適合検査の詳細が合成 ParseError の message に載る。
+test "DR-126 §4 系: map 値型に合わない operand は枝 Reject (単枝は全体パース失敗)" {
+  let failure = seat_failure(MAP_SRC, ["--m", "a=1", "--ws", "x"])
+  assert_true(failure.contains("unresolvable_link_path"))
+  assert_true(failure.contains("string"))
 }

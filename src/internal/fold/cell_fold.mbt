@@ -384,6 +384,54 @@ pub fn residual_terminal_out(
 }
 
 ///|
+/// 値残余終端の**構造宣言** (array の要素型 / map の値型) — 統括裁定 2026-08-02: 「宣言に適合
+/// する値しか座に座れない」(DR-126 §4 系) は array の要素型宣言にも及ぶ。record フィールド終端
+/// (registry パース実体を持ち、乖離検査は resolve 相の持ち主) と `value` (全域 = 恒真) は
+/// `None`。union 終端も `None` (含有 variant 間で構造宣言が一意に定まらない — 発火時の resolve
+/// 相検査が受ける)。枝ローカル fold (DR-127 §4.2) が set 時の適合検査に使う。
+pub fn residual_terminal_structural(
+  declared : @abi.ValueType?,
+  path : ArrayView[@abi.ObservationSegment],
+  registry : @extension.Registry,
+) -> @abi.ValueType? {
+  match path {
+    [] => None
+    [segment, .. rest] =>
+      match (segment, declared) {
+        (@abi.ObservationName(_), Some(@abi.ValueType::Record(_))) =>
+          if rest is [] {
+            None // record フィールド終端 — resolve 相の乖離検査の領分
+          } else {
+            residual_terminal_structural(
+              declared_type_at(declared, path[0:1], registry),
+              rest,
+              registry,
+            )
+          }
+        (@abi.ObservationName(_), Some(@abi.ValueType::Map(value_type))) =>
+          if rest is [] {
+            match value_type {
+              @abi.ValueType::Value => None // 全域 = 恒真
+              _ => Some(value_type)
+            }
+          } else {
+            residual_terminal_structural(Some(value_type), rest, registry)
+          }
+        (@abi.ObservationIndex(_), Some(@abi.ValueType::Array(item_type))) =>
+          if rest is [] {
+            match item_type {
+              @abi.ValueType::Value => None
+              _ => Some(item_type)
+            }
+          } else {
+            residual_terminal_structural(Some(item_type), rest, registry)
+          }
+        _ => None
+      }
+  }
+}
+
+///|
 /// 宣言型で record 段と言える (= 器 `{}` を vivify してよい) か。union は含有 variant に record が
 /// あれば器を作れる (DR-127 §2.2 vivify 列 — 構造的なので variant 選択は不要)。
 fn declared_vivifies_record(declared : @abi.ValueType?) -> Bool {

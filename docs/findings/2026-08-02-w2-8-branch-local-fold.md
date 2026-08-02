@@ -6,7 +6,7 @@
 > (枝ローカル fold 本体、新規) / `src/internal/engine/eval.mbt` (`parse_tree` の裁定前フック) /
 > `src/internal/engine/lowering.mbt` (`ResidualRouting` — ElementShape / RuntimeResolved の routing 活性化) /
 > `src/kuu/resolve.mbt` / `src/kuu/front_door.mbt` (共有 fold の参照切替)。
-> pin: `src/kuu/value_seat_wbtest.mbt` (+6 本、既存 3 本を parse 相 reason へ更新) /
+> pin: `src/kuu/value_seat_wbtest.mbt` (+9 本、既存 3 本を parse 相 reason へ更新) /
 > `src/internal/fold/cell_fold_wbtest.mbt` (単体 pin の移設)。
 
 ## 判明した事実
@@ -59,14 +59,34 @@
   `:set`/`:incr` 同綴り): `missing_operand` (starved な :set 読み) と `unresolvable_link_path`
   (落ちた :incr 読み) の 2 件。errors[0] だけ見ると合成エラーを見落とすため、wbtest の
   `seat_failure` は全 error 結合に変更した。
+- **構造終端 (array 要素 / map 値型) の座に座る値は、構造宣言への適合検査を set 時に通る**
+  (統括裁定 2026-08-02 — DR-126 §4 系の「宣言に適合する値しか座に座れない」は要素型宣言にも
+  及ぶ)。これらの座は operand を entry 自身の型で読む (registry パース実体が無い) ため、
+  well-formed な読みでも宣言不適合が起こりうる — record フィールド終端の乖離検査 (resolve 相の
+  Error) と違い、ここは**枝 Reject** (合成 reason は他の枝落としと同じ `unresolvable_link_path`、
+  message に breach の詳細)。判定は `residual_terminal_structural` (`cell_fold.mbt`) — record
+  フィールド終端と `value` (全域 = 恒真) と union 終端 (含有 variant 間で構造宣言が一意に
+  定まらない) は `None` を返し検査対象外。適合検査の実体は W2-5 の `seat_fn_output_breach`
+  (構造走査) を再利用。
+- **同綴りの operand 変種 + bare 変種は、後続トークンがあるとき bare 側の読みを形成しない**
+  (実測 2026-08-02: `long: [":set", ":unset"]` + min:0 の rest positional で `--u 5` は
+  ambiguous にならず :set 読みのみ。`--u` 単独では bare 読みだけが完全経路になる)。したがって
+  「枝 Reject → 兄弟枝が勝つ」の実 2 読み pin はこの形では作れず、**variable-arity or**
+  (`fixtures/path-search/variable-arity-ambiguous.json` の形: seq(number,number) | string) +
+  **optional link positional** (`repeat {min:0, max:1}` + `link: "arr[0]"`) で構成した —
+  string 読みだけが positional を発火させて要素型不適合で落ち、seq 読みが勝つ。link 無し /
+  適合型の対照は両方 ambiguous:2 を実測 (= 2 読みの実在と、fold が解決可能な枝を落とさない
+  対極の両方を裏取り)。なお link は or / seq / ref entry には置けない (定義時
+  `link with ref/or/seq is not supported`) ため、匿名 or 枝で operand の型を割る構成は不可。
 
 ## 実用的な示唆 / 残余 (現在形)
 
-- **「兄弟枝が勝つ」の実 ambiguity は option-positional 境界またぎで作れる** (DESIGN §15.4)。
-  同じ綴りに operand 形 (`:set`) と bare 形 (`:incr`) を同居させ、余りトークンを min:0 の
-  positional が吸う — `--u 5` が 2 解釈になり、bare 枝だけが空座 ctx.old で Reject する非対称が
-  立つ。record を名乗る builtin type が spec に無いため conformance fixture (計画 §3 の (3) 実行時分
-  / (4)) は DR-132 実装窓 (#136) で移送する (lockstep push)。それまで wbtest が唯一の pin。
+- **「兄弟枝が勝つ」の実 ambiguity は variable-arity or + optional link positional で作る**
+  (判明した事実の最終 bullet)。ctx.old / Sentinel 系の Reject は Invoke 変種 (long dsl) にしか
+  乗らず、bare 変種は後続トークンがあると読みを形成しないため、これらの実 2 読み pin は現状の
+  定義語彙では構成できない — 単枝 (全枝落ち) の形で pin している。record を名乗る builtin type が
+  spec に無いため conformance fixture (計画 §3 の (3) 実行時分 / (4)) は DR-132 実装窓 (#136) で
+  移送する (lockstep push)。それまで wbtest が唯一の pin。
 - **W2-7 の単枝 Err pin 3 本は位相が移った** (「W2-8 まで resolve 相の Err」の予定どおり)。
   空座 ctx.old / Sentinel(default) / old 読み null 返しの 3 本は、いまは parse 相の
   `unresolvable_link_path` として観測される。実装完了の RED エビデンスはこの 3 本 (実装直後に
@@ -89,13 +109,17 @@
 
 ## 検証 (2026-08-02 実測)
 
-- `just test`: **694 tests / 694 passed**、conformance `decoded=396 ran_cases=889 skipped=0
+- `just test`: 694 tests / 694 passed (構造適合検査の追加前)、conformance `decoded=396 ran_cases=889 skipped=0
   mismatches=0`。known_divergences / expected_skips 両台帳は空のまま。
 - `moon check --deny-warn` green、`moon fmt` / `moon info` 適用済み (fold パッケージの
   `pkg.generated.mbti` 新設、engine 側は非公開関数のみで mbti 差分なし)。
-- 既存 pin メッセージの変更は W2-7 の単枝 Err 3 本 (位相移動、上記) のみ。新設 wbtest 7 本:
-  兄弟枝が勝つ / 全枝落ち + 原因合成 / map キー実在の部分書き / map キー不在の全枝落ち /
-  負 index の現在長解決 / 範囲外 index の args_pos 帰属 / subcommand scope 配下の枝選別。
+- 既存 pin メッセージの変更は W2-7 の単枝 Err 3 本 (位相移動、上記) のみ。新設 wbtest 9 本:
+  解決可能な値残余の読みの fold 通過 / 全枝落ち + 原因合成 / map キー実在の部分書き /
+  map キー不在の全枝落ち / 負 index の現在長解決 / 範囲外 index の args_pos 帰属 /
+  subcommand scope 配下の枝選別 / 要素型不適合の枝 Reject → 兄弟枝が勝つ (実 2 読み) /
+  解決可能な枝は落とさない (ambiguous 保存、対極)。map 値型不適合の単枝 Failure も pin。
+- 検証時点の総数: `just test` = **697 tests / 697 passed**、conformance 889/0 不変 (構造適合
+  検査の追加後)。
 
 ## 関連
 
