@@ -370,17 +370,34 @@ test "filter invocation is driven exclusively by the supplied Registry" {
 test "filters and cell_fns keep independent registries even for the same name" {
   let registry = Registry::new()
   assert_true(registry.register_filter(registry_filter("shared", "filter:")))
-  assert_true(
+  // DR-114 §9: metadata が Total/reasons=[] の resident は未宣言 runtime reason を emit
+  // できない。実行体なし descriptor は registry 境界で structured に拒否する。
+  assert_eq(
     registry.register_cell_fn(cell_fn_descriptor("shared", [], Value, Total)),
+    Err(ImplementationMissing("shared")),
   )
   assert_true(registry.lookup_filter("shared") is Some(_))
-  assert_true(registry.lookup_cell_fn("shared") is Some(_))
+  assert_true(registry.lookup_cell_fn("shared") is None)
 
   assert_false(registry.register_filter(registry_filter("shared", "other:")))
-  assert_false(
+  assert_eq(
     registry.register_cell_fn(
-      cell_fn_descriptor("shared", [cell_fn_parameter("arg")], Value, Reject),
+      cell_fn_descriptor("shared", [cell_fn_parameter("arg")], Value, Reject, run=fn(
+        _,
+        _,
+      ) {
+        Ok(Value(Null))
+      }),
     ),
+    Ok(()),
   )
-  assert_eq(registry.lookup_cell_fn("shared").unwrap().arity(), Exact(0))
+  assert_eq(registry.lookup_cell_fn("shared").unwrap().arity(), Exact(1))
+  assert_eq(
+    registry.register_cell_fn(
+      cell_fn_descriptor("shared", [], Value, Total, run=fn(_, _) {
+        Ok(Value(Null))
+      }),
+    ),
+    Err(DuplicateName("shared")),
+  )
 }

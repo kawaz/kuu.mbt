@@ -1046,21 +1046,22 @@ test "resolve_scope_config: a valueless same-name sibling shadows the outer valu
 test "resolve_default_fn: extension runtime failures are not reinterpreted as builtin absence" {
   let registry = @node.Registry::new()
   guard registry.register_cell_fn(
-    @extension.cell_fn_descriptor(
-      "extension/failing",
-      [],
-      @extension.CellFnOutput::Value,
-      @extension.FnFallibility::Reject,
-      reasons=["absent-source"],
-      run=fn(_, _) {
-        Err({
-          disposition: @abi.RecognizedButInvalid,
-          reason: "absent-source",
-          message: "extension source is unavailable",
-        })
-      },
-    ),
-  ) else {
+      @extension.cell_fn_descriptor(
+        "extension/failing",
+        [],
+        @extension.CellFnOutput::Value,
+        @extension.FnFallibility::Reject,
+        reasons=["absent-source"],
+        run=fn(_, _) {
+          Err({
+            disposition: @abi.RecognizedButInvalid,
+            reason: "absent-source",
+            message: "extension source is unavailable",
+          })
+        },
+      ),
+    )
+    is Ok(_) else {
     abort("duplicate extension/failing cell fn")
   }
   let entity : @engine.Entity = {

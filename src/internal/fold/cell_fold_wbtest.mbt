@@ -181,38 +181,40 @@ fn fold_test_binding(op : @abi.EffectOp) -> @abi.Binding {
 fn fold_test_registry() -> @extension.Registry {
   let registry = @extension.Registry::new()
   for descriptor in @extension.cell_fn_descriptors() {
-    guard registry.register_cell_fn(descriptor) else {
+    guard registry.register_cell_fn(descriptor) is Ok(_) else {
       abort("duplicate builtin cell fn: " + descriptor.name())
     }
   }
   guard registry.register_cell_fn(
-    @extension.cell_fn_descriptor(
-      "test/fail-observes",
-      [@extension.cell_fn_parameter("source")],
-      @extension.CellFnOutput::Value,
-      @extension.Total,
-      observes=["option:<source>"],
-      run=fn(_, _) { Ok(@extension.FnOutput::Value(@abi.Bool(true))) },
-    ),
-  ) else {
+      @extension.cell_fn_descriptor(
+        "test/fail-observes",
+        [@extension.cell_fn_parameter("source")],
+        @extension.CellFnOutput::Value,
+        @extension.Total,
+        observes=["option:<source>"],
+        run=fn(_, _) { Ok(@extension.FnOutput::Value(@abi.Bool(true))) },
+      ),
+    )
+    is Ok(_) else {
     abort("duplicate test/fail-observes cell fn")
   }
   guard registry.register_cell_fn(
-    @extension.cell_fn_descriptor(
-      "test/fail-run",
-      [],
-      @extension.CellFnOutput::Value,
-      @extension.Reject,
-      reasons=["test-failure"],
-      run=fn(_, _) {
-        Err({
-          disposition: @abi.RecognizedButInvalid,
-          reason: "test-failure",
-          message: "test resident rejects",
-        })
-      },
-    ),
-  ) else {
+      @extension.cell_fn_descriptor(
+        "test/fail-run",
+        [],
+        @extension.CellFnOutput::Value,
+        @extension.Reject,
+        reasons=["test-failure"],
+        run=fn(_, _) {
+          Err({
+            disposition: @abi.RecognizedButInvalid,
+            reason: "test-failure",
+            message: "test resident rejects",
+          })
+        },
+      ),
+    )
+    is Ok(_) else {
     abort("duplicate test/fail-run cell fn")
   }
   registry

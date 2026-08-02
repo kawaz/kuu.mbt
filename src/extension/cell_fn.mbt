@@ -104,7 +104,7 @@ pub struct CellFnDescriptor {
   priv observes_ : Array[String]
   priv reasons_ : Array[String]
   priv validate_ : (FnCall) -> Result[Unit, FnReason]
-  priv run_ : CellFn
+  priv run_ : CellFn?
 }
 
 ///|
@@ -116,13 +116,7 @@ pub fn cell_fn_descriptor(
   observes? : Array[String] = [],
   reasons? : Array[String] = [],
   validate? : (FnCall) -> Result[Unit, FnReason] = fn(_) { Ok(()) },
-  run? : CellFn = fn(_, _) {
-    Err({
-      disposition: @abi.RecognizedButInvalid,
-      reason: "implementation-missing",
-      message: "cell fn implementation is not registered",
-    })
-  },
+  run? : CellFn,
 ) -> CellFnDescriptor {
   {
     name_: name,
@@ -206,8 +200,22 @@ pub fn CellFnDescriptor::invoke(
 ) -> FnResult {
   match self.validate_call(call) {
     Err(reason) => Err(reason)
-    Ok(_) => (self.run_)(call.args, ctx)
+    Ok(_) =>
+      match self.run_ {
+        Some(run) => run(call.args, ctx)
+        None =>
+          Err({
+            disposition: @abi.RecognizedButInvalid,
+            reason: "implementation-missing",
+            message: "cell fn implementation is not registered",
+          })
+      }
   }
+}
+
+///|
+fn CellFnDescriptor::has_implementation(self : CellFnDescriptor) -> Bool {
+  self.run_ is Some(_)
 }
 
 ///|

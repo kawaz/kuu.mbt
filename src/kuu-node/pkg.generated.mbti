@@ -82,7 +82,7 @@ pub fn Registry::new() -> Self
 pub fn Registry::register_accumulator(Self, &@extension.AccumulatorExt) -> Bool
 pub fn Registry::register_array_filter(Self, @extension.ArrayFilterDescriptor) -> Bool
 pub fn Registry::register_capability(Self, &@extension.CapabilityExt) -> Bool
-pub fn Registry::register_cell_fn(Self, @extension.CellFnDescriptor) -> Bool
+pub fn Registry::register_cell_fn(Self, @extension.CellFnDescriptor) -> Result[Unit, @extension.CellFnRegistrationError]
 pub fn Registry::register_collector(Self, &@extension.CollectorExt) -> Bool
 pub fn Registry::register_completer(Self, &@extension.CompleterExt) -> Bool
 pub fn Registry::register_filter(Self, @extension.FilterDescriptor) -> Bool

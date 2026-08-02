@@ -4,7 +4,7 @@
 fn builtin_cell_fn_registry() -> Registry {
   let registry = Registry::new()
   for descriptor in cell_fn_descriptors() {
-    guard registry.register_cell_fn(descriptor) else {
+    guard registry.register_cell_fn(descriptor) is Ok(_) else {
       abort("duplicate builtin cell fn: " + descriptor.name())
     }
   }

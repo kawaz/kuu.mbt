@@ -202,6 +202,11 @@ pub(all) enum CellFnParameterKind {
   Value
 } derive(Eq, @debug.Debug)
 
+pub(all) enum CellFnRegistrationError {
+  DuplicateName(String)
+  ImplementationMissing(String)
+} derive(Eq, @debug.Debug)
+
 pub(all) enum CellFnRepetition {
   Once
   ZeroOrOne
@@ -335,7 +340,7 @@ pub fn Registry::new() -> Self
 pub fn Registry::register_accumulator(Self, &AccumulatorExt) -> Bool
 pub fn Registry::register_array_filter(Self, ArrayFilterDescriptor) -> Bool
 pub fn Registry::register_capability(Self, &CapabilityExt) -> Bool
-pub fn Registry::register_cell_fn(Self, CellFnDescriptor) -> Bool
+pub fn Registry::register_cell_fn(Self, CellFnDescriptor) -> Result[Unit, CellFnRegistrationError]
 pub fn Registry::register_collector(Self, &CollectorExt) -> Bool
 pub fn Registry::register_completer(Self, &CompleterExt) -> Bool
 pub fn Registry::register_filter(Self, FilterDescriptor) -> Bool

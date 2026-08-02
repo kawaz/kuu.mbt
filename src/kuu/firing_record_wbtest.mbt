@@ -43,17 +43,18 @@ fn firing_counter_registry(
     abort("duplicate test resident: csv")
   }
   guard registry.register_cell_fn(
-    @extension.cell_fn_descriptor(
-      name,
-      [],
-      @extension.CellFnOutput::Value,
-      @extension.FnFallibility::Total,
-      run=fn(_, ctx) {
-        counter.val = counter.val + 1
-        Ok(@extension.FnOutput::Value(value_of(counter.val, ctx)))
-      },
-    ),
-  ) else {
+      @extension.cell_fn_descriptor(
+        name,
+        [],
+        @extension.CellFnOutput::Value,
+        @extension.FnFallibility::Total,
+        run=fn(_, ctx) {
+          counter.val = counter.val + 1
+          Ok(@extension.FnOutput::Value(value_of(counter.val, ctx)))
+        },
+      ),
+    )
+    is Ok(_) else {
     abort("duplicate test cell fn: " + name)
   }
   registry

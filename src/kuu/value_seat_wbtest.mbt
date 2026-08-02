@@ -177,32 +177,34 @@ fn seat_registry() -> @node.Registry {
     abort("duplicate test resident: dict")
   }
   guard registry.register_cell_fn(
-    @extension.cell_fn_descriptor(
-      "stringy",
-      [],
-      @extension.CellFnOutput::Value,
-      @extension.FnFallibility::Total,
-      run=fn(_, _) { Ok(@extension.FnOutput::Value(@abi.String("oops"))) },
-    ),
-  ) else {
+      @extension.cell_fn_descriptor(
+        "stringy",
+        [],
+        @extension.CellFnOutput::Value,
+        @extension.FnFallibility::Total,
+        run=fn(_, _) { Ok(@extension.FnOutput::Value(@abi.String("oops"))) },
+      ),
+    )
+    is Ok(_) else {
     abort("duplicate test cell fn: stringy")
   }
   guard registry.register_cell_fn(
-    @extension.cell_fn_descriptor(
-      "rejecting",
-      [],
-      @extension.CellFnOutput::Value,
-      @extension.FnFallibility::Reject,
-      reasons=["test-rejection"],
-      run=fn(_, _) {
-        Err({
-          disposition: @abi.RecognizedButInvalid,
-          reason: "test-rejection",
-          message: "test resident rejects",
-        })
-      },
-    ),
-  ) else {
+      @extension.cell_fn_descriptor(
+        "rejecting",
+        [],
+        @extension.CellFnOutput::Value,
+        @extension.FnFallibility::Reject,
+        reasons=["test-rejection"],
+        run=fn(_, _) {
+          Err({
+            disposition: @abi.RecognizedButInvalid,
+            reason: "test-rejection",
+            message: "test resident rejects",
+          })
+        },
+      ),
+    )
+    is Ok(_) else {
     abort("duplicate test cell fn: rejecting")
   }
   // W2-9 監査 M1 用: record の宣言済み座 `since` が欠落していれば 0 で埋める構造変形 filter —
@@ -232,17 +234,18 @@ fn seat_registry() -> @node.Registry {
   // 監査 M2 用: ctx.old を読んでから null を返す Value fn — 空座で「old を要する」と
   // 「null 返し (unset 形)」が交差するケースを露出させる。
   guard registry.register_cell_fn(
-    @extension.cell_fn_descriptor(
-      "peeky",
-      [],
-      @extension.CellFnOutput::Value,
-      @extension.FnFallibility::Total,
-      run=fn(_, ctx) {
-        let _ = ctx.old()
-        Ok(@extension.FnOutput::Value(@abi.Null))
-      },
-    ),
-  ) else {
+      @extension.cell_fn_descriptor(
+        "peeky",
+        [],
+        @extension.CellFnOutput::Value,
+        @extension.FnFallibility::Total,
+        run=fn(_, ctx) {
+          let _ = ctx.old()
+          Ok(@extension.FnOutput::Value(@abi.Null))
+        },
+      ),
+    )
+    is Ok(_) else {
     abort("duplicate test cell fn: peeky")
   }
   registry
@@ -892,9 +895,9 @@ test "DR-037: 判明済み失敗 (out 乖離) の枝は完全経路に数えず�
 }
 
 ///|
-/// runtime Err は `FnFailed` として枝を落とす一方、Value(null) は通常の set operand として成立し、
-/// 空座のラダーを開放する。同じ trigger の 2 読みを branch fold に通し、builtin の値不在を
-/// failure へ戻す退行で Ambiguous/Failure にならないことを固定する (DR-130 §9 / DR-131 §1.1)。
+/// 共有 fold が runtime Err を `FnFailed` として枝から落とす一方、Value(null) を通常の set
+/// operand として成立させ、空座のラダーを開放する。同じ trigger の 2 読みを branch fold に通し、
+/// Value(null) を `FnFailed` として扱う退行を防ぐ (DR-130 §9 / DR-131 §1.1)。
 test "DR-131 §1.1: FnFailed 枝は落ち、Value(null) 枝は成立する" {
   let src =
     #|{"options":[

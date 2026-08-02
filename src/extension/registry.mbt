@@ -1,6 +1,12 @@
 // registry.mbt — explicit extension inventory assembled by the front-door package.
 
 ///|
+pub(all) enum CellFnRegistrationError {
+  DuplicateName(String)
+  ImplementationMissing(String)
+} derive(Eq, Debug)
+
+///|
 /// Registered node, matcher, and type resident families. Each identity is unique
 /// within its category; duplicate registration is rejected and never overwrites.
 pub struct Registry {
@@ -197,18 +203,21 @@ pub fn Registry::lookup_array_filter(
 }
 
 ///|
-/// Register one cell-fn contract. `filters` and `cell_fns` deliberately occupy
-/// independent namespaces.
+/// Register one executable cell-fn contract. `filters` and `cell_fns` deliberately occupy
+/// independent namespaces. A descriptor without an implementation is rejected before it can emit
+/// a runtime reason absent from its declared fallibility contract (DR-114 §9).
 pub fn Registry::register_cell_fn(
   self : Registry,
   resident : CellFnDescriptor,
-) -> Bool {
+) -> Result[Unit, CellFnRegistrationError] {
   let name = resident.name()
-  if self.cell_fns.get(name) is Some(_) {
-    false
+  if !resident.has_implementation() {
+    Err(ImplementationMissing(name))
+  } else if self.cell_fns.get(name) is Some(_) {
+    Err(DuplicateName(name))
   } else {
     self.cell_fns.set(name, resident)
-    true
+    Ok(())
   }
 }
 

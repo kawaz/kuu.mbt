@@ -75,7 +75,7 @@ fn register_cell_fn(
   registry : @node.Registry,
   resident : @extension.CellFnDescriptor,
 ) -> Unit {
-  guard registry.register_cell_fn(resident) else {
+  guard registry.register_cell_fn(resident) is Ok(_) else {
     abort("duplicate builtin cell fn resident name: " + resident.name())
   }
 }

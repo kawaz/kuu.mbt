@@ -166,7 +166,7 @@ pub fn Registry::lookup_array_filter(
 pub fn Registry::register_cell_fn(
   self : Registry,
   value : @extension.CellFnDescriptor,
-) -> Bool {
+) -> Result[Unit, @extension.CellFnRegistrationError] {
   self.extensions_.register_cell_fn(value)
 }
 
