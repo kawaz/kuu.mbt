@@ -17,9 +17,10 @@
 // 枝を誤って落とすと正しい解釈が消えるのに対し、落とし漏れは単枝観測 (resolve 相 Err) に
 // 一致するだけで、意味論は DR-127 §4 の範囲に留まるため。
 //
-// 既知の残差 (W2-4 findings §3.2 と同根): parse 相は env / config を引けないため、明示の
-// `default` 効果が座へ戻す値は宣言 default 止まり。resolve 相のラダー値と容器の中身が違う場合、
-// その後の実行時解決 (array 長など) がずれうる。W2-9 (観測面 / 公開 API) の判断と同着。
+// 明示 `default` 効果の落ち先 (DR-081 §2 の書き換え済み default) は `ladder` closure が供給する
+// (front_door が parse の値源 provider で実装、DR-114 §6.1 の一本化)。ladder 未供給の呼び出し
+// (engine 直呼び) は宣言 default 止まり — その形では record の old が resolve 相と一致せず
+// 消費されないため、fold は枝選別のためだけに走る従来経路になる。
 
 ///|
 /// 宣言セル 1 つ分の fold 素材: 対象 Entity と、それを宣言する scope の path (合成 ParseError の

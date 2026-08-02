@@ -1,6 +1,6 @@
 ---
 title: cell fn の多重実行の一本化 (DR-114「発火時に 1 回」との乖離)
-status: open
+status: resolved
 category: bug
 created: 2026-08-02T15:14:10+09:00
 last_read:
@@ -9,10 +9,10 @@ wip_entered:
 blocked_entered:
 pending_entered:
 discarded_entered:
-resolved_entered:
+resolved_entered: 2026-08-02T21:31:00+09:00
 discard_reason:
 pending_reason:
-close_reason:
+close_reason: ["finding/2026-08-02-firing-record-unification", "implemented"]
 blocked_by:
 origin: kuu (spec リポ)
 ---
@@ -75,9 +75,9 @@ W2-9 で実装しなかった理由 (公開 API 変更が観測面と独立に�
 
 ## 受け入れ条件
 
-- [ ] 発火 1 件につき cell fn 実行が 1 回になる引き渡し設計を決める (effects 射影分も含む)
-- [ ] DR-038 経路同一性 / DR-045 effects 観測を壊さないことを wbtest で示す
-- [ ] 既存 tests / conformance 889 cases 不変
+- [x] 発火 1 件につき cell fn 実行が 1 回になる引き渡し設計を決める (effects 射影分も含む)
+- [x] DR-038 経路同一性 / DR-045 effects 観測を壊さないことを wbtest で示す
+- [x] 既存 tests / conformance 889 cases 不変
 
 ## 関連
 

@@ -117,18 +117,16 @@ variant が無いので組合せ自体が現れない。
 carrier 構築は本段の対象 (値状態の fold) ではなく、揃えると DR-121 §4 の link 経路保存に影響が
 出るため触っていない。W2-9 (sources の座 re-tag) が同じ場所を触るので、そこで判断するのが自然。
 
-### 3.2 effects 射影の `ToDefault` は宣言 default までしか引けない
+### 3.2 effects 射影の `ToDefault` の落ち先 (FiringRecord 実装窓で閉じた)
 
-`project_effects` は parse 相の射影で env / config を受け取らない (`ParsedBindings::effects(ast)` は
-parse だけで完結する公開 API)。したがって `default` 効果の落ち先として引けるのは**宣言 default
-だけ**で、resolve 側の `resolve_ladder_below_cli` (env > config > 宣言 default) と一致しない。
-
-- **env / config が当該セルへ供給していない場合は一致する** (F-4 の実測がこの形)
-- 供給がある場合、`default` 効果の**後続**の `ctx.old` 依存 fn で effects と result がずれうる
-
-この残差を閉じるには `project_effects` へ env / config を渡す = 公開 API のシグネチャ変更が要り、
-本段の「挙動完全不変」と噛み合わない。**未検証のまま残す部分ではなく、構造的に閉じられないと
-分かっている残差**として記録する。W2-9 の観測面仕上げで公開 API ごと判断するのが妥当。
+`default` 効果の落ち先は resolve 側では `resolve_ladder_below_cli` (env > config > 宣言 default)
+だが、parse 相の射影は当初 env / config を受け取れず宣言 default 止まりだった。この残差は
+**FiringRecord 一本化 (`docs/findings/2026-08-02-firing-record-unification.md`) で閉じた**:
+`parse()` に渡した値源 (`ValueSources`) が parse 相 fold の ladder closure
+(`parse_fold_ladder`) に効き、effects 射影は fold の実行記録 (FiringRecord) の消費者になるため、
+`default` 効果の後続の `ctx.old` 依存 fn も effects と result が一致する (wbtest
+`firing_record_wbtest.mbt` の env / config 供給 pin)。`parse()` に値源を渡さない呼び出しは
+宣言 default 止まりの観測のまま (後方互換)。
 
 **射程はここだけである。** 「効果がまだ無い / `unset` で開いた座」のベースラインは env / config を
 引かないので、両 fold はそこで元から一致している (次節)。
@@ -199,9 +197,8 @@ write は元の値を変えず差し替え済みの新しい値を作る (`value
    あり、他実装が読む規範ではない。`ctx.old` × `default`/`unset` の組合せは
    fixture 語彙として存在しうる (count preset に variant を足すだけで書ける) ので、
    W2-5 / W2-9 で複合値の fixture を起こすウィンドウで一緒に落とすのが安い。
-3. **§3.2 の残差は `project_effects` の公開 API 形と一体**。W2-9 が effects の `path` を触るので、
-   同じ段で env/config 供給の要否を判断する。射程は `default` 効果の落ち先だけで、席が開いた座の
-   ベースライン (§3.2.1) は対象外 — こちらを ladder 化すると DR-077 §1 に反する。
+3. **§3.2 の残差は FiringRecord 実装窓で閉じた** (同節参照)。席が開いた座のベースライン
+   (§3.2.1) は引き続き ladder 化の対象外 — こちらを ladder 化すると DR-077 §1 に反する。
 4. **W2-7 (vivify) は `CellSeats::set_at` の signature と契約を拡張する段**になる。現在の
    `set_at` は「segment 列を辿って既存の座を差し替える」だけで、DR-127 §3 が vivify の条件と
    する 2 つの情報を**受け取っていない**:

@@ -100,10 +100,9 @@ land できる形に切れない (record の綴りが観測面の形に依存す
   builtin type = fixture/*) が入る #136 窓で conformance fixture へ移送できる (lockstep push)。
   観測の正形は本 findings の wbtest pin (時系列行 4 = `{since=cli,until=link}`、
   `arr[2]` / `[cli,cli,link]`) が実装側の正。
-- **effects 射影の env/config 残差は未解消のまま** (W2-4 §3.2)。一本化設計 4 の Supplies が
-  閉じ先で、issue `2026-08-02-cell-fn-multi-fire-unify` に統合済み。
-- **cell fn の多重実行も未解消のまま** (同 issue)。本窓は設計確定まで — 受け入れ条件と設計方向
-  を issue 側に反映した。
+- **effects 射影の env/config 残差 (W2-4 §3.2) と cell fn の多重実行は、後続窓の FiringRecord
+  実装で解消済み** (`docs/findings/2026-08-02-firing-record-unification.md`)。本 findings の
+  「実行一本化の設計」節が設計正本、実装は同 findings が正。
 
 ## 検証 (2026-08-02 実測)
 

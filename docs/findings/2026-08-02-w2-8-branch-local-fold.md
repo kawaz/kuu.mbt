@@ -117,15 +117,10 @@
 - **fold は値残余を持つセルだけ畳む** — 既存経路 (値残余ゼロ) では `binding_has_value_residual`
   の一走査だけで、Entity index の構築も走らない。既存 889 cases の不変はこの構造で担保
   (conformance 実測 889/0 不変)。
-- **cell fn の多重実行は未解消の既知課題** (監査 M2、段階化)。DR-114 は fn を発火時に 1 回呼ぶ
-  規範だが、現実装は effects 射影 (parse 相の公開 API) / 枝ローカル fold (裁定前) / resolve 相の
-  3 者が同じ発火を独立に実行する — 前 2 者は W2-8 以前からの既存二重実行に fold が 1 回を足した
-  形。危険域は **value_residual セル × 非決定 Value fn** (fold の判定と最終値が乖離しうる)。
-  builtin の Value fn (incr / unset 等) は old に対し決定的で、現 corpus に非決定 fn は無い。
-  一本化には fold 結果の引き渡しの席 (parse_tree の公開 API か binding 表現) が要り、binding
-  書き換え (Invoke → Set) は DR-038 の経路同一性と DR-045 の effects 観測を壊すため不可 —
-  W2-9 の観測面 (project_effects の供給問題、W2-4 findings §3.2) と同じ公開 API 判断に踏み込む
-  ので、同じ窓で設計する。issue `2026-08-02-cell-fn-multi-fire-unify` が正本。
+- **cell fn の多重実行は FiringRecord 一本化で解消済み**
+  (`docs/findings/2026-08-02-firing-record-unification.md`)。枝ローカル fold の枝内実行結果は
+  勝ち枝の FiringRecord として配達され、effects 射影と resolve 相は消費者になる — 危険域
+  (**value_residual セル × 非決定 Value fn** の枝選別値と座値の乖離) は wbtest で閉じを pin。
 - **resolve 相の残余分岐は最終防衛線として全判定を保持する** — CLI 以外の供給経路や fold の
   保守的スキップがここへ届くため。resolve.mbt 側のコメントに分業 (fold = 枝選別 / resolve =
   乖離検査・fn 失敗・最終防衛) を常設した。
