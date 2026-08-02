@@ -24,6 +24,34 @@ impl TypeExt for OpaqueTestType with fn default_seat_resolver(_self, ctx) {
 }
 
 ///|
+priv struct InputOverrideTestType {}
+
+///|
+impl TypeExt for InputOverrideTestType with fn name(_self) {
+  "input_override_test"
+}
+
+///|
+impl TypeExt for InputOverrideTestType with fn has_value_slot(_self) {
+  true
+}
+
+///|
+impl TypeExt for InputOverrideTestType with fn input_type(_self) {
+  ValueType::Record([("field", "string")])
+}
+
+///|
+impl TypeExt for InputOverrideTestType with fn parse_token(_self, token) {
+  Ok(@abi.String(token))
+}
+
+///|
+impl TypeExt for InputOverrideTestType with fn default_seat_resolver(_self, ctx) {
+  ctx.declared()
+}
+
+///|
 test "TypeExt names preserve the eight registry identities" {
   // Registry lookup and wire decode use these exact spellings; changing one would disconnect that resident.
   assert_eq(
@@ -60,24 +88,50 @@ test "TypeExt value-slot capability separates value types from presence presets"
 }
 
 ///|
-test "TypeExt output shape identifies builtin primitives without assuming external residents" {
-  let builtins : Array[&TypeExt] = [
-    string_type(),
-    number_type(),
-    int_type(),
-    float_type(),
-    bool_type(),
-    flag_type(),
-    count_type(),
-    tty_type(Some("stdin")),
-    completion_script_type(),
-    none_type(),
-  ]
-  for resident in builtins {
-    assert_eq(resident.output_shape(), Primitive)
+test "TypeExt output declarations match every builtin value space" {
+  // Each resident declares the complete value space it can produce; none names null rather than silence.
+  let actual : Array[ValueType?] = []
+  for
+    resident in [
+      string_type(),
+      number_type(),
+      int_type(),
+      float_type(),
+      bool_type(),
+      flag_type(),
+      count_type(),
+      tty_type(Some("stdin")),
+      completion_script_type(),
+      none_type(),
+    ] {
+    actual.push(resident.output_type())
   }
+  assert_eq(actual, [
+    Some(ValueType::String),
+    Some(ValueType::Number),
+    Some(ValueType::Number),
+    Some(ValueType::Number),
+    Some(ValueType::Bool),
+    Some(ValueType::Bool),
+    Some(ValueType::Number),
+    Some(ValueType::Bool),
+    Some(ValueType::String),
+    Some(ValueType::Null),
+  ])
+  // An external resident that does not declare structure remains opaque.
   let external = OpaqueTestType::{  } as &TypeExt
-  assert_eq(external.output_shape(), Opaque)
+  assert_eq(external.output_type(), None)
+}
+
+///|
+test "TypeExt input declarations default to string and dispatch overrides" {
+  // Both builtins and external residents inherit one-token string input unless they explicitly override it.
+  let external = OpaqueTestType::{  } as &TypeExt
+  assert_eq(string_type().input_type(), ValueType::String)
+  assert_eq(external.input_type(), ValueType::String)
+  // The new trait seat must dynamically dispatch instead of always returning the default.
+  let overridden = InputOverrideTestType::{  } as &TypeExt
+  assert_eq(overridden.input_type(), ValueType::Record([("field", "string")]))
 }
 
 ///|
