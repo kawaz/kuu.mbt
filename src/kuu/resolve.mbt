@@ -3244,6 +3244,14 @@ fn resolve_entity_raw(
           "unreachable: a @abi.Remove/@abi.Splice piece only fires for a multiple(merge) entity (DR-080 §1) — this is the scalar (non-multiple) fold",
         )
       }
+      // 席が開いた座の `old` は **宣言 default** であって、ラダー解決済みの値ではない。
+      // DR-077 §1: 「old は CLI 席内の畳みの現在値 (初回は default 起点)。値源ラダー (DR-031) は
+      // 『席の独立解決 + 選択』であって合成ではないので、他席 (env / config) の値は old に
+      // 参加しない — 例: `VERBOSITY=5` + CLI 1 発火は 6 ではなく 1」。逐語 pin は
+      // fixture `count-parse/env-coexistence.json::cli-fire-overrides-env`。
+      // `resolve_ladder_below_cli` を引きたくなるが、それは DR-114 §7 の **default mode** の規定
+      // (「上位ラダー席まで解決した現在値」) であり、ここは effect mode (「発火直前の cell 値」)。
+      // 下の `default_seat` が ladder を引くのは `default` 効果が明示発火した場合に限る (DR-081 §2)。
       let old = seats.old(e.name, default_scalar(e))
       let transition = fold_seat_effect(b, old, e.name, extensions)
       // REFERENCE の `cell_fns` 表 (`empty` 行): `Sentinel(Empty)` は **array / map / record を
