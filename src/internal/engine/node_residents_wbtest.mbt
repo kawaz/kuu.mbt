@@ -201,3 +201,36 @@ test "mandatory resident preserves downstream @abi.Pending fire path" {
     _ => fail("nested starved value must remain a failure")
   }
 }
+
+///|
+test "value_json tags composites so structurally distinct literals stay distinct nodes" {
+  // `NodeExt::equal` folds nodes by kind + encode, so the serialization must separate every pair of
+  // values that are different values. The scalar tags already did this for String("1") vs Number(1);
+  // the composite tags extend it to the containers.
+  assert_eq(
+    value_json(@abi.Array([@abi.Number(1.0), @abi.String("x")])),
+    [
+      "array".to_json(),
+      [["number".to_json(), 1.0.to_json()], ["string".to_json(), "x".to_json()]].to_json(),
+    ].to_json(),
+  )
+  assert_eq(
+    value_json(@abi.Object([("k", @abi.Bool(true))])),
+    [
+      "object".to_json(),
+      [["k".to_json(), ["bool".to_json(), true.to_json()].to_json()].to_json()].to_json(),
+    ].to_json(),
+  )
+  // An empty array and an empty object are different nodes, as are an array of one string and the
+  // string itself.
+  assert_not_eq(value_json(@abi.Array([])), value_json(@abi.Object([])))
+  assert_not_eq(
+    value_json(@abi.Array([@abi.String("x")])),
+    value_json(@abi.String("x")),
+  )
+  // Field order is preserved rather than folded into a JSON object, so permuted records differ.
+  assert_not_eq(
+    value_json(@abi.Object([("a", @abi.Null), ("b", @abi.Null)])),
+    value_json(@abi.Object([("b", @abi.Null), ("a", @abi.Null)])),
+  )
+}

@@ -83,6 +83,22 @@ fn value_json(value : @abi.Value) -> Json {
     @abi.String(text) => ["string".to_json(), text.to_json()].to_json()
     @abi.Number(number) => ["number".to_json(), number.to_json()].to_json()
     @abi.Bool(boolean) => ["bool".to_json(), boolean.to_json()].to_json()
+    @abi.Array(items) => {
+      let encoded : Array[Json] = []
+      for item in items {
+        encoded.push(value_json(item))
+      }
+      ["array".to_json(), encoded.to_json()].to_json()
+    }
+    @abi.Object(fields) => {
+      let encoded : Array[Json] = []
+      for field in fields {
+        encoded.push([field.0.to_json(), value_json(field.1)].to_json())
+      }
+      // The field list keeps declaration order rather than folding into a JSON object: two
+      // literals whose fields are permutations of each other are different nodes.
+      ["object".to_json(), encoded.to_json()].to_json()
+    }
   }
 }
 

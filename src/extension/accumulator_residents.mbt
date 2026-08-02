@@ -532,15 +532,36 @@ pub fn from_entries_spec_of(json : Json) -> FromEntriesSpec? {
 }
 
 ///|
+/// The plain JSON spelling of a value cell (no type tag — this feeds `from_entries` key
+/// derivation and the merge collector's row rendering, both of which want the value as a user
+/// would read it).
+fn scalar_value_json(value : @abi.Value) -> Json {
+  match value {
+    @abi.Null => ().to_json()
+    @abi.String(value) => value.to_json()
+    @abi.Number(value) => value.to_json()
+    @abi.Bool(value) => value.to_json()
+    @abi.Array(items) => {
+      let out : Array[Json] = []
+      for item in items {
+        out.push(scalar_value_json(item))
+      }
+      out.to_json()
+    }
+    @abi.Object(fields) => {
+      let out : Map[String, Json] = Map([])
+      for field in fields {
+        out.set(field.0, scalar_value_json(field.1))
+      }
+      out.to_json()
+    }
+  }
+}
+
+///|
 fn result_value_json(value : @abi.ResultValue) -> Json {
   match value {
-    @abi.Scalar(value) =>
-      match value {
-        @abi.Null => ().to_json()
-        @abi.String(value) => value.to_json()
-        @abi.Number(value) => value.to_json()
-        @abi.Bool(value) => value.to_json()
-      }
+    @abi.Scalar(value) => scalar_value_json(value)
     @abi.Array(values) => {
       let out : Array[Json] = []
       for value in values {
