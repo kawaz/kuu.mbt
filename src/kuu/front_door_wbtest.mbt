@@ -1250,8 +1250,7 @@ fn wbtest_effect_address(effect : OutputEffect) -> String {
 }
 
 ///|
-/// OutputView の 3 面 (`result` / `sources` / `effects`) を 1 本の文字列へ整形する。
-fn wbtest_view_of(src : String, args : Array[String]) -> String raise {
+fn wbtest_output_of(src : String, args : Array[String]) -> OutputView raise {
   let ast = match parse_definition(@json.parse(src)) {
     Ok(value) => value
     Err(Rejected(errors)) => {
@@ -1277,7 +1276,13 @@ fn wbtest_view_of(src : String, args : Array[String]) -> String raise {
       panic()
     }
   }
-  let view = output_legacy(ast, effects~)
+  output_legacy(ast, effects~)
+}
+
+///|
+/// OutputView の 3 面 (`result` / `sources` / `effects`) を 1 本の文字列へ整形する。
+fn wbtest_view_of(src : String, args : Array[String]) -> String raise {
+  let view = wbtest_output_of(src, args)
   let eff_items : Array[String] = []
   for effect in view.effects {
     eff_items.push(wbtest_effect_address(effect))
@@ -2745,6 +2750,38 @@ test "front_door.output: accumulator の set(null) は行を積まず後続 set 
     wbtest_view_of(src, ["--reset-tags", "--tags", "x"]),
     "result={tags=[x]} sources={tags=[cli]} effects=tags",
   )
+}
+
+///|
+/// accumulator の clear 操作は result と sources の独立した fold で同じ境界を持つ (DR-081 §2、
+/// DR-122 §1/§2、DR-131 §7)。`empty` はそれ以前の行を捨てて値座・由来座とも空配列にし、
+/// `default` は現在の default 席へ戻す。宣言 default が無ければ一様形 `[]`、あれば default 配列を
+/// 明示確定した CLI 由来の行として復元する。片面だけを assert せず result / sources を同時に固定する。
+test "front_door.output: accumulator の empty/default clear は result と sources を同時に再構成する" {
+  let empty_src =
+    #|{"options":[{"name":"tags","type":"string","long":[":set","clear:empty"],
+    #| "multiple":"append"}]}
+  let empty_view = wbtest_output_of(empty_src, ["--tags", "a", "--clear-tags"])
+  assert_eq(render_rval_sorted(empty_view.result), "{tags=[]}")
+  assert_eq(render_rval_sorted(empty_view.sources), "{tags=[]}")
+
+  let no_default_src =
+    #|{"options":[{"name":"tags","type":"string","long":[":set","restore:default"],
+    #| "multiple":"append"}]}
+  let no_default_view = wbtest_output_of(no_default_src, [
+    "--tags", "a", "--restore-tags",
+  ])
+  assert_eq(render_rval_sorted(no_default_view.result), "{tags=[]}")
+  assert_eq(render_rval_sorted(no_default_view.sources), "{tags=[]}")
+
+  let declared_default_src =
+    #|{"options":[{"name":"tags","type":"string","long":[":set","restore:default"],
+    #| "default":["base"],"multiple":"append"}]}
+  let declared_default_view = wbtest_output_of(declared_default_src, [
+    "--tags", "override", "--restore-tags",
+  ])
+  assert_eq(render_rval_sorted(declared_default_view.result), "{tags=[base]}")
+  assert_eq(render_rval_sorted(declared_default_view.sources), "{tags=[cli]}")
 }
 
 ///|
