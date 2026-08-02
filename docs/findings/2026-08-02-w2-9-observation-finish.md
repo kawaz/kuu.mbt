@@ -16,9 +16,13 @@
   増減しないので書き込み前後で長さは同じ。定義字面が既に非負の index (`arr[0]`) はそのまま通る。
   観測アドレスの差し替え対象は `observation.path` の末尾 value_residual 長ぶんに限る
   (前半はセル空間の消費済み segment で定義時静的、DR-127 §6)。
-- **解決できない残余は字面のままの best-effort。** 器不在の負 index 等は勝ち枝では枝ローカル
-  fold (DR-127 §4.2、W2-8) が Reject 済みの形で、届くのは fold の保守的スキップ経路 (宣言を
-  特定できないセル等) だけ — parse 相の観測は失敗で停止できない (W2-8 findings と同じ姿勢)。
+- **解決できない残余は字面のままの best-effort — ただし success 側の観測には露出しない**
+  (不変条件、統括確認 2026-08-02)。resolve 相は同じ binding 列を同じ共有 fold で畳むため、
+  残余書きが失敗する入力では resolve が Err になり Success の OutputView 自体が作られない。
+  書きが成立する座では解決の降下も同じ器で必ず成立する。字面が観測に出るのは parse-only API
+  (`ParsedBindings::effects`) を resolve が失敗する入力へ呼んだ失敗系の best-effort のみ
+  (fold の保守的スキップ経路 = 宣言を特定できないセル等。parse 相の観測は失敗で停止できない —
+  W2-8 findings と同じ姿勢)。不変条件の常設コメントは `projected_effect` (front_door.mbt)。
 - **sources の座単位 re-tag が入った** (DR-127 §6 / DR-122 §3)。部分書き (link) した座だけが
   `link` タグを持ち、他の座は産出発火のタグを保つ。時系列表行 4 (`--tr 1..5 --until 9`) は
   `sources={tr={since=cli,until=link}}`、array 要素は `--arr 1,2,3 --last 9` で

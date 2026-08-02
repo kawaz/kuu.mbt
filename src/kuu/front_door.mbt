@@ -694,9 +694,16 @@ fn projected_effect(
   }
   let declared = declared_default_seat(defaults, binding)
   // DR-127 §6 統括裁定 3: effects の `path` の index segment は解決済みの非負値を載せる。
-  // 解決は発火時点の座の現在長 (書き込み前 — 部分書きは要素を増減しない) で行い、解決でき
-  // ない形 (器不在の負 index 等 = 勝ち枝では枝ローカル fold (DR-127 §4.2) が既に落とす形の、
-  // 保守的スキップ経路の観測) は字面のままの best-effort に留める。
+  // 解決は発火時点の座の現在長 (書き込み前 — 部分書きは要素を増減しない) で行う。
+  //
+  // 不変条件 (統括確認 2026-08-02): **success 側の観測 (`output()` = resolve Success の
+  // effects) に字面の負 index は露出しない**。resolve 相の CLI seat fold は同じ binding 列を
+  // 同じ共有 fold で畳んでおり、残余書きが 1 件でも失敗すれば resolve は Err (= Success の
+  // OutputView が作られない)。書きが成立する座では `resolved_residual` の降下も同じ器で必ず
+  // 成立する。したがって下の字面フォールバックが観測に出るのは **失敗系のみ** — parse-only
+  // API (`ParsedBindings::effects`) を、resolve が失敗する入力 (枝ローカル fold の保守的
+  // スキップ経路 = 宣言を特定できないセル等) に対して呼んだ場合の best-effort 観測に限る。
+  // success 側の非負 pin は `value_seat_wbtest.mbt` (`arr[2]` / `arr[0]` 素通し)。
   let mut resolved_residual : Array[@abi.ObservationSegment]? = None
   let transition = if binding.value_residual.length() > 0 {
     // DR-127 §4.1 — 値空間残余の座への操作。old は座の内側の現在値 (record の宣言済み欠落は
