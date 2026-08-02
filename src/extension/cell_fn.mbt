@@ -119,7 +119,7 @@ pub fn cell_fn_descriptor(
   run? : CellFn = fn(_, _) {
     Err({
       disposition: @abi.RecognizedButInvalid,
-      reason: "absent-source",
+      reason: "implementation-missing",
       message: "cell fn implementation is not registered",
     })
   },

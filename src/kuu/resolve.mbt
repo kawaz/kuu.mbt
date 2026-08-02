@@ -4560,9 +4560,8 @@ fn resolve_default_fn(
     // ctx.option を読む fn を足すときは視野差に注意 (統一するなら dependency 側へ)。
     option=fn(name) { outer_values.get(name) },
     // Lexical scope chain (DR-125 §4 / DESIGN §2.7): this scope first, then outward. A name the
-    // scope declares itself shadows every outer binding, so an entity that is declared here but
-    // resolved to nothing yields None rather than reaching past its own shadow — the borrow then
-    // reports `absent-source` (DR-113 §5.4) instead of silently picking up the ancestor's value.
+    // scope declares itself shadows every outer binding, so an entity that resolves to null stops
+    // lookup here; borrow returns that absence as null instead of picking up an ancestor's value.
     dependency=Some(fn(name) {
       match option_values.get(name) {
         Some(value) => Some(value)
@@ -4582,7 +4581,6 @@ fn resolve_default_fn(
     },
   )
   match descriptor.invoke(fn_call, ctx) {
-    Err({ reason: "absent-source", message: _, .. }) => Ok([])
     Err({ reason, message, .. }) =>
       Err(ladder_err(entity.name, at_pos, reason, message, epath))
     Ok(@extension.FnOutput::Sentinel(_)) =>

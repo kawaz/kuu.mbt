@@ -12,7 +12,7 @@ fn builtin_cell_fn_registry() -> Registry {
 }
 
 ///|
-test "builtin cell_fns inventory matches DR-114 descriptor contracts" {
+test "builtin cell_fns inventory matches the canonical descriptor contracts" {
   let registry = builtin_cell_fn_registry()
   let names = [
     "set", "default", "unset", "empty", "incr", "borrow", "env", "uuid", "computed",
@@ -66,17 +66,17 @@ test "builtin cell_fns inventory matches DR-114 descriptor contracts" {
   assert_eq(borrow.parameters(), [cell_fn_parameter("source")])
   assert_eq(borrow.arity(), CellFnArity::Exact(1))
   assert_eq(borrow.output(), CellFnOutput::Value)
-  assert_eq(borrow.fallibility(), FnFallibility::Reject)
+  assert_eq(borrow.fallibility(), FnFallibility::Total)
   assert_eq(borrow.observes(), ["option:<source>"])
-  assert_eq(borrow.reasons(), ["absent-source"])
+  assert_eq(borrow.reasons(), [])
 
   let env = registry.lookup_cell_fn("env").unwrap()
   assert_eq(env.parameters(), [cell_fn_parameter("var")])
   assert_eq(env.arity(), CellFnArity::Exact(1))
   assert_eq(env.output(), CellFnOutput::Value)
-  assert_eq(env.fallibility(), FnFallibility::Reject)
+  assert_eq(env.fallibility(), FnFallibility::Total)
   assert_eq(env.observes(), ["env:<var>"])
-  assert_eq(env.reasons(), ["absent-source"])
+  assert_eq(env.reasons(), [])
 
   let uuid = registry.lookup_cell_fn("uuid").unwrap()
   assert_eq(uuid.parameters(), [
@@ -92,9 +92,9 @@ test "builtin cell_fns inventory matches DR-114 descriptor contracts" {
   assert_eq(computed.parameters(), [cell_fn_parameter("key")])
   assert_eq(computed.arity(), CellFnArity::Exact(1))
   assert_eq(computed.output(), CellFnOutput::Value)
-  assert_eq(computed.fallibility(), FnFallibility::Reject)
+  assert_eq(computed.fallibility(), FnFallibility::Total)
   assert_eq(computed.observes(), ["system:<key>"])
-  assert_eq(computed.reasons(), ["absent-source"])
+  assert_eq(computed.reasons(), [])
 }
 
 ///|
@@ -238,6 +238,18 @@ test "builtin cell fn residents execute through their registered descriptors" {
     uuid.validate_call({ name: "uuid", args: [@abi.String("5")] }) is Err(_),
   )
 
+  // 値を観測できない builtin は runtime failure を作らず null Value を返す。borrow/env/computed
+  // の 3 観測域すべてで同じ規則を固定し、専用 reason の再導入を防ぐ (DR-130 §9 / DR-131 §1.1)。
+  let borrow_missing_ctx = FnCtx::for_default(
+    "target",
+    observes=borrow_observes,
+    dependency=Some(fn(_) { None }),
+  )
+  assert_eq(
+    borrow.invoke(borrow_invocation.to_call(), borrow_missing_ctx),
+    Ok(FnOutput::Value(@abi.Null)),
+  )
+
   let env = registry.lookup_cell_fn("env").unwrap()
   let env_invocation = @abi.parse_fn_invocation(@abi.ColonString("env:MISSING")).unwrap()
   let env_ctx = FnCtx::for_default(
@@ -246,10 +258,19 @@ test "builtin cell fn residents execute through their registered descriptors" {
   )
   assert_eq(
     env.invoke(env_invocation.to_call(), env_ctx),
-    Err({
-      disposition: @abi.RecognizedButInvalid,
-      reason: "absent-source",
-      message: "env source 'MISSING' is absent",
-    }),
+    Ok(FnOutput::Value(@abi.Null)),
+  )
+
+  let computed = registry.lookup_cell_fn("computed").unwrap()
+  let computed_invocation = @abi.parse_fn_invocation(
+    @abi.ColonString("computed:missing-key"),
+  ).unwrap()
+  let computed_ctx = FnCtx::for_default(
+    "target",
+    observes=computed.concrete_observes(computed_invocation).unwrap(),
+  )
+  assert_eq(
+    computed.invoke(computed_invocation.to_call(), computed_ctx),
+    Ok(FnOutput::Value(@abi.Null)),
   )
 }

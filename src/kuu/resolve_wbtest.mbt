@@ -999,8 +999,8 @@ test "command_child fetches a subcommand scope; outer_values_of builds the paren
 /// 止まる。現在スコープが borrow 先と同名の entity を宣言していれば、その宣言が値を持つか否かに
 /// 関わらず解決先はそこで確定し、外側の同名値へは抜けない (`resolve_default_fn` の `dependency`
 /// closure が `entities_contain_name(siblings, name)` で None を返す分岐)。遮蔽先が値を持たなければ
-/// borrow は `absent-source` となり、借り手も unset のまま落ちる (DR-113 §5.4 / DR-051 §1)。
-/// fixture `value-sources/default-fn-borrow-shadowing.json` の
+/// borrow は null Value を返し、`set(null)` の一般規則で借り手のラダーも開放する (DR-130 §9 /
+/// DR-131 §1.1)。fixture `value-sources/default-fn-borrow-shadowing.json` の
 /// `inner-valueless-shadows-outer-default` の unit 版。対極 (同名宣言が無ければ外側へ届く、
 /// `default-fn-borrow-ladder.json` が固定する面) を同じ `outer_values` で並置し、結果の差が
 /// 同名宣言の有無だけから出ることを固定する。
@@ -1009,13 +1009,13 @@ test "resolve_scope_config: a valueless same-name sibling shadows the outer valu
     ..ent("ttl", @builtins.number_type()),
     default_fn: Some(@abi.Wire({ name: "borrow", args: ["socket_ttl"] })),
   }
-  // 遮蔽する宣言。default も env/config 席も持たないので自身は absent のまま。
+  // 遮蔽する宣言。default も env/config 席も持たないので自身の座は null に落ちる。
   let shadow = ent("socket_ttl", @builtins.number_type())
   let no_config = fn(_p : String) -> @abi.ConfigVal? { None }
   let outer = outer_values_of([
     cb("socket_ttl", @abi.Number(60.0), @abi.Default),
   ])
-  // 遮蔽あり: chain 1 段目の同名宣言で止まり、そこは値なし → 借り手も absent (外側の 60 は届かない)。
+  // 遮蔽あり: chain 1 段目の同名宣言で止まり、そこは null → 借り手も null (外側の 60 は届かない)。
   let shadowed : @engine.Scope = {
     greedy: [],
     positional: [],
@@ -1037,6 +1037,53 @@ test "resolve_scope_config: a valueless same-name sibling shadows the outer valu
     resolve_scope_config(unshadowed, [], Map([]), no_config, outer_values=outer),
     Ok([mkb_pub("ttl", @abi.Number(60.0), @abi.Default)]),
   )
+}
+
+///|
+/// builtin の値不在は null Value だが、第三者 extension が宣言した runtime reason は一般の
+/// ladder Error として伝播する。reason の綴りで builtin 旧契約を特別扱いせず、descriptor resident の
+/// Result 契約だけで判定することを固定する (REFERENCE §7.6 / DR-131 §1.1)。
+test "resolve_default_fn: extension runtime failures are not reinterpreted as builtin absence" {
+  let registry = @node.Registry::new()
+  guard registry.register_cell_fn(
+    @extension.cell_fn_descriptor(
+      "extension/failing",
+      [],
+      @extension.CellFnOutput::Value,
+      @extension.FnFallibility::Reject,
+      reasons=["absent-source"],
+      run=fn(_, _) {
+        Err({
+          disposition: @abi.RecognizedButInvalid,
+          reason: "absent-source",
+          message: "extension source is unavailable",
+        })
+      },
+    ),
+  ) else {
+    abort("duplicate extension/failing cell fn")
+  }
+  let entity : @engine.Entity = {
+    ..ent("target", @builtins.string_type()),
+    default_fn: Some(@abi.Wire({ name: "extension/failing", args: [] })),
+  }
+  match
+    resolve_default_fn(
+      entity,
+      [entity],
+      Map([]),
+      Map([]),
+      fn(_) { None },
+      -1,
+      [],
+      registry,
+    ) {
+    Err(error) => {
+      assert_eq(error.reason, "absent-source")
+      assert_eq(error.message, "extension source is unavailable")
+    }
+    Ok(_) => fail("an extension runtime rejection must remain a ladder Error")
+  }
 }
 
 // ── DR-066 §4: path/provenance on ladder-fill Errors ──────────────────────────

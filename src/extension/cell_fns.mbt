@@ -30,15 +30,6 @@ fn fn_string_arg(args : Array[@abi.FnArg], name : String) -> String {
 }
 
 ///|
-fn absent_source(kind : String, key : String) -> FnResult {
-  Err({
-    disposition: @abi.RecognizedButInvalid,
-    reason: "absent-source",
-    message: kind + " source '" + key + "' is absent",
-  })
-}
-
-///|
 fn set_fn(args : Array[@abi.FnArg], _ctx : FnCtx) -> FnResult {
   // A scalar target admits one logical value. Definition checking rejects multiple string args for
   // scalar targets; seq/repeat aggregation needs the structured Value carrier that is not present in
@@ -92,7 +83,7 @@ fn env_fn(args : Array[@abi.FnArg], ctx : FnCtx) -> FnResult {
   let variable = fn_string_arg(args, "env")
   match ctx.env(variable) {
     Some(value) => Ok(FnOutput::Value(value))
-    None => absent_source("env", variable)
+    None => Ok(FnOutput::Value(@abi.Null))
   }
 }
 
@@ -166,7 +157,7 @@ fn computed_fn(args : Array[@abi.FnArg], ctx : FnCtx) -> FnResult {
   let key = fn_string_arg(args, "computed")
   match ctx.system(key) {
     Some(value) => Ok(FnOutput::Value(value))
-    None => absent_source("system", key)
+    None => Ok(FnOutput::Value(@abi.Null))
   }
 }
 
@@ -219,18 +210,16 @@ pub fn cell_fn_descriptors() -> Array[CellFnDescriptor] {
       "borrow",
       [cell_fn_parameter("source")],
       CellFnOutput::Value,
-      FnFallibility::Reject,
+      FnFallibility::Total,
       observes=["option:<source>"],
-      reasons=["absent-source"],
       run=borrow_fn,
     ),
     cell_fn_descriptor(
       "env",
       [cell_fn_parameter("var")],
       CellFnOutput::Value,
-      FnFallibility::Reject,
+      FnFallibility::Total,
       observes=["env:<var>"],
-      reasons=["absent-source"],
       run=env_fn,
     ),
     cell_fn_descriptor(
@@ -245,9 +234,8 @@ pub fn cell_fn_descriptors() -> Array[CellFnDescriptor] {
       "computed",
       [cell_fn_parameter("key")],
       CellFnOutput::Value,
-      FnFallibility::Reject,
+      FnFallibility::Total,
       observes=["system:<key>"],
-      reasons=["absent-source"],
       run=computed_fn,
     ),
   ]

@@ -90,6 +90,35 @@ test "DR-114 §6.1: 値残余の無いセルの fn は発火 1 回 — 3 経路�
 }
 
 ///|
+test "DR-114 §6.1 × DR-131 §1.1: Value(null) の record は set(null) 観測とラダー開放へ一度だけ配達される" {
+  let counter : Ref[Int] = { val: 0 }
+  let registry = firing_counter_registry("nil-tick", counter, fn(_, _) {
+    @abi.Null
+  })
+  let ast = firing_ast(
+    (
+      #|{"options":[{"name":"n","type":"number","default":7,"long":[":nil-tick"]}]}
+    ),
+    registry,
+  )
+  let args = ["--n"]
+  guard parse(ast, args) is Success(binds) else { fail("should parse") }
+  let effects = binds.effects(ast)
+  guard resolve(ast, binds, args) is Success(resolved) else {
+    fail("should resolve")
+  }
+  let view = output(ast, resolved)
+  // null は failure へ分類せず set(null) として観測し、セル適用時だけ default 席へ開放する。
+  assert_eq(effects.length(), 1)
+  assert_eq(effects[0].op, @abi.EffectOp::Set)
+  assert_eq(effects[0].operand, Some(@abi.Null))
+  assert_eq(@engine.element_value(resolved.raw, [], "n"), Some(@abi.Number(7)))
+  assert_eq(view.effects, effects)
+  // effects / resolve は同じ FiringRecord を消費するため、resident 実行は発火時の 1 回だけ。
+  assert_eq(counter.val, 1)
+}
+
+///|
 test "DR-114 §6.1: 値残余セルの fn は枝内実行を引き継ぐ — fold の枝選別値と resolve の座値が同一" {
   let counter : Ref[Int] = { val: 0 }
   let registry = firing_counter_registry("tock", counter, fn(n, _) {
