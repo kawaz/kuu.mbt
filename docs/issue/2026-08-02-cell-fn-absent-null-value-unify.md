@@ -47,6 +47,11 @@ task #127 の coverage 補強では、この不一致を pin してしまうと�
 - [ ] 関連 schema / fixtures が REFERENCE §7.6・DR-131 §1.1 の null Value 意味論と
       整合している
 - [ ] branch_fold 消費者側で FnFailed/Value(null) の枝可否差分に対する回帰テストがある
+- [ ] `src/kuu/resolve.mbt` の absent-source reason 名特別処理を廃止または新契約へ再定義する
+- [ ] `src/kuu/resolve_wbtest.mbt` の borrow absent-source 保証を Value(null) 意味論へ更新する
+- [ ] spec REFERENCE §6b の borrow/env/computed の fallibility と descriptor fallibility/reasons を §7.6 に整合させる
+- [ ] 実装・spec 全体の absent-source 残存箇所を棚卸しし、generic extension 契約として残す場合は
+      builtin 契約と分離した根拠を明示する
 
 ## TODO
 
