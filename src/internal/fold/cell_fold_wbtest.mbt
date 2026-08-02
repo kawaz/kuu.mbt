@@ -171,3 +171,144 @@ test "CellSeats: 座への部分更新は record 座 / array index / 負 index �
     "index-out-of-range:1",
   )
 }
+
+///|
+fn fold_test_binding(op : @abi.EffectOp) -> @abi.Binding {
+  { ..@abi.Binding::new("cell", @abi.Bool(false), @abi.Cli), op, }
+}
+
+///|
+fn fold_test_registry() -> @extension.Registry {
+  let registry = @extension.Registry::new()
+  for descriptor in @extension.cell_fn_descriptors() {
+    guard registry.register_cell_fn(descriptor) else {
+      abort("duplicate builtin cell fn: " + descriptor.name())
+    }
+  }
+  registry
+}
+
+///|
+/// 保証 (DR-045 / DR-131 §2b, §7): 共有 fold は直接操作を値状態の遷移へ全列挙で写す。
+/// `unset` の旧 op carrier も通常値 null と同じ `ToValue(Null)` に正規化し、`default` / `empty`
+/// はそれぞれ default 席 / committed な空へ遷移する。`splice` は accumulator piece のため
+/// scalar 座の値状態を変えない。これは lowering の到達性ではなく fold 自体の遷移表を固定する単体 pin。
+test "fold_seat_effect: 直接操作を SeatTransition へ全列挙する (DR-045 / DR-131)" {
+  let registry = @extension.Registry::new()
+  let (unset, unset_old) = fold_seat_effect(
+    fold_test_binding(@abi.Unset),
+    None,
+    "cell",
+    registry,
+  )
+  assert_true(unset is ToValue(@abi.Null))
+  assert_false(unset_old)
+
+  let (use_default, default_old) = fold_seat_effect(
+    fold_test_binding(@abi.EffectOp::Default),
+    None,
+    "cell",
+    registry,
+  )
+  assert_true(use_default is ToDefault)
+  assert_false(default_old)
+
+  let (empty, empty_old) = fold_seat_effect(
+    fold_test_binding(@abi.Empty),
+    None,
+    "cell",
+    registry,
+  )
+  assert_true(empty is ToEmpty)
+  assert_false(empty_old)
+
+  let (splice, splice_old) = fold_seat_effect(
+    fold_test_binding(@abi.Splice),
+    None,
+    "cell",
+    registry,
+  )
+  assert_true(splice is NoChange)
+  assert_false(splice_old)
+}
+
+///|
+/// 保証 (DR-114 §2 / §7、DR-131 §2b / §7): `Invoke` は registry resident を共有 fold の中で
+/// 一度だけ発火し、Value(null) / UseDefault / Empty を直接操作と同じ遷移へ落とす。未知名と resident
+/// failure は座を変えない失敗遷移として区別し、現行 lowering が先に弾く経路にも fold 単体の防衛網を持つ。
+test "fold_seat_effect: Invoke の Value/Sentinel/未知名/失敗を全分類する (DR-114 / DR-131)" {
+  let registry = fold_test_registry()
+  let invoke = fn(name : String, args : Array[String]) {
+    fold_test_binding(@abi.Invoke({ name, args }))
+  }
+
+  // unset resident は ordinary Value(null) を返すため、旧 Unset op と同じ席開放遷移になる。
+  let (unset, _) = fold_seat_effect(invoke("unset", []), None, "cell", registry)
+  assert_true(unset is ToValue(@abi.Null))
+
+  // default / empty resident の Sentinel は fold 境界で対応する直接操作へ正規化される。
+  let (use_default, _) = fold_seat_effect(
+    invoke("default", []),
+    None,
+    "cell",
+    registry,
+  )
+  assert_true(use_default is ToDefault)
+  let (empty, _) = fold_seat_effect(invoke("empty", []), None, "cell", registry)
+  assert_true(empty is ToEmpty)
+
+  // registry に無い名前は FnMissing。座の値状態を変更する遷移へ化けない。
+  let (missing, _) = fold_seat_effect(
+    invoke("not-registered", []),
+    None,
+    "cell",
+    registry,
+  )
+  assert_true(missing is FnMissing("not-registered"))
+
+  // env resident は観測先が無いと reject する。失敗理由を保持した FnFailed で返す。
+  let (failed, _) = fold_seat_effect(
+    invoke("env", ["MISSING"]),
+    None,
+    "cell",
+    registry,
+  )
+  match failed {
+    FnFailed(reason) => {
+      assert_eq(reason.disposition, @abi.RecognizedButInvalid)
+      assert_eq(reason.reason, "absent-source")
+    }
+    _ => fail("missing env source must remain a classified FnFailed transition")
+  }
+}
+
+///|
+/// 保証 (DR-114 §7 / DR-081 §2 / DR-131 §7): 遷移から座状態への写像は、null による席開放、
+/// default 席の有無、committed な空、状態不変の失敗を区別する。特に default 値が無い場合の
+/// `ToDefault` は値を捏造せず `Emptied` へ落ち、FnMissing/FnFailed は既存座を書き換えない。
+test "seat_after: 遷移後の Opened/Seated/Emptied/不変を全列挙する" {
+  assert_true(seat_after(ToValue(@abi.Null), None) is Some(Opened))
+  assert_true(
+    seat_after(ToValue(@abi.Number(7.0)), None)
+    is Some(Seated(@abi.Number(7.0))),
+  )
+  assert_true(
+    seat_after(ToDefault, Some(@abi.String("declared")))
+    is Some(Seated(@abi.String("declared"))),
+  )
+  assert_true(seat_after(ToDefault, None) is Some(Emptied))
+  assert_true(seat_after(ToEmpty, None) is Some(Emptied))
+  assert_true(seat_after(NoChange, None) is None)
+  assert_true(seat_after(FnMissing("missing"), None) is None)
+  assert_true(
+    seat_after(
+      FnFailed({
+        disposition: @abi.RecognizedButInvalid,
+        reason: "failed",
+        message: "failed",
+      }),
+      None,
+    )
+    is None,
+  )
+}
