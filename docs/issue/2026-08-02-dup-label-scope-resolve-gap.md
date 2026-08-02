@@ -21,21 +21,43 @@ origin: kuu (spec リポ)
 
 ## 概要
 
-同一 scope 内に同じ raw label を持つ entity が複数存在する場合、resolve 相の
-entity 解決が候補を区別せず、どの候補を指しているか一意に決定できない gap が
-ある。
+duplicate raw command path (同名 command 2 本、export_key で結果キーは分離 — DR-120 合法) の
+配下に同名 entity が別宣言で並ぶとき、resolve 相の entity 解決 (binding.scope の raw label
+walk) が候補を区別せず、選択された読みと違う側の宣言を引く。
 
-## 背景
+## 再現 (実測 2026-08-02、W2-8 監査 M3 対応時)
 
-W2-8 監査 (M3) で露出した gap。対応前に W2-8 監査記録 (M3) と resolve 相の
-spec 側規定 (関連 DR) を突き合わせて、意図しない解決・曖昧性の見落としが
-実際にどの経路で発生するかを裏取りしてから対応方針を検討すること。
+```json
+{"commands":[
+ {"name":"go","export_key":"go1","options":[
+  {"name":"tr","type":"trange","long":true},
+  {"name":"until","type":"string","long":true,"link":"tr.until"}]},
+ {"name":"go","export_key":"go2","options":[
+  {"name":"tr","type":"number","long":true}]}]}
+```
+
+args `["go", "--until", "5"]` (trange は record `{since,until}` を名乗る wbtest 用型 —
+`src/kuu/value_seat_wbtest.mbt` の `RangeSeatType`)。読みは go1 側 (--until は go1 にしか
+無い) だが、resolve 相の値残余分岐が go2 側の `tr` (number 宣言) を引き、
+`invalid-range: the value-space seat of 'tr' did not resolve: absent (the seat's container
+is absent and vivify is set-only — DR-127 §3)` で全体パース失敗になる。正しくは go1 の
+trange 宣言で vivify が効き `{go1:{tr:{since:null,until:5}}}` が立つはず。
+
+wbtest「監査 M3: 同名 command 2 本の別宣言 target は保守的スキップ (誤枝刈りしない)」
+(`src/kuu/value_seat_wbtest.mbt`) が現状を pin — parse 相の枝ローカル fold は宣言候補の
+食い違いで保守的スキップするため誤枝刈りしない (そこは正)。失敗は resolve 相のみ。
+
+## 裏取りの観点
+
+binding には「どの同名 scope 本体の読みか」を運ぶ素材が無い (scope は raw label 列)。
+区別には枝 identity の搬送 (binding か scope marker の拡張) が要る可能性 — 部外者裁定は
+せず、spec 側の DR-120 / DR-025 (結果 nesting) と突き合わせて設計判断すること。
 
 ## 受け入れ条件
 
-- [ ] duplicate raw label を持つ scope での resolve 相の挙動を再現・特定する
-- [ ] spec 側の resolve 相規定 (関連 DR) と照合し、期待される区別方法を明確化する
-- [ ] resolve 相の entity 解決が候補を正しく区別するよう実装を修正する
+- [ ] 上記再現が go1 側の宣言で解決され result `{go1:{tr:{since:null,until:5}}}` になる
+- [ ] parse 相 fold の保守的スキップ wbtest を「成立する」期待へ更新する
+- [ ] 既存 tests / conformance 不変
 
 ## TODO
 

@@ -733,3 +733,111 @@ test "DR-126 §4 系: map 値型に合わない operand は枝 Reject (単枝は
   assert_true(failure.contains("unresolvable_link_path"))
   assert_true(failure.contains("string"))
 }
+
+///|
+/// DR-037 (監査 M1): fold の実行で**判明した失敗**を持つ枝は完全経路に数えない — Error 位相
+/// (record フィールド終端の out 乖離) も失敗語彙 (DR-126 §4 の breach) を保った Held 相当で
+/// 裁定前に除外される。同一 trigger `--u` の 2 bare variant (`:stringy` = string を返し number
+/// 宣言の座に不適合 / `:unset` = null 返しで空座でも成立) が 2 読みを作り、失敗枝が除外されて
+/// 成立枝が勝つ — Ambiguous にならない。
+test "DR-037: 判明済み失敗 (out 乖離) の枝は完全経路に数えず、成立枝が勝つ" {
+  let src =
+    #|{"options":[
+    #|  {"name":"tr","type":"trange","long":true},
+    #|  {"name":"u","long":[":stringy",":unset"],"link":"tr.until"}]}
+  assert_eq(
+    seat_view(src, ["--u"]),
+    "result={tr=null} sources={tr=null} effects=tr.until",
+  )
+}
+
+///|
+/// 監査 M3: duplicate raw command path (同名 command 2 本、export_key で結果キーは分離 —
+/// DR-120 合法) で同名 target `tr` が別宣言 (record と number) を持つとき、宣言 index は
+/// 複数候補になり一意に絞れない → fold は保守的スキップ (対象外 = resolve 相へ委譲)。
+/// 後勝ち上書きで number (primitive) 宣言を採ると parse 相で誤枝刈り
+/// (`unresolvable_link_path`) になる形が、parse は通る (= fold は枝を落とさない)。
+///
+/// resolve 相は現状、同名 scope の entity 解決が候補を区別せず number 宣言側を引いて
+/// `invalid-range` (vivify 不可の absent) で落ちる — fold とは独立の既存 gap
+/// (issue `2026-08-02-dup-label-scope-resolve-gap` 参照)。本 pin の主眼は
+/// 「失敗が parse 相の合成 (`unresolvable_link_path`) では**ない**」= fold が誤枝刈り
+/// していないこと。
+test "監査 M3: 同名 command 2 本の別宣言 target は保守的スキップ (誤枝刈りしない)" {
+  let src =
+    #|{"commands":[
+    #| {"name":"go","export_key":"go1","options":[
+    #|  {"name":"tr","type":"trange","long":true},
+    #|  {"name":"until","type":"string","long":true,"link":"tr.until"}]},
+    #| {"name":"go","export_key":"go2","options":[
+    #|  {"name":"tr","type":"number","long":true}]}]}
+  let ast = seat_ast(src)
+  let args = ["go", "--until", "5"]
+  // fold は枝を落とさない — parse は完全経路 1 本の Success。
+  match parse_legacy(ast, args) {
+    @engine.Success(_) => ()
+    other => {
+      fail("parse must not prune the reading, got " + render_outcome(other))
+      panic()
+    }
+  }
+  let failure = seat_failure(src, args)
+  assert_true(failure.contains("invalid-range"))
+  assert_true(!failure.contains("unresolvable_link_path"))
+}
+
+///|
+/// 落ちた枝の action を観測する共有定義 (監査 m3): 唯一の完全読みが `--help` を消費した上で
+/// map キー不在の枝落ちに遭う — 落ちた枝は Held 等価なので `@act:help` binding が faildef の
+/// 既定 (WithHeld) で `collect_actions` に寄与し、`fired_action` に載る。
+const ACTION_SRC : String =
+  #|{"options":[
+  #|  {"name":"m","type":"dict","long":true},
+  #|  {"name":"wz","type":"number","long":true,"link":"m.zzz"},
+  #|  {"name":"help","type":"help","long":true}]}
+
+///|
+test "Held 等価 (WithHeld): 落ちた枝の action は fired_action に寄与する" {
+  let ast = seat_ast(ACTION_SRC)
+  let args = ["--m", "a=1", "--wz", "5", "--help"]
+  match parse_legacy(ast, args) {
+    @engine.Failure(failure) => assert_eq(failure.fired_action, Some("help"))
+    other => {
+      fail("expected Failure, got " + render_outcome(other))
+      panic()
+    }
+  }
+}
+
+///|
+/// 監査 m3: DeepestOnly では args_pos == max_reach の枝だけが action に寄与する。落ちた枝の
+/// 合成 ParseError の args_pos (= operand `5` の at_pos 3) がこのケースの max_reach なので、
+/// Held 等価の枝が max_reach 競合に参加して action が発火する (競合の除外側は既存 Held と
+/// 同一アーム (`Held(pe, bs)` へ写すだけ) なので、寄与側の 1 点で配線を pin する)。
+test "Held 等価 (DeepestOnly): 落ちた枝の args_pos が max_reach 競合に参加する" {
+  let ast = seat_ast(ACTION_SRC)
+  let args = ["--m", "a=1", "--wz", "5", "--help"]
+  match
+    @engine.parse_tree(
+      @engine.ScopeNode(ast.root),
+      args,
+      defs=ast.templates,
+      extensions=ast.extensions.extensions(),
+      faildef=@engine.DeepestOnly,
+    ) {
+    @engine.Failure(failure) => {
+      assert_eq(failure.fired_action, Some("help"))
+      let mut synthesized_pos = -1
+      for e in failure.errors {
+        if e.reason == "unresolvable_link_path" {
+          synthesized_pos = e.args_pos
+        }
+      }
+      assert_eq(synthesized_pos, 3)
+    }
+    other => {
+      fail("expected Failure, got " + render_outcome(other))
+      panic()
+    }
+  }
+}

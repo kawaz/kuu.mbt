@@ -46,7 +46,7 @@ fn collect_seat_decls_into(
   sc : Scope,
   path : Array[String],
   defs : Map[String, Node],
-  out : Map[String, SeatDecl],
+  out : Map[String, Array[SeatDecl]],
   seen_refs : Array[String],
 ) -> Unit {
   for entity in sc.entities {
@@ -57,10 +57,15 @@ fn collect_seat_decls_into(
     for segment in entity.declaring_path {
       address.push(segment)
     }
-    out.set(seat_decl_key(address, entity.name), {
-      entity,
-      scope_path: path.copy(),
-    })
+    let key = seat_decl_key(address, entity.name)
+    let decl : SeatDecl = { entity, scope_path: path.copy() }
+    // 同一 key は複数候補として全部保持する (後勝ち上書き禁止) — duplicate raw command path
+    // (DR-120 合法) で同名 scope が 2 本立つと、同じ address に別宣言の entity が並びうる。
+    // 候補が一意に定まるかは lookup 側 (`seat_decl_lookup`) が判定する。
+    match out.get(key) {
+      Some(candidates) => candidates.push(decl)
+      None => out.set(key, [decl])
+    }
   }
   for g in sc.greedy {
     collect_seat_decl_nodes(g, path, defs, out, seen_refs)
@@ -75,7 +80,7 @@ fn collect_seat_decl_nodes(
   n : Node,
   path : Array[String],
   defs : Map[String, Node],
-  out : Map[String, SeatDecl],
+  out : Map[String, Array[SeatDecl]],
   seen_refs : Array[String],
 ) -> Unit {
   match n {
@@ -123,13 +128,40 @@ fn collect_seat_decl_nodes(
 fn collect_seat_decls(
   root : Node,
   defs : Map[String, Node],
-) -> Map[String, SeatDecl] {
-  let out : Map[String, SeatDecl] = Map([])
+) -> Map[String, Array[SeatDecl]] {
+  let out : Map[String, Array[SeatDecl]] = Map([])
   match root {
     ScopeNode(sc) => collect_seat_decls_into(sc, [], defs, out, [])
     _ => ()
   }
   out
+}
+
+///|
+/// key に対する宣言候補を 1 つに絞る。fold が判定に使う面 (宣言 ValueType / 宣言 default /
+/// accumulator か) で全候補が一致するときだけ Some — 食い違う候補が並ぶ key (同名 scope 2 本が
+/// 別宣言を持つ形) は None を返し、呼び手は保守的スキップ (fold 対象外 = resolve 相へ委譲) に
+/// 倒す。枝の同一性 (どの scope 本体の読みか) まで運べば絞れるが、binding にその素材が無い。
+fn seat_decl_lookup(
+  decls : Map[String, Array[SeatDecl]],
+  key : String,
+) -> SeatDecl? {
+  match decls.get(key) {
+    None => None
+    Some(candidates) => {
+      guard candidates.length() > 0 else { return None }
+      let head = candidates[0]
+      for offset in 1..<candidates.length() {
+        let other = candidates[offset]
+        if other.entity.ty.output_type() != head.entity.ty.output_type() ||
+          other.entity.default_values != head.entity.default_values ||
+          (other.entity.accum is Some(_)) != (head.entity.accum is Some(_)) {
+          return None
+        }
+      }
+      Some(head)
+    }
+  }
 }
 
 ///|
@@ -141,11 +173,16 @@ fn branch_fold_declared_default(entity : Entity) -> Value? {
 }
 
 ///|
-fn branch_fold_error(
+/// fold が枝を落とすときの合成 ParseError。`args_pos` = 当該 binding の `at_pos`、無ければ
+/// 消費位置 (DR-127 §4.2 / DR-037)。`reason` / `message` は失敗位相ごとに呼び手が渡す —
+/// Reject 位相は `unresolvable_link_path`、Error 位相 (fn 失敗 / out 乖離) は resolve 相が
+/// 出すのと同じ語彙 (単枝と多枝で診断の出所を変えない)。
+fn branch_fold_failure(
   binding : Binding,
   consumed_pos : Int,
   scope_path : Array[String],
-  detail : String,
+  reason : String,
+  message : String,
 ) -> ParseError {
   {
     element: binding.key,
@@ -154,13 +191,29 @@ fn branch_fold_error(
       None => consumed_pos
     },
     kind: Parse,
-    reason: "unresolvable_link_path",
-    message: "the link path into '" +
+    reason,
+    message,
+    path: scope_path.copy(),
+  }
+}
+
+///|
+fn branch_fold_error(
+  binding : Binding,
+  consumed_pos : Int,
+  scope_path : Array[String],
+  detail : String,
+) -> ParseError {
+  branch_fold_failure(
+    binding,
+    consumed_pos,
+    scope_path,
+    "unresolvable_link_path",
+    "the link path into '" +
     binding.key +
     "' did not resolve on this reading: " +
     detail,
-    path: scope_path.copy(),
-  }
+  )
 }
 
 ///|
@@ -177,18 +230,23 @@ fn scope_matches(binding : Binding, address : Array[String]) -> Bool {
 }
 
 ///|
-/// 完全枝 1 本の効果列 (`strip_levels_to_declaring_scope` 済み) を畳み、値空間残余の解決可否を
-/// 判定する (DR-127 §4.2)。解決不能なら合成 ParseError (= この枝を Held 等価で落とす素材) を返す。
+/// 完全枝 1 本の効果列 (`strip_levels_to_declaring_scope` 済み) を畳み、fold の実行で**判明した
+/// 失敗**を持つ枝を裁定前に除外する素材 (合成 ParseError) を返す (DR-127 §4.2 / DR-037 —
+/// 判明済みの失敗を持つ読みは完全経路に数えない)。失敗は 2 位相で、どちらも枝は落ちるが
+/// 合成 ParseError の語彙が違う:
 ///
-/// Reject になるのは DR-127 §3 / §4.1 の裁定素材のみ: Sentinel (default / empty) の残余座への
-/// 適用、空座 (未 vivify) への `ctx.old` 依存 Value fn、座の解決失敗 (record 宣言外フィールド /
-/// map キー不在 / array index の実行時範囲外 / 器の不在)。cell fn の未登録・実行失敗と
-/// フィールド type への out 不適合は経路解決の失敗ではないため枝を落とさず、resolve 相の
-/// Err / 乖離 Error に委ねる (単枝と多枝で診断の出所を変えない)。
+/// | 位相 | 素材 | reason |
+/// |---|---|---|
+/// | Reject (経路解決の失敗、DR-127 §3/§4.1/§4.2) | Sentinel の残余座適用 / 空座への ctx.old 依存 fn / 座の解決失敗 (SeatFault) / 構造終端 (array 要素・map 値型) の宣言不適合 | `unresolvable_link_path` |
+/// | Error (実行して判明した失敗、resolve 相と同語彙) | cell fn 未登録 (`unknown-vocab`) / fn 実行失敗 (fn の reason) / record フィールド終端の out 乖離 (DR-126 §4 の breach 語彙) | resolve 相と同一 |
+///
+/// 判定対象の効果は Set の operand と Value fn の戻り値の両方 (`b.op` に依らず、座へ座る
+/// 非 null 値すべて — DR-127 §3.2「保証は値を運んだ経路で変わらない」)。fold が実行しない
+/// もの (畳んでいないセルの fn 等) はここでは判明しないので落とさず、resolve 相が持ち主。
 fn branch_fold_reject(
   eff : Array[Binding],
   consumed_pos : Int,
-  decls : Map[String, SeatDecl],
+  decls : Map[String, Array[SeatDecl]],
   extensions : Registry,
 ) -> ParseError? {
   // 値残余を持つセルだけ畳む (このセル集合以外の効果は値状態に関与させる必要がない —
@@ -210,9 +268,9 @@ fn branch_fold_reject(
   }
   for cell in affected {
     let (scope, key) = cell
-    let decl = match decls.get(seat_decl_key(scope, key)) {
+    let decl = match seat_decl_lookup(decls, seat_decl_key(scope, key)) {
       Some(decl) => decl
-      // 宣言を特定できない形は落とさない (ヘッダの保守姿勢)。
+      // 宣言を特定できない / 候補が食い違う形は落とさない (保守的スキップ = resolve 相へ委譲)。
       None => continue
     }
     if decl.entity.accum is Some(_) {
@@ -237,6 +295,30 @@ fn branch_fold_reject(
         }
         let old = seats.old(key, declared_default)
         let (transition, _) = @fold.fold_seat_effect(b, old, key, extensions)
+        // fold が実行して判明した fn の失敗は Error 位相の除外素材 (resolve 相と同じ語彙)。
+        match transition {
+          @fold.FnMissing(name) =>
+            return Some(
+              branch_fold_failure(
+                b,
+                consumed_pos,
+                decl.scope_path,
+                "unknown-vocab",
+                "cell fn '" + name + "' is not registered",
+              ),
+            )
+          @fold.FnFailed({ reason, message, .. }) =>
+            return Some(
+              branch_fold_failure(
+                b,
+                consumed_pos,
+                decl.scope_path,
+                reason,
+                message,
+              ),
+            )
+          _ => ()
+        }
         // 明示 `default` 効果の落ち先は resolve 相ではラダー (DR-081 §2) だが、parse 相は
         // env / config を引けないので宣言 default 止まり (ヘッダの既知の残差)。
         match @fold.seat_after(transition, declared_default) {
@@ -260,8 +342,28 @@ fn branch_fold_reject(
         b, old, key, extensions,
       )
       match transition {
-        // fn の未登録 / 実行失敗は経路解決の失敗ではない — resolve 相の Err に委ねる。
-        @fold.NoChange | @fold.FnMissing(_) | @fold.FnFailed(_) => ()
+        @fold.NoChange => ()
+        // fold が実行して判明した fn の失敗は Error 位相の除外素材 (resolve 相と同じ語彙)。
+        @fold.FnMissing(name) =>
+          return Some(
+            branch_fold_failure(
+              b,
+              consumed_pos,
+              decl.scope_path,
+              "unknown-vocab",
+              "cell fn '" + name + "' is not registered",
+            ),
+          )
+        @fold.FnFailed({ reason, message, .. }) =>
+          return Some(
+            branch_fold_failure(
+              b,
+              consumed_pos,
+              decl.scope_path,
+              reason,
+              message,
+            ),
+          )
         // DR-127 §4.1 / DR-131 §7: Sentinel (default / empty) は値残余座で解決失敗。
         @fold.ToDefault | @fold.ToEmpty =>
           return Some(
@@ -290,17 +392,18 @@ fn branch_fold_reject(
           // (registry パース実体が無い) ため、well-formed な読みでも宣言不適合が起こりうる —
           // record フィールド終端の乖離検査 (resolve 相の Error) と違い、ここは枝 Reject。
           if !(value is Null) {
+            let producer = match b.op {
+              Invoke(invocation) => invocation.name
+              _ => "set"
+            }
             match
               @fold.residual_terminal_structural(
                 declared,
                 b.value_residual[:],
                 extensions,
               ) {
-              Some(structural) => {
-                let producer = match b.op {
-                  Invoke(invocation) => invocation.name
-                  _ => "set"
-                }
+              Some(structural) =>
+                // 構造終端 (array 要素 / map 値型) の宣言不適合 = Reject 位相。
                 match
                   @extension.seat_fn_output_breach(
                     value, structural, producer, extensions,
@@ -316,8 +419,34 @@ fn branch_fold_reject(
                     )
                   None => ()
                 }
-              }
-              None => ()
+              None =>
+                // record フィールド終端の out 乖離 = Error 位相 (DR-126 §4 の breach 語彙を
+                // そのまま運ぶ — resolve 相の同検査と同一観測)。
+                match
+                  @fold.residual_terminal_out(
+                    declared,
+                    b.value_residual,
+                    extensions,
+                  ) {
+                  Some(out) =>
+                    match
+                      @extension.seat_fn_output_breach(
+                        value, out, producer, extensions,
+                      ) {
+                      Some((reason, message)) =>
+                        return Some(
+                          branch_fold_failure(
+                            b,
+                            consumed_pos,
+                            decl.scope_path,
+                            reason,
+                            message,
+                          ),
+                        )
+                      None => ()
+                    }
+                  None => ()
+                }
             }
           }
           if value is Null && !container_present {

@@ -17,7 +17,10 @@
   `max_reach` に寄与し、`push_error` / faildef / `collect_actions` は既存の Held 経路をそのまま
   通るため、A/B 変種の非対称 (push_error するのに max_reach 無寄与) が消え、専用の counting 分岐を
   1 つも足していない。partial Accept は畳まない (裁定 = 完全経路の系の外。落ちる理由は token 残余
-  として既に観測されている)。
+  として既に観測されている)。Held 等価の counting 配線は production pin 済み (監査 m3) —
+  WithHeld (既定) で落ちた枝の `@act:help` が `fired_action` に載ること、DeepestOnly で合成
+  ParseError の args_pos が max_reach 競合に参加して action が発火することを各 1 本 pin
+  (除外側の分岐は既存 Held と同一アームなので寄与側で配線を固定)。
 - **第 4 の fold は作っていない。** 共有 fold (`cell_fold.mbt`) を `src/kuu/` から internal 共有
   パッケージ `src/internal/fold/` へ移し、engine (kuu の下流) からも import できるようにした。
   W2-4 findings §3.3 が障壁とした「engine が cell fn registry を import しない」は実測で解消済みの
@@ -30,18 +33,29 @@
   判定」で、operand 未確定の位置から cell fn を呼べない (`has_pending_invoke` がその手当て)。
   枝ローカル fold は完全枝・裁定直前に fn 発火込みで値状態を畳む — 入力も答えも別物なので統合
   しない。区別は `cell_fold.mbt` ヘッダに常設した。
-- **枝 Reject の判定素材は resolve 相の残余分岐と同じ 3 群だけ**: (1) Sentinel (default / empty)
-  の値残余座への適用 (DR-127 §4.1)、(2) 空座 (未 vivify) への `ctx.old` 依存 Value fn (§3、
-  old_consulted 判定)、(3) 座の解決失敗 (`SeatFault` — 器不在 / スカラ降下 / record 宣言外
-  フィールド / map キー不在 / array index の正規化後範囲外)。**fn 未登録・実行失敗・out 不適合の
-  乖離検査 (§3.2) は枝を落とさない** — 経路解決の失敗ではなく、単枝と多枝で診断の出所を変えない
-  ため resolve 相が持ち主のまま (wbtest「fn 戻り値の out 不適合は乖離 Error」が位相不変のまま
-  green であることが pin)。
+- **fold の実行で判明した失敗を持つ枝は完全経路に数えない** (DR-037、監査 M1 で確定)。失敗は
+  2 位相で、どちらも合成 ParseError 付きの Held へ写して裁定前に除外する — 語彙だけが違う:
+
+  | 位相 | 素材 | 合成 reason |
+  |---|---|---|
+  | Reject (経路解決の失敗、DR-127 §3/§4.1/§4.2) | Sentinel の残余座適用 / 空座への `ctx.old` 依存 Value fn (old_consulted 判定) / 座の解決失敗 (`SeatFault` — 器不在・スカラ降下・record 宣言外フィールド・map キー不在・array index の正規化後範囲外) / 構造終端 (array 要素・map 値型) の宣言不適合 | `unresolvable_link_path` |
+  | Error (実行して判明した失敗) | cell fn 未登録 / fn 実行失敗 / record フィールド終端の out 乖離 (DR-126 §4 の breach 語彙) | resolve 相と同一 (`unknown-vocab` / fn の reason / breach の reason) |
+
+  判定対象の効果は `b.op` に依らない — Set の operand も Value fn の戻り値も、座へ座る非 null 値
+  すべてが適合検査を通る (DR-127 §3.2「保証は値を運んだ経路で変わらない」)。fold が実行しない
+  もの (畳んでいないセルの fn 等) は「判明した失敗」ではないので落とさず、resolve 相が持ち主。
+  wbtest「判明済み失敗 (out 乖離) の枝は完全経路に数えず、成立枝が勝つ」(同一 trigger の 2 bare
+  variant `:stringy`/`:unset` — 2 読みとも完全経路になり、旧実装では Ambiguous だった形) が pin。
 - **保守姿勢: 宣言を特定できないセルは落とさない。** fold は binding の (scope, key) から
   `collect_seat_decls` (全 scope の Entity index、`scope_path ++ declaring_path` 鍵) で宣言を
   引き、引けない形・accumulator セルは枝選別せず resolve 相へ委ねる。枝を誤って落とすと正しい
   解釈が消えるのに対し、落とし漏れは単枝観測 (resolve 相 Err = 全体パース失敗) に一致するだけで
-  DR-127 §4 の範囲に留まる。
+  DR-127 §4 の範囲に留まる。**同一鍵の宣言候補は複数保持し (後勝ち上書き禁止、監査 M3)**、
+  fold が使う面 (宣言 ValueType / 宣言 default / accumulator か) で全候補が一致するときだけ
+  採用、食い違えば保守的スキップ — duplicate raw command path (DR-120 合法、export_key で結果
+  キー分離) で同名 target が別宣言を持つ形の誤枝刈りを防ぐ (wbtest pin)。なお同じ形で resolve
+  相の entity 解決が候補を区別しない既存 gap が露出した (issue
+  `2026-08-02-dup-label-scope-resolve-gap`) — fold とは独立の残課題。
 - **ElementShape / RuntimeResolved の routing を活性化** (W2-6/W2-7 の不活性を解消)。
   `residual_route` は 3 値 (`Unrouted` / `RoutedField` / `RoutedRuntime`) を返し、array 要素・
   map/value 終端も `LinkRoute.residual` 付きで route する。**operand のパース実体は entry 自身の
@@ -103,6 +117,15 @@
 - **fold は値残余を持つセルだけ畳む** — 既存経路 (値残余ゼロ) では `binding_has_value_residual`
   の一走査だけで、Entity index の構築も走らない。既存 889 cases の不変はこの構造で担保
   (conformance 実測 889/0 不変)。
+- **cell fn の多重実行は未解消の既知課題** (監査 M2、段階化)。DR-114 は fn を発火時に 1 回呼ぶ
+  規範だが、現実装は effects 射影 (parse 相の公開 API) / 枝ローカル fold (裁定前) / resolve 相の
+  3 者が同じ発火を独立に実行する — 前 2 者は W2-8 以前からの既存二重実行に fold が 1 回を足した
+  形。危険域は **value_residual セル × 非決定 Value fn** (fold の判定と最終値が乖離しうる)。
+  builtin の Value fn (incr / unset 等) は old に対し決定的で、現 corpus に非決定 fn は無い。
+  一本化には fold 結果の引き渡しの席 (parse_tree の公開 API か binding 表現) が要り、binding
+  書き換え (Invoke → Set) は DR-038 の経路同一性と DR-045 の effects 観測を壊すため不可 —
+  W2-9 の観測面 (project_effects の供給問題、W2-4 findings §3.2) と同じ公開 API 判断に踏み込む
+  ので、同じ窓で設計する。issue `2026-08-02-cell-fn-multi-fire-unify` が正本。
 - **resolve 相の残余分岐は最終防衛線として全判定を保持する** — CLI 以外の供給経路や fold の
   保守的スキップがここへ届くため。resolve.mbt 側のコメントに分業 (fold = 枝選別 / resolve =
   乖離検査・fn 失敗・最終防衛) を常設した。
@@ -113,13 +136,14 @@
   mismatches=0`。known_divergences / expected_skips 両台帳は空のまま。
 - `moon check --deny-warn` green、`moon fmt` / `moon info` 適用済み (fold パッケージの
   `pkg.generated.mbti` 新設、engine 側は非公開関数のみで mbti 差分なし)。
-- 既存 pin メッセージの変更は W2-7 の単枝 Err 3 本 (位相移動、上記) のみ。新設 wbtest 9 本:
-  解決可能な値残余の読みの fold 通過 / 全枝落ち + 原因合成 / map キー実在の部分書き /
-  map キー不在の全枝落ち / 負 index の現在長解決 / 範囲外 index の args_pos 帰属 /
-  subcommand scope 配下の枝選別 / 要素型不適合の枝 Reject → 兄弟枝が勝つ (実 2 読み) /
-  解決可能な枝は落とさない (ambiguous 保存、対極)。map 値型不適合の単枝 Failure も pin。
-- 検証時点の総数: `just test` = **697 tests / 697 passed**、conformance 889/0 不変 (構造適合
-  検査の追加後)。
+- 既存 pin メッセージの変更は W2-7 の単枝 Err 3 本 (位相移動、上記) のみ。新設 wbtest 14 本
+  (監査 m2 の本数訂正込み): 解決可能な値残余の読みの fold 通過 / 全枝落ち + 原因合成 /
+  map キー実在の部分書き / map キー不在の全枝落ち / 負 index の現在長解決 / 範囲外 index の
+  args_pos 帰属 / subcommand scope 配下の枝選別 / 要素型不適合の枝 Reject → 兄弟枝が勝つ
+  (実 2 読み) / 解決可能な枝は落とさない (ambiguous 保存、対極) / map 値型不適合の単枝 Failure /
+  判明済み失敗 (out 乖離) の枝除外 → 成立枝が勝つ (M1) / 同名 command 2 本の保守的スキップ (M3) /
+  Held 等価の WithHeld action 寄与 (m3) / DeepestOnly max_reach 競合参加 (m3)。
+- 検証時点の総数: `just test` = **701 tests / 701 passed**、conformance 889/0 不変 (監査対応後)。
 
 ## 関連
 

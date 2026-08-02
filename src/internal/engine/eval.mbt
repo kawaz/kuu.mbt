@@ -4908,7 +4908,7 @@ pub fn parse_tree(
   // partial Accept (p < toks.length()) は裁定に参加しない (完全経路の系の外) ため畳まない —
   // 落ちる理由は token 残余として既に観測されている。
   let branches = {
-    let mut seat_decls : Map[String, SeatDecl]? = None
+    let mut seat_decls : Map[String, Array[SeatDecl]]? = None
     let folded : Array[Branch] = []
     for b in branches {
       match b {

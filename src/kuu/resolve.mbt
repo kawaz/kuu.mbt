@@ -3491,12 +3491,12 @@ fn resolve_entity_raw(
         )
       }
       // DR-127 §4.1 — 値空間残余の座への操作。共有 fold の座の中を segment 列で部分更新し、
-      // 下流 carrier はセル全体の複合値で作り直す。経路解決の失敗 (Sentinel / 空座 ctx.old /
-      // 座の解決失敗) は裁定前の枝ローカル fold (DR-127 §4.2、eval.mbt の branch_fold) が枝を
-      // 落とすので、勝ち残った解釈がここへ来る限り再発しないが、本分岐は最終防衛線として同じ
-      // 判定を保持する — CLI 以外の供給経路や fold の保守的スキップ (宣言を特定できない形) が
-      // ここへ届くため。fold が落とさない失敗 (fn 未登録 / 実行失敗 / out 不適合の乖離検査) は
-      // 本分岐だけが持ち主で、resolve 相の Err として表面化する。
+      // 下流 carrier はセル全体の複合値で作り直す。裁定前の枝ローカル fold (DR-127 §4.2、
+      // eval.mbt の branch_fold) が、経路解決の失敗 (Reject 位相) も fold 実行で判明した失敗
+      // (Error 位相 = fn 未登録 / 実行失敗 / out 乖離) も枝ごと除外するので、勝ち残った解釈が
+      // ここへ来る限り再発しない。本分岐は最終防衛線として同じ判定を保持する — CLI 以外の
+      // 供給経路や fold の保守的スキップ (宣言を特定できない / 候補が食い違う形) がここへ
+      // 届くため。
       if b.value_residual.length() > 0 {
         let registry = extensions.extensions()
         let declared = e.ty.output_type()
