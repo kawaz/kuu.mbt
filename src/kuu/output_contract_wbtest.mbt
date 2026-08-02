@@ -147,6 +147,83 @@ test "nameless セルの複合値も座ごとの sources を持つ (DR-122 §3)"
 }
 
 ///|
+/// 射影 tree に `Scalar(複合)` が 1 つも無いことを確かめる。W2-5 の canonical 化規則の直接検査。
+fn no_scalar_holds_composite(value : @abi.ResultValue) -> Bool {
+  match value {
+    @abi.Scalar(scalar) => !(scalar is (@abi.Array(_) | @abi.Object(_)))
+    @abi.Array(items) => items.iter().all(no_scalar_holds_composite)
+    @abi.Object(fields) =>
+      fields.iter().all(field => no_scalar_holds_composite(field.1))
+  }
+}
+
+///|
+/// 保証 (W2-5 の canonical 化規則、統括裁定 2026-08-02): **射影後の `Scalar` は複合を保持しない。**
+/// `Scalar(Object([...]))` と `Object([...])` は同じ JSON の 2 表現であり、前者を選ぶと
+/// `source_shadow` の scalar アームが持つタグが 1 つしかないため、DR-122 §1 (sources は result と
+/// 同型) と DR-127 §6 (複合値を leaf 1 タグに潰さない) が同時に破れる。綴りの検査 (上の 2 test) は
+/// 両表現を区別できないので、構造そのものを見る本 test が規則の網である。
+test "射影後の Scalar は複合を保持しない (W2-5 canonical 化規則)" {
+  let src =
+    #|{"options": [{"name": "span", "type": "range", "long": true}]}
+  let ast = range_ast(src)
+  let args = ["--span", "1..2"]
+  let outcome = resolve_legacy(ast, parse_legacy(ast, args), args)
+  let bindings = match outcome {
+    @engine.Success(b) => b
+    other => {
+      fail("resolve should succeed, got " + render_outcome(other))
+      panic()
+    }
+  }
+  let view = output_legacy(ast, effects=bindings)
+  assert_true(no_scalar_holds_composite(view.result))
+  assert_true(no_scalar_holds_composite(view.sources))
+  // セル値の複合は射影の複合アームに現れる (持ち上げが起きている side の表明)。
+  match view.result {
+    @abi.Object(fields) => {
+      let mut span : @abi.ResultValue? = None
+      for field in fields {
+        if field.0 == "span" {
+          span = Some(field.1)
+        }
+      }
+      assert_eq(
+        span,
+        Some(
+          @abi.Object([
+            ("since", @abi.Scalar(@abi.Number(1.0))),
+            ("until", @abi.Scalar(@abi.Number(2.0))),
+          ]),
+        ),
+      )
+    }
+    _ => fail("root projection should be an Object")
+  }
+  // sources は同型で、座ごとに独立したタグを持つ (DR-122 §1 / §3)。
+  match view.sources {
+    @abi.Object(fields) => {
+      let mut span : @abi.ResultValue? = None
+      for field in fields {
+        if field.0 == "span" {
+          span = Some(field.1)
+        }
+      }
+      assert_eq(
+        span,
+        Some(
+          @abi.Object([
+            ("since", @abi.Scalar(@abi.String("cli"))),
+            ("until", @abi.Scalar(@abi.String("cli"))),
+          ]),
+        ),
+      )
+    }
+    _ => fail("root sources should be an Object")
+  }
+}
+
+///|
 /// 乖離 1 件を撃って、held Error の reason を読む。
 fn range_divergence_reason(token : String) -> String raise {
   let src =

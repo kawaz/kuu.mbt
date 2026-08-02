@@ -139,7 +139,7 @@ Stage E を後半に置いていたのは効きが悪い。前倒しする。
 | **W2-2** | **value_type 体系のモデル化** (DR-126 §1)。`value_type := primitive \| {array} \| {map} \| {record} \| union` を導入。type 参照 registry 解決 (registry 空間のみ、`definitions.types` に shadow されない — DR-126 §1)、依存グラフの循環検査 `circular-ref` (DR-067 の参照層に type edge を追加)。`TypeOutputShape` を value_type へ置換 (既定は名乗らない = 現 `Opaque` 相当) | wbtest: 参照解決 / 未登録参照 = `unknown-vocab` / 循環 = `circular-ref` / bare 名の builtin ns 糖衣。**既存 880 cases 不変** (record を名乗る住人がまだ居ないため) | 中。体系設計そのもの。DR-128 §7 と共有するので**入力側 (`io_type.input`) の席も同時に見込んだ形にする** | 体系設計 fable5-worker-high → 実装 codex-sol-worker |
 | **W2-3** | **`Value` の複合化 (器のみ)**。`Array(Array[Value])` / `Object(Array[(String, Value)])` を追加。産出者は作らないので挙動不変。**`ConfigVal` は統合せず、非統合の理由 (DR-130 §9.1) を design rationale として明記**。`ResultValue` は触らない | 既存 tests + cases 完全不変。§1.1 の「実行時 4 箇所 + 網羅 match prod 4 / test 5」の全件に arm があることを棚卸し表 (`docs/findings/2026-08-02-w2-3-value-composite-inventory.md`) で示す。追加 wbtest は器の構築 / JSON 往復 / Eq | **中**。量は小さいが**コンパイラが守ってくれない**。受け入れ条件を「コンパイル通過」でなく「棚卸し表の全件確認」にする | opus5-worker-medium (機械作業でなく監査が本体) |
 | **W2-4** | **効果適用 fold の一本化**。`front_door.mbt:689` の `current` map と resolve のセル fold を 1 つの共有関数へ。map の値を複合対応にし、座への部分更新 API (segment 列での get / set) を 1 箇所に置く。挙動不変 | 既存 tests / cases 完全不変。wbtest: 部分更新 API の単体 (record 座 / array index / 負 index / 未 vivify) | 中〜高。既存 2 fold の微妙な差異 (default 値の扱い、`Invoke` の `ctx.old` 供給) を潰す作業が本体 | opus5-worker-high |
-| **W2-5** (完了 2026-08-02) | **産出者を通す + 乖離検査**。DR-126 §4 の乖離検査を**射影で null 補形する前の生出力に対し** (DR-130 §4.1) — (a) 宣言外キー / (b) フィールド type の `out` 不一致 = Error、(c) 宣言済みキー不在 = 正常。sources の構造分解 (DR-127 §6 / DR-122 §3)。**`parse_token` の ABI 破壊は起きなかった** — W2-2 の `output_type` と W2-3 の複合 `Value` で戻り型は既に複合対応済みで、signature を触っていない | 達成: 655 tests / `ran_cases=888 mismatches=0`。`ResultValue` は**非統合**で裁定し、代わりに「射影後の `Scalar` は複合を保持しない」canonical 化規則を置いた。**spec fixture (6) は書けない** — record を名乗る builtin type factory が spec に無く、複合を産む住人が conformance 面に存在しない (§3 参照) | 実績: 中。結果は `docs/findings/2026-08-02-w2-5-producer-and-divergence.md` が正本 | opus5-worker-medium |
+| **W2-5** (完了 2026-08-02) | **産出者を通す + 乖離検査**。DR-126 §4 の乖離検査を**射影で null 補形する前の生出力に対し** (DR-130 §4.1) — (a) 宣言外キー / (b) フィールド type の `out` 不一致 / 重複キー = Error、(c) 宣言済みキー不在 = 正常。sources の構造分解 (DR-127 §6 / DR-122 §3)。`TypeExt::parse_token` は `fn parse_token(Self, String) -> Result[Value, TypeParseFail]` のまま複合を返せるので signature を触らない | 達成: 655 tests / `ran_cases=888 mismatches=0`。`ResultValue` は**非統合**とし、**射影後の `Scalar` は複合を保持しない** canonical 化規則を規範として置く。**spec fixture (6) は本段では立たない** — record を名乗る builtin type factory が spec に無く、複合を産む住人が conformance 面に居ない (§3) | 実績: 中。結果は `docs/findings/2026-08-02-w2-5-producer-and-divergence.md` が正本 | opus5-worker-medium |
 | **W2-6** | **値空間残余の静的解決** (DR-127 §2.2 遷移表)。`resolve_link_path` の `Residual(shape)` を value_type ごとの降下へ。record = フィールド当たり判定 (外れは `absent-ref`)、array = `[int]` は構造静的続行 / `.name` は definition-error、map・value = 以降全部実行時、primitive = definition-error (現状維持)、union = 含有 variant 1 つ以上 + 型一致検査。**型の依存グラフを辿る**降下。§6 の統括裁定 1 により **accumulator セルへの値空間パスはここで `Unsupported` に倒す** | wbtest: 遷移表 6 行それぞれの静的判定 + accumulator セルの `Unsupported`。→ spec fixture **(3)** の静的部分 | 中。union 行 (含有 variant 間の型一致 = operand のパース型が定まるか) が唯一の設計判断 | fable5-worker-high |
 | **W2-7** | **vivify + 座への操作語彙**。器 `{}` の auto-vivify (record 段まで、**`set` 専用**、DR-127 §3)。`map` / `value` / 宣言なしは枝 Reject。座への operand が**フィールド側の type** の pieceProcessor を通る (§3.2)。**DR-131 §7 の縮小を反映** — Reject する Sentinel は `default` / `empty` の 2 つ、空座 Reject は `ctx.old` を要する Value fn に限る、`set(null)` は座を `null` へ戻す通常の set (DR-131 §2b)。DR-130 §4.1 の「宣言済み座の欠落は論理的に `null`」を値降下側に統一 | wbtest: DR-127 §4 の時系列 5 行すべて。vivify 済み器と null 座の同居。→ spec fixture **(2)(5)** | **高**。時系列適用が W2-4 の一本化 fold と噛み合うかが全て。null 座との相互作用は DR-130/131 で規範が固まっているので**設計の不確定性はむしろ第 1 波計画時点より低い** | fable5-worker-high |
 | **W2-8** | **§4.2 の枝ローカル効果列 fold** (W2-0 の spike を本実装へ)。実行時解決 (array index の現在長 / map キー / `value`) が初めて発生する。裁定前に枝内で解決可否を判定し Reject へ倒す。§6 の統括裁定 2 により **ParseError の合成は義務** (args_pos = 当該 binding の `at_pos`、無ければ消費位置) | wbtest: 値残余 absent → 枝 Reject → 他枝が勝つ。全枝落ちの失敗レポート。→ spec fixture **(4)** と **(3)** の負 index 実行時分 | **最高**。W2-0 で形が確定していれば実装は追随 | fable5-worker-high |
@@ -154,7 +154,7 @@ Stage E を後半に置いていたのは効きが悪い。前倒しする。
 | (3) | 負 index | 静的分 W2-6 / 実行時分 W2-8 | 未着手 |
 | (4) | 値残余 absent → 枝 Reject → 他枝が勝つ | W2-8 | 未着手 |
 | (5) | 時系列上書き (部分書き ⇄ parser 産出、逆順両方) | W2-7 | 未着手 |
-| (6) | sources の座 re-tag | ~~W2-5~~ + W2-9 | **spec 側が塞がっている** — record 産出 builtin が無いため conformance に複合値が出せない。W2-5 で実装機構と wbtest は立った |
+| (6) | sources の座 re-tag | W2-9 | **spec 待ち** — record を名乗る builtin type factory が無く、conformance に複合値を出す住人が居ない。実装機構と wbtest は W2-5 で立っている |
 | (7) | effects の `path` 表記 | セル空間分 **W2-1** / 値空間分 W2-9 | セル空間分は実装済・未 pin (債務) |
 | (8) | nameless 透過子への位置指定着地 | **W2-1** | 実装済・未 pin (債務) |
 
@@ -187,11 +187,6 @@ fixture を足すとローカルが即 UNEXPECTED 落ち、pin bump した瞬間
 4. **accumulator セルへの値空間パス (§6 の統括裁定 1 で v1 は `Unsupported` に確定)。** W2-6 で明示的に
    塞ぐ。塞ぎ忘れると「規範が無い経路が黙って動く」ことになる。
 
-5. ~~**`parse_token` の ABI 破壊 (W2-5)。**~~ **解消済み (実測 2026-08-02)。** W2-2 が `output_type`
-   (既定 `None`) を、W2-3 が複合 `Value` を先に入れた順序のおかげで、`parse_token` の signature は
-   `fn parse_token(Self, String) -> Result[Value, TypeParseFail]` のまま複合を返せる。W2-5 は
-   `TypeExt` を 1 行も変えていない。**段構成そのものがリスクを消化した。**
-
 ## 5. 概算規模と委譲仕分け
 
 | 段 | 主な変更ファイル | 行数オーダー |
@@ -201,7 +196,7 @@ fixture を足すとローカルが即 UNEXPECTED 落ち、pin bump した瞬間
 | W2-2 | value_type の新規モジュール + `src/extension/node_traits.mbt` + 参照層 (DR-067) | 400〜700 |
 | W2-3 | `src/abi/value.mbt` 起点、実行時 4 箇所 + 網羅 match prod 4 / test 5 | **150〜300** (第 1 波見積 800〜1500 を下方修正) |
 | W2-4 | `src/kuu/front_door.mbt` + `src/kuu/resolve.mbt` + 共有 fold の新設 | 350〜550 |
-| W2-5 | `src/extension/node_traits.mbt` + 全 TypeExt 実装 + `src/kuu/resolve.mbt` (sources 分解) + 乖離検査 | 500〜750 |
+| W2-5 | `src/extension/output_contract.mbt` (乖離検査) + 各 parse_token 席の配線 + `src/kuu/resolve.mbt` (持ち上げ / sources 分解) | 500〜750 |
 | W2-6 | `src/internal/engine/lowering.mbt` (`resolve_link_path` の値空間降下) | 250〜400 |
 | W2-7 | 共有 fold (vivify / 座操作) + `src/internal/engine/eval.mbt` | 300〜450 |
 | W2-8 | `src/internal/engine/eval.mbt` (`parse_tree` の fold) | 150〜250 |
@@ -307,4 +302,4 @@ DR-127 波及節の「DR-121 §4.2 が記録する参照実装の乖離 (`Source
 - `docs/research/2026-08-01-dr127-link-path-implementation-plan.md` (第 1 波。本ファイルが第 2 波節を置換)
 - `docs/issue/2026-07-27-link-fixed-path-dsl-unimplemented.md` (起点 issue)
 - `docs/issue/2026-07-27-ref-link-structural-body-gate.md` (gate の解除条件 a/b/c)
-- `docs/findings/2026-08-02-w2-5-producer-and-divergence.md` (W2-5 の結果。§4 リスク 5 の解消根拠)
+- `docs/findings/2026-08-02-w2-5-producer-and-divergence.md` (W2-5 の結果)

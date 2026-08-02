@@ -1,6 +1,6 @@
 # W2-5 記録: 産出者を通した結果と、W2-3 が残した 5 件の申し送りの決着
 
-> 対象段: `docs/research/2026-08-02-dr127-wave2-implementation-plan.md` §2 の W2-5 行 / §4 リスク 5。
+> 対象段: `docs/research/2026-08-02-dr127-wave2-implementation-plan.md` §2 の W2-5 行。
 > 実測日: 2026-08-02。ベースライン `just test` = 646 tests / conformance
 > `decoded=394 ran_cases=885 skipped=0 mismatches=0`、両台帳空。
 > 本段適用後 = **655 tests** (新規 9 本) / `decoded=395 ran_cases=888 mismatches=0`
@@ -8,9 +8,9 @@
 
 ## 1. `parse_token` の ABI 破壊は起きなかった
 
-計画 §2 W2-5 行と §4 リスク 5 は「`TypeExt::parse_token` の戻り型を複合対応へ (extension ABI の
-破壊的変更)」を段の第 1 項に置き、「複合を返さない既存実装がそのまま動く既定を用意できるかが焦点」と
-していた。**焦点そのものが消えている。**
+計画は当初「`TypeExt::parse_token` の戻り型を複合対応へ (extension ABI の破壊的変更)」を段の第 1 項に
+置き、「複合を返さない既存実装がそのまま動く既定を用意できるかが焦点」としていた。**焦点そのものが
+存在しない。**
 
 現行 signature は `src/extension/node_traits.mbt:38` の
 
@@ -24,8 +24,8 @@ fn parse_token(Self, String) -> Result[Value, TypeParseFail]
 無改変で動き、`docs/issue/2026-07-18-api-surface-contract-triage.md` と当たる懸念も生じない
 (同 issue の残作業は命名揺れと TRI-Q4 であって `parse_token` の signature ではない)。
 
-計画の見立てが外れたのは、W2-2 と W2-3 が「器」と「宣言口」を先に入れる順序だったため。**リスク 5 は
-段構成そのものによって既に消化されていた。**
+計画の見立てが外れたのは、W2-2 と W2-3 が「器」と「宣言口」を先に入れる順序だったため。**ABI 破壊の
+リスクは段構成そのものによって消化されていた。**
 
 ## 2. 非統合を選ぶには canonical 化規則が 1 本要る (§9-4 の決着)
 
@@ -185,7 +185,7 @@ F-3 (`empty` の不正 target) は見送った。検査に必要な「target が
 
 ## 8. 関連
 
-- `docs/research/2026-08-02-dr127-wave2-implementation-plan.md` §2 W2-5 行 / §3 fixture (6) / §4 リスク 5
+- `docs/research/2026-08-02-dr127-wave2-implementation-plan.md` §2 W2-5 行 / §3 fixture (6)
 - `docs/findings/2026-08-02-w2-3-value-composite-inventory.md` §9 (本段が消化した申し送り 5 件)
 - `docs/findings/2026-08-02-w2-4-fold-unification.md` §1 / §5-2 (同乗物の出所)
 - `docs/issue/2026-08-02-record-null-fill-missing-in-projection.md` (§6 で起票)
