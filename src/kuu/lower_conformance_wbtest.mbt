@@ -96,6 +96,8 @@ fn render_val(value : @abi.Value) -> String {
         number.to_string()
       }
     }
+    @abi.Array(_) | @abi.Object(_) =>
+      abort("a lowered declaration constant is never a composite value")
   }
 }
 

@@ -163,6 +163,8 @@ fn test_render_val(value : @abi.Value) -> String {
         d.to_string()
       }
     }
+    @abi.Array(_) | @abi.Object(_) =>
+      abort("no producer builds a composite cell value yet (W2-3 器のみ)")
   }
 }
 

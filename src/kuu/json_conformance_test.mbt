@@ -231,6 +231,10 @@ fn render_val(v : @abi.Value) -> String {
         }
       }
     }
+    // A composite operand has no conformance spelling yet: the fixture vocabulary for value-space
+    // composites lands with the producers (W2-5 / W2-9). Aborting keeps the gap loud.
+    @abi.Array(_) | @abi.Object(_) =>
+      abort("no conformance spelling for a composite value operand yet")
   }
 }
 
@@ -1597,6 +1601,10 @@ fn help_value_json(value : @abi.Value) -> Json {
     @abi.String(text) => text.to_json()
     @abi.Number(number) => number.to_json()
     @abi.Bool(boolean) => boolean.to_json()
+    @abi.Array(_) | @abi.Object(_) =>
+      abort(
+        "a declared default literal is never a composite value (DR-130 §3.1)",
+      )
   }
 }
 

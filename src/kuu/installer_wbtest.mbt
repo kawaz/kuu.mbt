@@ -3365,6 +3365,8 @@ fn dd_value_to_str(v : @abi.Value) -> String {
     @abi.String(s) => s
     @abi.Number(d) => d.to_string()
     @abi.Bool(b) => b.to_string()
+    @abi.Array(_) | @abi.Object(_) =>
+      abort("a dd pattern operand is never a composite value")
   }
 }
 
