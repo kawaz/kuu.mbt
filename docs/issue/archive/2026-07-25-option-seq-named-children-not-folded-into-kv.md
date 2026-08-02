@@ -1,6 +1,6 @@
 ---
 title: option 直下 seq の名前付き子要素が kv に畳まれず、子ごとに別オブジェクト + 余分な配列階層になる
-status: open
+status: resolved
 category: bug
 created: 2026-07-25T22:19:13+09:00
 last_read:
@@ -9,10 +9,10 @@ wip_entered:
 blocked_entered:
 pending_entered:
 discarded_entered:
-resolved_entered:
+resolved_entered: 2026-08-02T22:53:57+09:00
 discard_reason:
 pending_reason:
-close_reason:
+close_reason: ["implemented:seq_row_is_kv と #row 発火境界、および spec fixtures option-named-children-kv / option-named-children-multiple-rows が named children の単一 kv と発火ごとの kv row を実装・固定した。","done:v0.0.24 の現行実装で旧出力形は再現せず、spec 側に canonical fixtures 2 件が存在し full conformance の対象になっている。"]
 blocked_by:
 origin: kuu (spec) リポ
 ---
