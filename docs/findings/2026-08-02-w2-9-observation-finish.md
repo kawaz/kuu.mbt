@@ -31,20 +31,27 @@
   (`align_sources_to_result` が result 主導で null を強制する既存経路をそのまま通る)。
 - **配達の席は resolve 相 carrier の `Binding.source_shadow : ResultValue?` (optional、既定
   None)。** 座単位の由来は「複合 carrier における `source` (単一タグ) の複合値版」であり、
-  carrier binding の責務に収まる — W2-1 の `observation` field と同型の拡張。parse 相の効果
-  binding は常に None なので DR-038 の効果 identity (経路 counting) には従来 field だけが参加
-  する。値残余の部分書きが 1 度も起きない carrier も None のままで、`source_seats` の scalar
-  枝は None なら従来どおり last-winner の `value_source_shadow` — 既存 889 cases の不変は
-  この構造で担保 (実測 889/0 不変)。
+  carrier binding の責務に収まる — W2-1 の `observation` field と同型の拡張。**ただし
+  `derive(Eq)` は全 field を含むため、この field も DR-038 の効果 identity (裁定前の
+  `Array[Binding]` 構造等価 dedup) に参加する** (監査 M2 の訂正 — 「optional だから不干渉」は
+  成立しない)。識別安定は「parse 相 (裁定前) の binding は常に None」という不変条件が担う —
+  Some を置いてよいのは resolve 相の carrier 構築 (dedup 後) のみで、wbtest「parse 相の全
+  binding は source_shadow を持たない」が pin。値残余の部分書きが 1 度も起きない carrier も
+  None のままで、`source_seats` の scalar 枝は None なら従来どおり last-winner の
+  `value_source_shadow` — 既存 889 cases の不変はこの構造で担保 (実測 889/0 不変)。
 - **shadow の畳み方は CLI seat fold に併走する** (`resolve.mbt` の `seat_shadow`)。全セル書き
   (parser 産出 / fn ToValue / ToDefault) は shadow を None に戻す (= last-winner へ縮退、時系列
   行 3 の丸ごと置換がタグも丸ごと置換するのと同じ意味論)。部分書きは「書き込み前の複合値 ×
   直前 carrier の source」で prior shadow を起こし、解決済み residual path の座だけを当該
   binding の source で差し替える (`reshadow_at`)。複数の部分書きは座ごとに積み上がる
   (`sources={arr=[link,cli,link]}` の wbtest pin)。
-- **value_filters / final_filters は carrier を spread (`{..b, value: v}`) で書き換えるため
-  shadow は素通しする。** filter が複合値の構造を変形した場合の shadow との不一致は
-  `align_sources_to_result` (result 主導) が吸収する既存防御のまま。
+- **filter (value_filters / final_filters) が carrier の複合値を変形したら shadow を変形後の
+  値と再整列する** (`realign_source_shadow`、監査 M1)。既存の座はタグを保ち、**filter が新たに
+  作った非 null 座には当該 carrier の `source` を与える** (座の値を確定させた主体は filter を
+  走らせた発火 — DR-122 §3)。再整列しないと `align_sources_to_result` が追加座へ null を置き、
+  result 非 null の座に sources null が並ぶ (DR-122 §1/§2 違反 — null は result null の座だけ)。
+  wbtest「filter が作った非 null 座は carrier source のタグを持つ」が pin (構造変形 filter の
+  test resident `fill_since` で追加座 = carrier source / 既存座タグ保持の両面)。
 
 ## 実行一本化の設計 (issue `2026-08-02-cell-fn-multi-fire-unify` の設計入力)
 
@@ -61,9 +68,15 @@ DR-114「発火時に 1 回」に対し、現行は effects 射影 (`projected_e
    branch fold は現行どおり値残余セルだけを畳む (既存経路の走査コスト不変)。値残余の無い
    セル (素の `Invoke` = incr 等) は勝ち枝確定後の 1 回の fold が実行する — 枝選別に参加しない
    発火を全枝で実行するのは DR-114 が禁じる方向の悪化なので、per-branch には広げない。
-3. **配達席は binding への optional stamp** (本窓の `source_shadow` と同じ形)。op / operand は
-   不変 = DR-045 の効果の綴り (`op=invoke`) を保持し、DR-038 の経路同一性にも触れない —
-   「binding の書き換え (Invoke → Set)」ではなく「解決結果の付記」。
+3. **配達席の設計要件 (監査 M2 の訂正)**: `Binding` は `derive(Eq)` 全 field で、裁定前の
+   dedup は `Array[Binding]` 構造等価 = DR-038 identity の実装そのもの。**裁定前に値依存の
+   stamp を Binding へ付けると、非決定 fn の値差で同一効果列が別経路化する** — 「optional
+   stamp だから不干渉」は成立しない。したがって FiringRecord は
+   (a) **Binding の Eq の外の side payload** (枝に併走する branch payload) として運ぶか、
+   (b) **dedup を明示的な effect identity projection** (identity に参加する field だけの射影
+   キー) に変えるか、のいずれかを満たすこと。op / operand が不変 (DR-045 の綴り保持) である
+   要件は従来どおり。本窓の `source_shadow` は resolve 相 (dedup 後) のみ Some という不変条件
+   で安全を担保しており (wbtest pin)、裁定前 stamp の前例にはならない。
 4. **env/config 供給残差 (W2-4 findings §3.2、W2-8 申し送り (c)) は parse 入口への optional な
    Supplies (env / config provider) で閉じる。** `ToDefault` の落ち先 (DR-081 §2 の書き換え済み
    default = full ladder) が parse 相で解決できない構造問題は、供給を渡す以外に閉じ方が無い。

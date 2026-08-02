@@ -347,9 +347,14 @@ pub(all) struct Binding {
   observation : ObservationAddress?
   // DR-127 §6 / DR-122 §3 — 座単位の由来。resolve 相の CLI seat fold が値残余の部分書き (link)
   // を畳んで 1 個の複合 carrier を返すとき、単一の `source` タグでは表せない「部分書きした座だけ
-  // link、他の座は産出発火のタグ」をこの shadow (値と同型のタグ木) が運ぶ。部分書きの起きて
-  // いない carrier と parse 相の効果 binding は常に `None` — DR-038 の効果 identity (経路
-  // counting) に参加するのは従来 field のみ。
+  // link、他の座は産出発火のタグ」をこの shadow (値と同型のタグ木) が運ぶ。
+  //
+  // 識別上の注意 (W2-9 監査 M2): `derive(Eq)` は全 field を含むため、この field も効果 identity
+  // (DR-038 の経路 counting = 裁定前の `Array[Binding]` 構造等価 dedup) に**参加する**。
+  // parse 相 (裁定前) の binding は常に `None` — これが識別安定の前提であり、Some を置いてよい
+  // のは resolve 相の carrier 構築 (dedup 後) のみ。裁定前に値依存の payload をここへ載せると、
+  // 非決定 fn の値差で同一効果列が別経路化する (wbtest「parse 相の全 binding は source_shadow を
+  // 持たない」が pin)。
   source_shadow : ResultValue?
   // DR-127 §2.2 の値空間残余: この binding の効果がセルの値**内部**の座に着地するとき、その座を
   // 指す segment 列。`[]` = セルそのものへの着地 (従来の全 binding)。非空はリンク固定パスの

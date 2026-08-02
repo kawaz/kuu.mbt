@@ -187,6 +187,30 @@ fn seat_registry() -> @node.Registry {
   ) else {
     abort("duplicate test cell fn: stringy")
   }
+  // W2-9 監査 M1 用: record の宣言済み座 `since` が欠落していれば 0 で埋める構造変形 filter —
+  // filter が新たに作った座の sources タグ (= 当該 carrier の source、DR-122 §3) を露出させる。
+  guard registry.register_filter(
+    @extension.filter_descriptor("fill_since", @extension.Transform, [], fn(
+      value,
+      _,
+    ) {
+      match value {
+        @abi.Object(fields) => {
+          for entry in fields {
+            if entry.0 == "since" {
+              return Ok(value)
+            }
+          }
+          let out = fields.copy()
+          out.push(("since", @abi.Number(0)))
+          Ok(@abi.Object(out))
+        }
+        _ => Ok(value)
+      }
+    }),
+  ) else {
+    abort("duplicate test filter: fill_since")
+  }
   // 監査 M2 用: ctx.old を読んでから null を返す Value fn — 空座で「old を要する」と
   // 「null 返し (unset 形)」が交差するケースを露出させる。
   guard registry.register_cell_fn(
@@ -651,6 +675,45 @@ test "DR-127 §1: 負 index は発火時点の現在長で解決される" {
     seat_view(ARR_SRC, ["--arr", "1,2,3", "--last", "9"]),
     "result={arr=[1,2,9]} sources={arr=[cli,cli,link]} effects=arr,arr[2]",
   )
+}
+
+///|
+/// W2-9 監査 M1 (DR-122 §1/§2): filter (value_filters) が carrier の複合値へ新しい非 null 座を
+/// 作った場合、sources の当該座は null ではなく **当該 carrier の source** を持つ (座の値を
+/// 確定させた主体は filter を走らせた発火 — DR-122 §3)。既存座の座単位タグは再整列後も保つ。
+test "DR-122 §3: filter が作った非 null 座は carrier source のタグを持つ" {
+  let src =
+    #|{"options":[
+    #|  {"name":"tr","type":"trange","long":true,"value_filters":["fill_since"]},
+    #|  {"name":"until","type":"string","long":true,"link":"tr.until"}]}
+  // 部分書きのみ (vivify): filter が since=0 を追加 — 追加座は carrier (link 発火) の source。
+  // 再整列が無いと align_sources_to_result が since へ null を置き、result 非 null と食い違う。
+  assert_eq(
+    seat_view(src, ["--until", "9"]),
+    "result={tr={since=0,until=9}} sources={tr={since=link,until=link}} effects=tr.until",
+  )
+  // 既存座の座単位タグは再整列で変わらない (filter は no-op、since=cli / until=link のまま)。
+  assert_eq(
+    seat_view(src, ["--tr", "1..5", "--until", "9"]),
+    "result={tr={since=1,until=9}} sources={tr={since=cli,until=link}} effects=tr,tr.until",
+  )
+}
+
+///|
+/// W2-9 監査 M2 (DR-038): `Binding.source_shadow` は derive(Eq) 経由で効果 identity (裁定前の
+/// 経路 dedup = `Array[Binding]` の構造等価) に参加する。parse 相の binding が常に None で
+/// あることが識別安定の前提 — Some を置いてよいのは resolve 相の carrier 構築 (dedup 後) のみ。
+test "DR-038: parse 相の全 binding は source_shadow を持たない" {
+  let ast = seat_ast(SEAT_SRC)
+  let parsed = parse_legacy(ast, ["--tr", "1..5", "--until", "9", "--bump"])
+  guard parsed is @engine.Success(bindings) else {
+    fail("should parse, got " + render_outcome(parsed))
+    panic()
+  }
+  assert_true(bindings.length() > 0)
+  for binding in bindings {
+    assert_true(binding.source_shadow is None)
+  }
 }
 
 ///|

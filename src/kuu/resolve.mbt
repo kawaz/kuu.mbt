@@ -867,6 +867,54 @@ fn reshadow_at(
 }
 
 ///|
+/// filter (value_filters / final_filters) が carrier の複合値を変形した後の shadow 再整列
+/// (DR-122 §1/§2 — sources は result と同型で、null は result null の座だけ)。変形後の値の
+/// 構造を正として walk し、prior に同じ座があればそのタグを保ち、**filter が新たに作った
+/// 非 null 座には当該 carrier の `source` を与える** (その座の値を確定させた主体は filter を
+/// 走らせた発火 — DR-122 §3)。座が消えた分は値主導の walk で自然に落ちる。
+fn realign_source_shadow(
+  value : @abi.Value,
+  prior : @abi.ResultValue,
+  source : @abi.Source,
+) -> @abi.ResultValue {
+  match (value, prior) {
+    (@abi.Object(fields), @abi.Object(prior_fields)) =>
+      @abi.Object(
+        fields.map(entry => {
+          let mut prior_child : @abi.ResultValue? = None
+          for candidate in prior_fields {
+            if candidate.0 == entry.0 {
+              prior_child = Some(candidate.1)
+              break
+            }
+          }
+          match prior_child {
+            Some(kept) =>
+              (entry.0, realign_source_shadow(entry.1, kept, source))
+            None => (entry.0, value_source_shadow(entry.1, source))
+          }
+        }),
+      )
+    (@abi.Array(items), @abi.Array(prior_items)) => {
+      let out : Array[@abi.ResultValue] = []
+      for offset, item in items {
+        if offset < prior_items.length() {
+          out.push(realign_source_shadow(item, prior_items[offset], source))
+        } else {
+          out.push(value_source_shadow(item, source))
+        }
+      }
+      @abi.Array(out)
+    }
+    // 構造の種類が変わった座 (scalar ⇄ composite) は変形後の値が正 — carrier source で張り直す。
+    (@abi.Object(_) | @abi.Array(_), _) => value_source_shadow(value, source)
+    // scalar 座は prior のタグを保つ (composite 由来の prior なら値主導で張り直す)。
+    (_, @abi.Object(_) | @abi.Array(_)) => value_source_shadow(value, source)
+    (_, kept) => kept
+  }
+}
+
+///|
 /// Build the nested result value from the winning flat bindings. `cells` locates every
 /// accumulate cell by result path (so an empty cell still renders `[]`, DR-044 uniform array);
 /// `path` is the current result-scope path. `shape` is the DR-120 declaration occupancy tree;
@@ -3405,7 +3453,17 @@ fn apply_entity_filters(
           return Err(filter_err(e.name, pos, reason, msg, epath))
         }
         Ok(v) => {
-          let b2 = { ..b, value: v }
+          // 座単位 shadow を持つ carrier (DR-127 §6) は、filter の構造変形後に shadow を
+          // 変形後の値と再整列する — 追加された非 null 座に align_sources_to_result が
+          // null を置く (DR-122 §1/§2 違反) のを防ぐ。
+          let shadow_after = fn(next : @abi.Value) -> @abi.ResultValue? {
+            match b.source_shadow {
+              Some(shadow) =>
+                Some(realign_source_shadow(next, shadow, b.source))
+              None => None
+            }
+          }
+          let b2 = { ..b, value: v, source_shadow: shadow_after(v) }
           if e.accum is None {
             match
               @extension.apply_filter_chain(
@@ -3415,7 +3473,8 @@ fn apply_entity_filters(
               ) {
               Err({ reason, message: msg, .. }) =>
                 return Err(filter_err(e.name, at_pos, reason, msg, epath))
-              Ok(v2) => out.push({ ..b2, value: v2 })
+              Ok(v2) =>
+                out.push({ ..b2, value: v2, source_shadow: shadow_after(v2) })
             }
           } else {
             out.push(b2)

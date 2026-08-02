@@ -57,8 +57,14 @@ W2-9 で一本化設計を確定した。要点:
   (`{ 遷移結果 / 解決済み residual segment 列 / 座単位 provenance }`) を残す。effects 射影と
   resolve 相の CLI seat 解決は、この record の**消費者**になる (= 独立実行をやめる)
 - **値残余セル分**: W2-8 branch fold の枝内実行結果を勝ち枝から引き継ぎ、再実行しない
-- **配達席**: binding への optional stamp として持たせる (op/operand は不変 — DR-045 の綴り保持 /
-  DR-038 の経路同一性を侵さない)。W2-9 の `Binding.source_shadow` と同型の解法
+- **配達席の設計要件 (W2-9 監査 M2 で訂正)**: Binding は derive(Eq) 全 field で、裁定前の
+  dedup は Array[Binding] 構造等価 = DR-038 identity の実装そのもの。裁定前に値依存の stamp
+  を Binding へ付けると非決定 fn の値差で同一効果列が別経路化する — 「optional stamp だから
+  不干渉」は成立しない。FiringRecord は (a) Binding の Eq の外の side payload (枝に併走する
+  branch payload) として運ぶか、(b) dedup を明示的な effect identity projection (identity
+  参加 field だけの射影キー) に変えるか、のいずれかを設計要件とする。op/operand 不変
+  (DR-045 綴り保持) の要件は従来どおり。W2-9 の `source_shadow` は resolve 相 (dedup 後) のみ
+  Some という不変条件で安全 (wbtest pin 済み) であり、裁定前 stamp の前例にはならない
 - **env/config 供給残差** (W2-4 findings §3.2): parse 入口の optional Supplies
   (env/config provider) で閉じる。未供給呼び出しは現行挙動を維持
 - **resolve 相の残余分岐**: 最終防衛線として保持 (削らない)
