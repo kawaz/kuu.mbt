@@ -115,4 +115,3 @@ pub(open) trait InstallerExt {
   fn apply(Self, @engine.InstallBuilder) -> Unit
   fn collect_defs_errors(Self, @engine.DefsView) -> Array[@abi.DefError]
 }
-

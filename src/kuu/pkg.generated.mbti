@@ -321,4 +321,3 @@ pub using @abi {type Warning}
 pub using @abi {type WarningKind}
 
 // Traits
-

@@ -685,4 +685,3 @@ pub using @extension {trait NodeExt}
 pub using @extension {trait TypeExt}
 
 // Traits
-

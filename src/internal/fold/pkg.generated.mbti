@@ -88,4 +88,3 @@ pub(all) enum SeatTransition {
 // Type aliases
 
 // Traits
-
