@@ -225,6 +225,14 @@ priv struct SortableCommand {
   after : String?
 }
 
+///|
+/// completion policy が candidate.origin を help の適用済み列へ接続する package 内 carrier。
+/// HelpModel の公開 schema へ canonical identity を複製せず、同じ順序計算の結果を再利用する。
+priv struct CompletionHelpEntry {
+  identity : String
+  help : String?
+}
+
 // ── small helpers ────────────────────────────────────────────────────────────
 
 ///|
@@ -596,13 +604,13 @@ fn emit_option_after_tree(
   entries : Array[SortableOption],
   index : Int,
   emitted : Array[Bool],
-  output : Array[HelpOptionEntry],
+  output : Array[SortableOption],
 ) -> Unit {
   if emitted[index] {
     return
   }
   emitted[index] = true
-  output.push(entries[index].entry)
+  output.push(entries[index])
   match entries[index].identity {
     Some(target) =>
       for child = 0; child < entries.length(); child = child + 1 {
@@ -615,10 +623,10 @@ fn emit_option_after_tree(
 }
 
 ///|
-fn ordered_options(
+fn ordered_option_carriers(
   definition : @engine.Definition,
   current_path : Array[String],
-) -> Array[HelpOptionEntry] {
+) -> Array[SortableOption] {
   let pairs = option_alias_pairs(definition)
   let sorted : Array[SortableOption] = []
   let mut declaration_index = 0
@@ -688,11 +696,47 @@ fn ordered_options(
     }
   }
   let emitted = Array::make(sorted.length(), false)
-  let output : Array[HelpOptionEntry] = []
+  let output : Array[SortableOption] = []
   for i = 0; i < sorted.length(); i = i + 1 {
     if !option_is_movable(sorted, i) {
       emit_option_after_tree(sorted, i, emitted, output)
     }
+  }
+  output
+}
+
+///|
+fn ordered_options(
+  definition : @engine.Definition,
+  current_path : Array[String],
+) -> Array[HelpOptionEntry] {
+  let output : Array[HelpOptionEntry] = []
+  for carrier in ordered_option_carriers(definition, current_path) {
+    output.push(carrier.entry)
+  }
+  output
+}
+
+///|
+fn completion_help_entries(
+  ast : AtomicAST,
+  path : Array[String],
+  model : HelpModel,
+) -> Array[CompletionHelpEntry] {
+  let output : Array[CompletionHelpEntry] = []
+  match select_definition(ast.declaration, path) {
+    Some(definition) =>
+      for carrier in ordered_option_carriers(definition, model.command_path) {
+        match (carrier.identity, carrier.entry) {
+          (Some(identity), Option(option)) =>
+            output.push({ identity, help: option.help })
+          _ => ()
+        }
+      }
+    None => ()
+  }
+  for command in model.commands {
+    output.push({ identity: command.name, help: command.help })
   }
   output
 }

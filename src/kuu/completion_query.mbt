@@ -58,15 +58,15 @@ pub fn completion_query(
   // dispatch_help_query で HelpModel を得る。help_query capability 未登録 or path 到達不能なら
   // None (説明引き直しと整列は素材順で縮退)。
   let active_path = active_scope_path(ast, args_before)
-  let help_model = match dispatch_help_query(ast, path=active_path) {
-    Model(model) => Some(model)
+  let completion_help = match dispatch_help_query(ast, path=active_path) {
+    Model(model) => Some(completion_help_entries(ast, active_path, model))
     QueryError(_) | Unavailable => None
   }
   // policy 段
   let (rows, shell_actions) = apply_policy(
     raw,
     cursor_word,
-    help_model,
+    completion_help,
     ast.completion_insert_form,
   )
   // §4 の行指向応答テキスト emit
@@ -155,10 +155,8 @@ priv struct QueryRow {
 
 ///|
 /// DR-117 §5 merge 規則の中間 carrier。candidate 実体をそのまま持ちつつ、`eq_form` = true の
-/// ものは emit 段で spelling に `"="` を付け + nospace を立てる (DR §2.6)。lookup_help /
-/// order_by_help_model は candidate.spelling をそのまま使うため、insert_form=="eq" の merge で
-/// 生き残った cont 候補も **元の spelling** ("--port") のまま突き合わせる (help model の綴りも
-/// eq を含まない) — 転写は emit 段でだけ行う。
+/// ものは emit 段で spelling に `"="` を付け + nospace を立てる (DR §2.6)。順序と説明は
+/// candidate.origin で解決するため、挿入文字列への転写は emit 段でだけ行う。
 priv struct PolicyCandidate {
   candidate : Candidate
   eq_form : Bool
@@ -174,7 +172,7 @@ priv struct PolicyCandidate {
 fn apply_policy(
   raw : Array[Candidate],
   cursor_word : String,
-  help_model : HelpModel?,
+  completion_help : Array[CompletionHelpEntry]?,
   insert_form : String,
 ) -> (Array[QueryRow], Array[String]) {
   // step 1: hidden 除外 (DR-116 §5) + 搬送不能除外 (DR-117 §4.3、spelling に tab/newline)
@@ -207,25 +205,25 @@ fn apply_policy(
       Some(name) =>
         if name == "files" || name == "dirs" {
           push_unique_string(shell_actions, name)
-        } else {
+        } else if c.spelling.length() > 0 {
           candidates.push(c)
         }
-      None => candidates.push(c)
+      None => if c.spelling.length() > 0 { candidates.push(c) }
     }
   }
   // step 4: insert_form merge (DR-117 §5 / COMPQ-Q1): 同一 spelling で word_end / cont の
   // 併存ペアを 1 件に畳む。片側しか無い場合は素材のまま (§5 の「単独候補の形を書き換えない」)。
   let merged = merge_insert_form(candidates, insert_form)
-  // step 5: help model 順で整列 (DR-116 §2)。PolicyCandidate.candidate.spelling を綴り突き合わせ
-  // の鍵にする — eq_form=true でも spelling 自体はまだ原綴り ("--port")。
-  let ordered = order_policy_candidates_by_help_model(merged, help_model)
+  // step 5: help model の適用済み列で整列 (DR-116 §2)。候補は表示綴りでなく
+  // candidate.origin を canonical identity へ突き合わせる。同一 origin 内は素材順を保つ。
+  let ordered = order_policy_candidates_by_origin(merged, completion_help)
   // step 6: 説明引き直し (DR-116 §4) + alias/deprecated 注記 (§5) + 説明の正規化 (§4.3) +
   //         nospace flag 翻訳 (candidate.term == Continue → nospace)。
   //         eq_form=true の PolicyCandidate は spelling に `"="` を付け nospace を強制立て。
   let rows : Array[QueryRow] = []
   for pc in ordered {
     let c = pc.candidate
-    let base_help = lookup_help(c, help_model)
+    let base_help = lookup_help_by_origin(c.origin, completion_help)
     let annotated = annotate_description(base_help, c.deprecated, c.is_alias)
     let description = normalize_description(annotated)
     let spelling = if pc.eq_form { c.spelling + "=" } else { c.spelling }
@@ -336,38 +334,24 @@ fn push_unique_string(arr : Array[String], value : String) -> Unit {
 }
 
 ///|
-/// PolicyCandidate 版の順序整列。merge_insert_form が生成した wrapper 列を
-/// help model 順 (DR-116 §2) に並べる。突き合わせは wrapper 内 candidate.spelling を鍵にする。
-fn order_policy_candidates_by_help_model(
+/// help model の適用済み identity 列へ candidate.origin を突き合わせる。同一 origin の候補は
+/// 素材出現順を保ち、対応 entry を持たない匿名 exact 等は末尾へ素材順のまま残す。
+fn order_policy_candidates_by_origin(
   candidates : Array[PolicyCandidate],
-  help_model : HelpModel?,
+  completion_help : Array[CompletionHelpEntry]?,
 ) -> Array[PolicyCandidate] {
-  match help_model {
+  match completion_help {
     None => candidates
-    Some(model) => {
+    Some(entries) => {
       let out : Array[PolicyCandidate] = []
       let used = Array::make(candidates.length(), false)
-      for entry in model.options {
-        match entry {
-          Group(_) => ()
-          Option(opt) =>
-            take_matching_policy_spellings(
-              candidates,
-              used,
-              opt.spellings,
-              opt.alias_spellings,
-              out,
-            )
+      for entry in entries {
+        for i = 0; i < candidates.length(); i = i + 1 {
+          if !used[i] && candidates[i].candidate.origin == entry.identity {
+            out.push(candidates[i])
+            used[i] = true
+          }
         }
-      }
-      for cmd in model.commands {
-        take_matching_policy_spellings(
-          candidates,
-          used,
-          [cmd.name],
-          cmd.aliases,
-          out,
-        )
       }
       for i = 0; i < candidates.length(); i = i + 1 {
         if !used[i] {
@@ -380,85 +364,18 @@ fn order_policy_candidates_by_help_model(
 }
 
 ///|
-/// canonical + alias 綴り集合に一致する未消費 PolicyCandidate を素材出現順で out に append。
-/// 綴り突き合わせは wrapper 内 candidate.spelling を使う (原綴り、`take_matching_spellings` と対称)。
-fn take_matching_policy_spellings(
-  candidates : Array[PolicyCandidate],
-  used : Array[Bool],
-  canonical : Array[String],
-  aliases : Array[String],
-  out : Array[PolicyCandidate],
-) -> Unit {
-  for i = 0; i < candidates.length(); i = i + 1 {
-    if used[i] {
-      continue
-    }
-    let c = candidates[i].candidate
-    if c.is_value {
-      continue
-    }
-    for sp in canonical {
-      if c.spelling == sp {
-        out.push(candidates[i])
-        used[i] = true
-        break
-      }
-    }
-  }
-  for i = 0; i < candidates.length(); i = i + 1 {
-    if used[i] {
-      continue
-    }
-    let c = candidates[i].candidate
-    if c.is_value {
-      continue
-    }
-    for sp in aliases {
-      if c.spelling == sp {
-        out.push(candidates[i])
-        used[i] = true
-        break
-      }
-    }
-  }
-}
-
-///|
-/// DR-116 §4: candidate の origin を help model の entry に突き合わせ、entry の help を引く。
-/// - option canonical / alias 綴り: candidate.spelling を options entry の spellings /
-///   alias_spellings に照合し、canonical entry の help を返す (alias 候補も canonical の help を
-///   継承 — DR-116 §4「alias 候補: canonical entry の `help` と alias であることを示す注記」)
-/// - command 名 / alias: candidate.spelling を commands entry の name / aliases に照合
-/// - 対応なし (value 候補 / 匿名 exact など): None を返す
-fn lookup_help(c : Candidate, help_model : HelpModel?) -> String? {
-  match help_model {
+/// candidate.origin が指す canonical entry の help を引き直す。候補 spelling は alias や
+/// completer 由来値で任意に異なり得るため、説明解決には使わない。
+fn lookup_help_by_origin(
+  origin : String,
+  completion_help : Array[CompletionHelpEntry]?,
+) -> String? {
+  match completion_help {
     None => None
-    Some(model) => {
-      for entry in model.options {
-        match entry {
-          Group(_) => ()
-          Option(opt) => {
-            for sp in opt.spellings {
-              if c.spelling == sp {
-                return opt.help
-              }
-            }
-            for sp in opt.alias_spellings {
-              if c.spelling == sp {
-                return opt.help
-              }
-            }
-          }
-        }
-      }
-      for cmd in model.commands {
-        if c.spelling == cmd.name {
-          return cmd.help
-        }
-        for a in cmd.aliases {
-          if c.spelling == a {
-            return cmd.help
-          }
+    Some(entries) => {
+      for entry in entries {
+        if entry.identity == origin {
+          return entry.help
         }
       }
       None

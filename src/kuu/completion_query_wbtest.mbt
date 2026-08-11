@@ -279,6 +279,78 @@ test "DR-116 §4: 説明は origin から help_model の help に引き直され
   }
 }
 
+///|
+/// completer が返す値 spelling は definition の表示綴りと独立だが、origin は由来 entry の canonical
+/// identity を保持する。同じ origin の候補は supplier の返却順を保ち、異なる origin 間は help model
+/// の適用済み順へ整列し、説明も origin の entry から引き直す (DR-116 §2〜§4、DR-117 §5)。
+test "DR-116 §2〜§4: completer 由来候補は origin の位置で供給順と説明を保つ" {
+  let raw : Array[Candidate] = [
+    {
+      spelling: "beta-value",
+      is_value: true,
+      type_name: "string",
+      origin: "beta",
+      term: WordEnd,
+      is_alias: false,
+      hidden: false,
+      deprecated: false,
+      completer: Some("dynamic"),
+    },
+    {
+      spelling: "alpha-first",
+      is_value: true,
+      type_name: "string",
+      origin: "alpha",
+      term: WordEnd,
+      is_alias: false,
+      hidden: false,
+      deprecated: false,
+      completer: Some("dynamic"),
+    },
+    {
+      spelling: "alpha-second",
+      is_value: true,
+      type_name: "string",
+      origin: "alpha",
+      term: WordEnd,
+      is_alias: false,
+      hidden: false,
+      deprecated: false,
+      completer: Some("dynamic"),
+    },
+  ]
+  let completion_help : Array[CompletionHelpEntry] = [
+    { identity: "alpha", help: Some("alpha help") },
+    { identity: "beta", help: Some("beta help") },
+  ]
+  let (rows, shell_actions) = apply_policy(
+    raw,
+    "",
+    Some(completion_help),
+    "space",
+  )
+  assert_eq(
+    emit_response(rows, shell_actions),
+    "alpha-first\talpha help\n" +
+    "alpha-second\talpha help\n" +
+    "beta-value\tbeta help\n",
+  )
+}
+
+///|
+/// 外部 definition を query する形態 B には custom completer のクロージャが存在しないため、値待ち
+/// marker は候補提供なしへ縮退する。marker の空 spelling を候補行として emit すると、第1フィールド
+/// 必須・非空の行文法を破る (DR-117 §4.1/§6)。
+test "DR-117 §4.1/§6: custom completer の値待ち marker は空候補行を作らない" {
+  let ast = ast_or_fail(
+    "{\"options\":[" +
+    "{\"name\":\"target\",\"type\":\"string\",\"long\":true,\"completer\":\"hosts\"}" +
+    "]}",
+  )
+  let response = completion_query(ast, ["app", "--target"], cword=Some(2))
+  assert_eq(response, "")
+}
+
 // ── nospace flag / shell_action directive ────────────────────────────────────
 
 ///|
