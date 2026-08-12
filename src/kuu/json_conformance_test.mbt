@@ -2434,16 +2434,6 @@ fn known_divergences() -> Array[String] {
     // command の `value` キーを decoder が受理できないため、fixture が期待する definition-error
     // ではなく malformed へ倒れる。担体実装は別サイクル。
     "definition-error/command-value-occupying-child.json::occupying-children-under-value-command :: EXPECTED-DEFINITION-ERROR got=malformed:command has unsupported key 'value'",
-    // DR-133 fold 未追随 (issue 2026-08-12-config-committed-carry-over)。decode は通るが、
-    // 現実装の config 適用が list 要素ごとの fold ではなく全体置換のため期待値と食い違う。
-     "value-sources/config/multi-file-multiple.json::multiple-paths-inline-in-declaration-position :: result got={ketc=number:70,ku1=number:71,ku2=number:72,port=number:4,user=[]} want={ketc=number:10,ku1=number:20,ku2=number:30,port=number:4} | sources got={ketc=string:default,ku1=string:default,ku2=string:default,port=string:config,user=[]} want={ketc=string:config,ku1=string:config,ku2=string:config,port=string:config}",
-    "value-sources/config/multi-file-multiple.json::multiple-supply-order-decides-the-fold-order :: resolve error: config file \"/site.toml\" could not be read",
-    "value-sources/config/multi-file-multiple.json::multiple-without-supply-does-not-join :: result got={ketc=number:70,ku1=number:71,ku2=number:72,port=number:4,user=[]} want={ketc=number:10,ku1=number:71,ku2=number:72,port=number:4} | sources got={ketc=string:default,ku1=string:default,ku2=string:default,port=string:config,user=[]} want={ketc=string:config,ku1=string:default,ku2=string:default,port=string:config}",
-    "value-sources/config/multi-file-path-absent.json::cli-supplied-path-joins-the-list :: result got={onlya=number:70,port=number:2} want={onlya=number:11,port=number:2} | sources got={onlya=string:default,port=string:config} want={onlya=string:config,port=string:config}",
-    "value-sources/config/multi-file-path-absent.json::env-supplied-path-joins-the-list :: result got={onlya=number:70,port=number:2} want={onlya=number:11,port=number:2} | sources got={onlya=string:default,port=string:config} want={onlya=string:config,port=string:config}",
-    "value-sources/config/multi-file.json::top-key-replacement-fold :: result got={onlya=number:70,onlyb=number:22,port=number:2} want={onlya=number:11,onlyb=number:22,port=number:2} | sources got={onlya=string:default,onlyb=string:config,port=string:config} want={onlya=string:config,onlyb=string:config,port=string:config}",
-    "value-sources/config/multi-file.json::each-element-resolves-its-own-path :: result got={onlya=number:70,onlyb=number:80,port=number:3} want={onlya=number:11,onlyb=number:80,port=number:3} | sources got={onlya=string:default,onlyb=string:default,port=string:config} want={onlya=string:config,onlyb=string:default,port=string:config}",
-    "value-sources/config/multi-file.json::committed-path-then-tolerated-absent-path :: resolve error: config file \"/b.toml\" could not be read",
   ]
 }
 

@@ -91,6 +91,15 @@ pub enum ConfigVal {
 } derive(Eq, Debug)
 
 ///|
+/// Build an object-shaped config value from key/value entries. `ConfigVal` is read-only outside this
+/// package (公開面キュレーション), so a consumer that composes an object out of already-read config
+/// values needs this constructor — the DR-133 §1 path-list fold builds the ONE object of the config
+/// seat by top-level key replacement over the objects the provider returned.
+pub fn config_object(entries : Array[(String, ConfigVal)]) -> ConfigVal {
+  Object(entries)
+}
+
+///|
 /// Convert the host-neutral JSON input tree into the engine's read-only config value.
 pub fn config_from_json(json : Json) -> ConfigVal {
   match json {

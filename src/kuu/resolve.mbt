@@ -1319,9 +1319,14 @@ fn build_result(
   // test is whether this cell's OWN nested bindings actually contain a "#row" sentinel (only a
   // real repetition emits one, `ref_row_head`) — check that directly instead of trusting `segs`
   // membership as a proxy for it.
+  //
+  // 内部セル (config_file、DR-121 §2 / DR-050) はこの注入からも外す — 値空間は持つので
+  // `accum_cells` には乗るが、結果に現れない席なので 0 発火の `[]` も出してはいけない
+  // (`named` 側と同じ `nones` の席で、同じ露出キー軸の判定)。
   for c in cells {
     if path_eq(c.path, path) &&
       !str_contains(named, c.name) &&
+      !is_internal_cell(nones, path, c.name) &&
       !has_direct_key(sub_under(binds, c.name), "#row") {
       let empty = c.accum.collect([])
       let collected = match c.collector {
@@ -4323,43 +4328,31 @@ fn parse_fold_ladder(
         None => return default_scalar(entity)
       }
     }
-    // config_file セルの path 解決 (`resolve_scope_config_with_export` Phase 1/2 と同素材)。
+    // config_file セルの path 列 (`resolve_scope_config_with_export` Phase 1/2 と同素材、DR-133 §1)。
     // committed path の読み失敗 Error はここでは合成しない — その入力では resolve 相自身が
     // 同じ Err を出すので、ここは供給なしとして縮退すれば十分。
-    let mut cf_path : String? = None
-    for e in sc.entities {
-      if e.is_config_file {
-        let mut done = false
-        for b in eff {
-          if b.key == e.name && path_eq(b.scope, scope_path) && b.op is @abi.Set {
-            cf_path = Some(@extension.value_str(b.value))
-            done = true
-          }
-        }
-        if !done {
-          match e.env_key {
-            Some(k) =>
-              match env(k) {
-                Some(v) => {
-                  cf_path = Some(v)
-                  done = true
-                }
-                None => ()
-              }
-            None => ()
-          }
-        }
-        if !done {
-          match default_scalar(e) {
-            Some(v) => cf_path = Some(@extension.value_str(v))
-            None => ()
-          }
-        }
+    let scoped_eff : Array[@abi.Binding] = []
+    for b in eff {
+      if path_eq(b.scope, scope_path) {
+        scoped_eff.push(b)
       }
     }
-    let config_obj : @abi.ConfigVal? = match cf_path {
-      Some(p) => provider(p)
-      None => None
+    let config_obj : @abi.ConfigVal? = match
+      config_path_list(
+        sc,
+        scoped_eff,
+        env,
+        args_len,
+        scope_path,
+        tty,
+        ast.extensions,
+      ) {
+      Ok(supplies) =>
+        match read_config_path_list(supplies, provider, args_len, scope_path) {
+          Ok(obj) => obj
+          Err(_) => None
+        }
+      Err(_) => None
     }
     match
       resolve_ladder_below_cli(
@@ -4619,11 +4612,162 @@ fn resolve_default_fn(
 }
 
 ///|
+/// DR-133 §1 のパス列の 1 本。`committed` は cli / env 明示のパス (§3 — 読込失敗が Error になる)、
+/// `element` はその Error の帰属先になる config_file 要素の宣言名。
+priv struct ConfigPathSupply {
+  path : String
+  committed : Bool
+  element : String
+}
+
+///|
+/// DR-133 §1 step 1 + §1.1: scope の config_file 要素を**宣言順**に走査し、各要素が自分のラダー
+/// (cli > env > default、DR-050 §1) で供給したパスを列の末尾へ足す。`multiple` の要素は自分の位置に
+/// 供給順で inline 展開され (§1.1)、どの席からも供給されなかった要素は列に参加しない。
+///
+/// パス解決そのものは要素のラダーを `resolve_entity` にそのまま解かせる — config_file 要素も普通の
+/// 値セルであり、単体 / `multiple` / filters の違いは要素側の意味論が持つ。config 席だけは循環禁止
+/// (DR-050 §5) で `config_obj = None` を渡して塞ぐ。accum セルの効果列は build_result と同じ規則で
+/// 畳む (`Empty` / `Unset` / `Default` は clear-point、それ以外は末尾へ追加)。
+fn config_path_list(
+  sc : @engine.Scope,
+  cli : Array[@abi.Binding],
+  env_map : (String) -> String?,
+  at_pos : Int,
+  path : Array[String],
+  tty : (String) -> Bool?,
+  extensions : @node.Registry,
+) -> Result[Array[ConfigPathSupply], @abi.ParseError] {
+  let supplies : Array[ConfigPathSupply] = []
+  for e in sc.entities {
+    if !e.is_config_file {
+      continue
+    }
+    let bs = match
+      resolve_entity(
+        e,
+        cli,
+        env_map,
+        None,
+        config_path_of(e, path),
+        at_pos,
+        path,
+        tty,
+        extensions,
+        true,
+      ) {
+      Ok(bs) => bs
+      Err(pe) => return Err(pe)
+    }
+    let own : Array[ConfigPathSupply] = []
+    for b in bs {
+      match b.op {
+        @abi.Empty | @abi.Unset | @abi.Default => own.clear()
+        _ =>
+          own.push({
+            path: @extension.value_str(b.value),
+            // DR-133 §3: committed なのは cli / env 明示のパスだけ。default / const 由来の
+            // 不在は黙認される。判定はパスごとに閉じており要素間で持ち越さない。
+            committed: b.source is (@abi.Cli | @abi.Env),
+            element: e.name,
+          })
+      }
+    }
+    for s in own {
+      supplies.push(s)
+    }
+  }
+  Ok(supplies)
+}
+
+///|
+/// DR-133 §2 のトップレベルキー置換: `next` が持つトップキーは `prev` のものを置き換え、`next` に
+/// 無いトップキーは `prev` の値がそのまま残る。キーの並びは前のオブジェクトの宣言順を保ち、新しい
+/// キーだけが後ろへ足される。値の中身は検査しない — ネストした object の内側を再帰的に混ぜること
+/// はしない (深いマージ無し)。
+fn fold_top_keys(
+  prev : Array[(String, @abi.ConfigVal)],
+  next : Array[(String, @abi.ConfigVal)],
+) -> @abi.ConfigVal {
+  let out : Array[(String, @abi.ConfigVal)] = []
+  for kv in prev {
+    let mut replacement : @abi.ConfigVal? = None
+    for nkv in next {
+      if nkv.0 == kv.0 {
+        replacement = Some(nkv.1)
+      }
+    }
+    match replacement {
+      Some(v) => out.push((kv.0, v))
+      None => out.push(kv)
+    }
+  }
+  for nkv in next {
+    let mut in_prev = false
+    for kv in prev {
+      if kv.0 == nkv.0 {
+        in_prev = true
+      }
+    }
+    if !in_prev {
+      out.push(nkv)
+    }
+  }
+  @abi.config_object(out)
+}
+
+///|
+/// DR-133 §1 step 2/3: パス列の各パスを provider へ渡し (契約は 1 パス → 1 オブジェクトのまま、
+/// 列の長さだけ呼ぶ)、読めたオブジェクトを**トップレベルキー置換**で畳んだ 1 個を返す。後のキーが
+/// 前を置き換え、後に無いトップキーは前の値が残る。深いマージはしない (§2) — 値の中身は検査せず、
+/// キーに対応する値をそのまま置く。トップレベルが object でない読みは畳む単位を持たないので、
+/// それ自体が前を置き換える (列長 1 の縮退形が単体要素の従来挙動と一致する)。
+///
+/// 読込失敗の判定は各パス独立 (§3): committed なパスが読めなければその要素に帰属する Error、
+/// default 由来のパスの不在は黙認して列の残りを読み続ける。
+fn read_config_path_list(
+  supplies : Array[ConfigPathSupply],
+  provider : (String) -> @abi.ConfigVal?,
+  at_pos : Int,
+  path : Array[String],
+) -> Result[@abi.ConfigVal?, @abi.ParseError] {
+  let mut folded : @abi.ConfigVal? = None
+  for s in supplies {
+    match provider(s.path) {
+      None =>
+        if s.committed {
+          return Err(
+            ladder_err(
+              s.element,
+              at_pos,
+              "config_read_failed",
+              "config file \"\{s.path}\" could not be read",
+              path,
+            ),
+          )
+        }
+      Some(obj) =>
+        folded = Some(
+          match (folded, obj) {
+            (Some(@abi.Object(prev)), @abi.Object(next)) =>
+              fold_top_keys(prev, next)
+            _ => obj
+          },
+        )
+    }
+  }
+  Ok(folded)
+}
+
+///|
 /// Resolve a scope WITH a config-file value source (DR-050 §5 dependency order):
-///   1. resolve the config_file element's path (cli > env > default; it has NO config seat, 循環禁止)
-///   2. read the provider with that path → a config object (or None). A committed path (cli/env)
-///      that reads None is a DR-037/DR-066 Error (指定したのに読めない); a default path reading
-///      None is silently tolerated (config seat stays empty)
+///   1. build the DR-133 §1 path list from EVERY config_file element of this scope, in declaration
+///      order (each element resolves its own path down cli > env > default; it has NO config seat,
+///      循環禁止)
+///   2. read the provider once per path and fold the readable objects by top-level key replacement
+///      into the ONE object that sits in the config seat. A committed path (cli/env) that reads None
+///      is a DR-037/DR-066 Error (指定したのに読めない); a default path reading None is silently
+///      tolerated — the judgement is per path (DR-133 §3), never carried over between elements
 ///   3. resolve every (non config_file) entity down cli > env > config > default, using
 ///      the config object and each entity's absolute config path (config_key, else 同型 = scope path + name)
 /// `provider` is the config_provider stub (path → config object | None). `path` is this scope's
@@ -4642,71 +4786,17 @@ fn resolve_scope_config_with_export(
   include_default : Bool,
   firings? : @fold.FiringLedger,
 ) -> Result[Array[@abi.Binding], @abi.ParseError] {
-  // Phase 1: resolve the config_file element's path (cli > env > default), track committed-ness.
-  let mut cf_path : String? = None
-  let mut cf_committed = false
-  let mut cf_element = ""
-  for e in sc.entities {
-    if e.is_config_file {
-      cf_element = e.name
-      let mut done = false
-      for b in cli {
-        if b.key == e.name {
-          match b.op {
-            @abi.Set => {
-              cf_path = Some(@extension.value_str(b.value))
-              cf_committed = true
-              done = true
-            }
-            _ => ()
-          }
-        }
-      }
-      if !done {
-        match e.env_key {
-          Some(k) =>
-            match env_map(k) {
-              Some(v) => {
-                cf_path = Some(v)
-                cf_committed = true
-                done = true
-              }
-              None => ()
-            }
-          None => ()
-        }
-      }
-      if !done {
-        match default_scalar(e) {
-          Some(v) => cf_path = Some(@extension.value_str(v)) // committed stays false (default path)
-          None => ()
-        }
-      }
-    }
+  // Phase 1 (DR-133 §1/§1.1): build the path list this scope's config_file elements supply.
+  let supplies = match
+    config_path_list(sc, cli, env_map, at_pos, path, tty, extensions) {
+    Ok(ps) => ps
+    Err(pe) => return Err(pe)
   }
-  // Phase 2: read the provider. committed path + None = Error; default path + None = silent.
-  let config_obj : @abi.ConfigVal? = match cf_path {
-    Some(p) => provider(p)
-    None => None
-  }
-  match cf_path {
-    Some(p) =>
-      if cf_committed {
-        match config_obj {
-          None =>
-            return Err(
-              ladder_err(
-                cf_element,
-                at_pos,
-                "config_read_failed",
-                "config file \"\{p}\" could not be read",
-                path,
-              ),
-            )
-          Some(_) => ()
-        }
-      }
-    None => ()
+  // Phase 2 (DR-133 §1/§2/§3): read each path and fold by top-level key replacement.
+  let config_obj = match
+    read_config_path_list(supplies, provider, at_pos, path) {
+    Ok(obj) => obj
+    Err(pe) => return Err(pe)
   }
   // Phase 3a: resolve CLI/env/config for every entity before considering any default. These
   // seats are actual claims even when another entity already occupies the same exported result cell.

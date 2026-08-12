@@ -12,6 +12,8 @@ pub fn bindings_through_link(Array[Binding], String, String, Array[String], Arra
 
 pub fn config_from_json(Json) -> ConfigVal
 
+pub fn config_object(Array[(String, ConfigVal)]) -> ConfigVal
+
 pub fn decode_fn_invocation_parts(FnInvocationForm) -> Result[Array[String], String]
 
 pub fn eq_sep_mode_of(String) -> EqSepMode?
