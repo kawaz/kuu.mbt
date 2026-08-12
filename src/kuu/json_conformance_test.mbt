@@ -2429,12 +2429,7 @@ fn known_divergences() -> Array[String] {
   //   - help_query capability の runner dispatch 化 (現在 @kuu.help 直呼び)。
   //   - types 集約射影 + type_ref + used_as (value-structure-and-types.json は decode skip 継続)。
   //   - fixed default_fn の default 席射影 (P2H-Q3 裁定に沿った dynamic default_fn は model 非搭載)。
-  [
-    // DR-134 command value carrier 未実装 (issue 2026-08-12-command-value-carrier)。
-    // command の `value` キーを decoder が受理できないため、fixture が期待する definition-error
-    // ではなく malformed へ倒れる。担体実装は別サイクル。
-    "definition-error/command-value-occupying-child.json::occupying-children-under-value-command :: EXPECTED-DEFINITION-ERROR got=malformed:command has unsupported key 'value'",
-  ]
+  []
 }
 
 ///|
@@ -2442,19 +2437,11 @@ fn known_divergences() -> Array[String] {
 /// a fixture the decoder cannot losslessly represent, so it raises DecodeSkip before any case runs.
 /// UNEXPECTED / VANISHED / CHANGED SKIP REASON all fail the run (like divergences, MDR-001 §6).
 ///
-/// The only fixtures the decoder cannot represent are DR-134's command `value` carrier pair below.
-/// Everything else in the corpus (including DR-099's `builtin/tty` preset-type fixtures — the
+/// The whole corpus (including DR-099's `builtin/tty` preset-type fixtures — the
 /// `definitions.types` factory branch and the case-level single-bool observation decode,
-/// both `dec_types`/`dec_case` above) decodes and runs losslessly.
+/// both `dec_types`/`dec_case` above) decodes and runs losslessly, so the ledger is empty.
 fn expected_skips() -> Array[(String, String)] {
-  [
-    // DR-134 command value carrier 未実装 (issue 2026-08-12-command-value-carrier)。
-    // command の `value` キーを decoder が表現できず、case 実行前に DecodeSkip する。
-    ("command-scope/value-command.json", "command has unsupported key 'value'"),
-    (
-      "command-scope/value-command-non-occupying-children.json", "command has unsupported key 'value'",
-    ),
-  ]
+  []
 }
 
 ///|

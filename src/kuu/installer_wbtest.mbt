@@ -989,7 +989,14 @@ test "global + long + fixpoint: child scope receives @engine.Rooted satellite (l
       el("verbose", @builtins.flag_type(), long=Bool(true), is_global=true),
     ],
     commands: [
-      { name: "sub", body: child, export_key: @engine.ExportKey::unset() },
+      {
+        name: "sub",
+        body: child,
+        export_key: @engine.ExportKey::unset(),
+        const_values: None,
+        default_values: None,
+        default_fn: None,
+      },
     ],
   }
   let sc = ok_scope(def, all_installers())
@@ -1717,10 +1724,16 @@ test "copy_global_into: two same-name different-trigger globals (declared indepe
               name: "sub",
               body: empty_def(),
               export_key: @engine.ExportKey::unset(),
+              const_values: None,
+              default_values: None,
+              default_fn: None,
             },
           ],
         },
         export_key: @engine.ExportKey::unset(),
+        const_values: None,
+        default_values: None,
+        default_fn: None,
       },
     ],
   }
@@ -2273,7 +2286,14 @@ test "requires targeting a bool filled by a borrow default_fn survives the filte
     ..empty_def(),
     options: [root_c],
     commands: [
-      { name: "sub", body: child, export_key: @engine.ExportKey::unset() },
+      {
+        name: "sub",
+        body: child,
+        export_key: @engine.ExportKey::unset(),
+        const_values: None,
+        default_values: None,
+        default_fn: None,
+      },
     ],
   }
   let sc = ok_scope(def, all_installers())
@@ -2317,7 +2337,14 @@ test "a bool filled by a borrow default_fn that resolves false still violates re
     ..empty_def(),
     options: [root_c],
     commands: [
-      { name: "sub", body: child, export_key: @engine.ExportKey::unset() },
+      {
+        name: "sub",
+        body: child,
+        export_key: @engine.ExportKey::unset(),
+        const_values: None,
+        default_values: None,
+        default_fn: None,
+      },
     ],
   }
   let sc = ok_scope(def, all_installers())
@@ -4204,7 +4231,14 @@ test "global option value-starve inside a child command: missing_operand converg
     ..empty_def(),
     options: [level_opt],
     commands: [
-      { name: "a", body: empty_def(), export_key: @engine.ExportKey::unset() },
+      {
+        name: "a",
+        body: empty_def(),
+        export_key: @engine.ExportKey::unset(),
+        const_values: None,
+        default_values: None,
+        default_fn: None,
+      },
     ],
   }
   let sc = ok_scope(def, all_installers())
@@ -4244,7 +4278,14 @@ test "command-local (non-global) option value-starve: missing_operand path=[\"a\
   let def : @engine.Definition = {
     ..empty_def(),
     commands: [
-      { name: "a", body: child, export_key: @engine.ExportKey::unset() },
+      {
+        name: "a",
+        body: child,
+        export_key: @engine.ExportKey::unset(),
+        const_values: None,
+        default_values: None,
+        default_fn: None,
+      },
     ],
   }
   let sc = ok_scope(def, all_installers())
@@ -4477,7 +4518,14 @@ test "DR-120 §4: a global entry copy in a child scope claims no result key" {
     ..empty_def(),
     options: [shared],
     commands: [
-      { name: "sub", body: child, export_key: @engine.ExportKey::unset() },
+      {
+        name: "sub",
+        body: child,
+        export_key: @engine.ExportKey::unset(),
+        const_values: None,
+        default_values: None,
+        default_fn: None,
+      },
     ],
   }
   match test_lower_definition(def, all_installers()) {

@@ -1736,6 +1736,132 @@ fn projected_command_key_selected(
 /// CLI binds を渡しても動く (runner が「default ladder 不要な fixture は resolve をスキップする」
 /// 最適化で未解決 binds をそのまま渡す既存経路があり、それを壊さないための性質 — 呼び出し側の
 /// 資格を型で強制することはしない)。
+/// DR-134 §3: 選択された value 持ち command の値セル (`#command_value`、その command 自身の scope の
+/// 内部セル) が解決した binding。`None` = スコープを名乗る command、または未選択。
+fn command_value_binding(
+  binds : Array[@abi.Binding],
+  child_declaration_path : Array[String],
+) -> @abi.Binding? {
+  for b in binds {
+    if b.key == @engine.command_value_cell() &&
+      path_eq(b.scope, child_declaration_path) &&
+      b.op is @abi.Set {
+      return Some(b)
+    }
+  }
+  None
+}
+
+///|
+/// DR-134 §3: 選択された value 持ち command は、親スコープのキーに**値そのもの**を座らせる (kv では
+/// ない)。値を確定させた席のタグ (`value:` 由来なら const) はセルの binding からそのまま運ぶ
+/// (DR-122 の shadow tree)。露出キーは command の scope キー軸で引く — `export_key` による改名は
+/// スコープを名乗る command と同じ経路 (DR-134 §6)。
+///
+/// 出力は**露出キー軸**の binding なので、呼び手は `apply_export_keys` を通した列へ足す。
+fn command_value_bindings(
+  sc : @engine.Scope,
+  binds : Array[@abi.Binding],
+  declaration_path : Array[String],
+  result_path : Array[String],
+  export_map : @engine.ExportScopeMap,
+  out : Array[@abi.Binding],
+) -> Unit {
+  for greedy in sc.greedy {
+    match greedy {
+      @engine.CommandSatisfied(name, ordinal, child) => {
+        let child_declaration_path = path_push(declaration_path, name)
+        if !@engine.command_scope_selected(
+            binds, child_declaration_path, ordinal,
+          ) {
+          continue
+        }
+        let exposed = export_map.exposed_command_scope(name, ordinal)
+        match (command_value_binding(binds, child_declaration_path), exposed) {
+          (Some(cell), Some(key)) =>
+            out.push({
+              ..cell,
+              key,
+              scope: result_path.copy(),
+              source_shadow: None,
+            })
+          _ =>
+            command_value_bindings(
+              child,
+              binds,
+              child_declaration_path,
+              match exposed {
+                Some(key) => path_push(result_path, key)
+                None => result_path
+              },
+              export_map.command_child(name, ordinal),
+              out,
+            )
+        }
+      }
+      _ => ()
+    }
+  }
+}
+
+///|
+/// DR-134 §3: 値を名乗った command の scope が結果へ寄与しないよう、その部分木の binding を落とす。
+/// 消えるのは**結果への kv 射影**だけ (スコープ自体は消えず、非占有子は従来どおりそのスコープで
+/// 働く) — 値持ち command の内側に占有子は居ない (§2 の definition-error) ので、落ちるのは
+/// scope marker と内部セルだけである。宣言名軸で判定するので `apply_export_keys` の前に掛ける。
+fn drop_value_command_subtrees(
+  sc : @engine.Scope,
+  binds : Array[@abi.Binding],
+) -> Array[@abi.Binding] {
+  let dropped : Array[Array[String]] = []
+  collect_value_command_paths(sc, binds, [], dropped)
+  if dropped.length() == 0 {
+    return binds
+  }
+  let kept : Array[@abi.Binding] = []
+  for b in binds {
+    let mut under = false
+    for p in dropped {
+      if path_starts_with(b.scope, p) {
+        under = true
+        break
+      }
+    }
+    if !under {
+      kept.push(b)
+    }
+  }
+  kept
+}
+
+///|
+fn collect_value_command_paths(
+  sc : @engine.Scope,
+  binds : Array[@abi.Binding],
+  declaration_path : Array[String],
+  out : Array[Array[String]],
+) -> Unit {
+  for greedy in sc.greedy {
+    match greedy {
+      @engine.CommandSatisfied(name, ordinal, child) => {
+        let child_declaration_path = path_push(declaration_path, name)
+        if !@engine.command_scope_selected(
+            binds, child_declaration_path, ordinal,
+          ) {
+          continue
+        }
+        if command_value_binding(binds, child_declaration_path) is Some(_) {
+          out.push(child_declaration_path)
+        } else {
+          collect_value_command_paths(child, binds, child_declaration_path, out)
+        }
+      }
+      _ => ()
+    }
+  }
+}
+
+///|
 fn command_projection_bindings(
   sc : @engine.Scope,
   binds : Array[@abi.Binding],
@@ -1753,6 +1879,11 @@ fn command_projection_bindings(
         if @engine.command_scope_selected(
             binds, child_declaration_path, ordinal,
           ) {
+          // 値を名乗った command の内側は結果へ射影しない (DR-134 §3) — 親キーには
+          // `command_value_bindings` が値そのものを置く。
+          if command_value_binding(binds, child_declaration_path) is Some(_) {
+            continue
+          }
           let child_result_path = match exposed {
             Some(key) => path_push(result_path, key)
             None => result_path
@@ -1799,7 +1930,11 @@ fn build_result_export(
   templates? : Map[String, @engine.Node] = Map([]),
   complete_static? : Bool = true,
 ) -> @abi.ResultValue {
-  let projected = apply_export_keys(active_link_bindings(binds), ek)
+  let projected = apply_export_keys(
+    active_link_bindings(drop_value_command_subtrees(sc, binds)),
+    ek,
+  )
+  command_value_bindings(sc, binds, [], [], ek, projected)
   command_projection_bindings(sc, binds, [], [], ek, projected)
   let declared_types : Array[TypeSeat] = []
   collect_type_seats(sc, [], binds, declared_types)
@@ -1934,7 +2069,11 @@ fn source_seats(
     ek,
     resolved,
   )
-  for binding in apply_export_keys(resolved, ek) {
+  // DR-134 §3: 値を名乗った command は親スコープのキーに値が座る — sources もその座のタグを
+  // 持つ (DR-122 の shadow tree) ので、result と同じ射影を席の素材にも掛ける。
+  let exposed = apply_export_keys(drop_value_command_subtrees(sc, resolved), ek)
+  command_value_bindings(sc, resolved, [], [], ek, exposed)
+  for binding in exposed {
     if (binding.key != "" && is_sentinel(binding.key)) ||
       is_internal_cell(internal, binding.scope, binding.key) {
       continue

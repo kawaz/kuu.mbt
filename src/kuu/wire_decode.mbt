@@ -3018,8 +3018,11 @@ fn dec_command(
     }
     None => ()
   }
+  // DR-134 §1/§7: `value` は node 共通属性で、command node でも合法。値の供給に command 専用の
+  // 規則は無い (§5) ので `default` / `default_fn` も同じ担体として受ける。
   let allowed = [
     "type", "name", "options", "positionals", "commands", "export_key", "config",
+    "value", "default", "default_fn",
   ]
   for key in owned.vocab {
     allowed.push(key)
@@ -3047,7 +3050,23 @@ fn dec_command(
     Some(e) => dec_export(e)
     None => @engine.ExportKey::unset()
   }
-  DCommand({ name, body, export_key: export_ })
+  let const_values = dec_const_value(o)
+  let default_values = match o.get("default") {
+    Some(d) => Some(json_to_default_values(d))
+    None => None
+  }
+  let default_fn = match o.get("default_fn") {
+    Some(d) => Some(dec_default_fn(d))
+    None => None
+  }
+  DCommand({
+    name,
+    body,
+    export_key: export_,
+    const_values,
+    default_values,
+    default_fn,
+  })
 }
 
 ///|

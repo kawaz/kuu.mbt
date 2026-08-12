@@ -418,6 +418,13 @@ pub(all) struct CommandDef {
   name : String
   body : Definition
   export_key : ExportKey
+  // DR-134 §1: command node の値の担体。command は値かスコープのどちらかを名乗るので、これらが
+  // 埋まっている command の内側に結果キー占有子は置けない (§2、`gather_export_seats` が検査)。
+  // 選択されたときだけ実現するセル (§4) なので、担体は command の scope 側へ内部セルとして
+  // 降ろす (`command_value_entity`) — 未選択の scope は resolve が降りないので値も出ない。
+  const_values : Array[Value]? // `value:` (DR-031 CONST-Q1=a の const 席)
+  default_values : Array[Value]?
+  default_fn : DefaultFnCall?
 } derive(Eq, Debug)
 
 ///|

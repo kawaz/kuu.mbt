@@ -49,6 +49,8 @@ pub fn collect_scopes(Node, Map[String, Node]) -> Array[ScopedCons]
 
 pub fn command_scope_selected(Array[@abi.Binding], Array[String], Int) -> Bool
 
+pub fn command_value_cell() -> String
+
 pub fn complete_tree(Node, Array[String], defs? : Map[String, Node], after? : Array[String], extensions? : @extension.Registry) -> Array[@abi.Candidate]
 
 pub fn complete_tree_sourced(Node, Array[String], defs? : Map[String, Node], after? : Array[String], extensions? : @extension.Registry) -> Array[SourcedCandidate]
@@ -219,6 +221,9 @@ pub(all) struct CommandDef {
   name : String
   body : Definition
   export_key : ExportKey
+  const_values : Array[@abi.Value]?
+  default_values : Array[@abi.Value]?
+  default_fn : @abi.DefaultFnCall?
 } derive(Eq, @debug.Debug)
 
 pub(all) enum Constraint {

@@ -655,7 +655,14 @@ fn clone_def(d : Definition) -> Definition {
   }
   let cs : Array[CommandDef] = []
   for c in d.commands {
-    cs.push({ name: c.name, body: clone_def(c.body), export_key: c.export_key })
+    cs.push({
+      name: c.name,
+      body: clone_def(c.body),
+      export_key: c.export_key,
+      const_values: c.const_values,
+      default_values: c.default_values,
+      default_fn: c.default_fn,
+    })
   }
   let als : Array[AliasDef] = []
   for a in d.aliases {
@@ -1325,9 +1332,15 @@ fn init_sb(
   for c in def.commands {
     let ordinal = command_ordinals.get(c.name).unwrap_or(0)
     command_ordinals.set(c.name, ordinal + 1)
-    children.push(
-      InstallChild::new(c.name, ordinal, init_sb(c.body, templates, extensions)),
-    )
+    let child = init_sb(c.body, templates, extensions)
+    // DR-134 §1/§4: value 持ち command の値セルは、その command 自身の scope の内部セルとして
+    // 置く — scope は選択されたときだけ resolve されるので「実現したセルにだけ値源ラダーが
+    // 走る」(§5) が構造で従う。親キーへの射影は resolve 相の command 射影が担う。
+    match command_value_entity(c) {
+      Some(entity) => child.output().push_entity(entity)
+      None => ()
+    }
+    children.push(InstallChild::new(c.name, ordinal, child))
   }
   InstallBuilder::new(
     def,
@@ -3909,6 +3922,9 @@ fn desugar_aliases(
               name: alias_name,
               body: clone_def(cmd.body),
               export_key: ExportKey::key(a.target),
+              const_values: cmd.const_values,
+              default_values: cmd.default_values,
+              default_fn: cmd.default_fn,
             })
           None => () // dangling alias target — 将来の absent-ref check 用に残置
         }
@@ -6321,6 +6337,68 @@ fn definition_has_completion_script(definition : Definition) -> Bool {
 /// Definition-wide internal target for the completion_script preset. Public entities retain their
 /// own result-facing names and point here through Entity.link; the target is rooted once even when a
 /// preset entry lives under a command scope.
+/// DR-134 §1: value 持ち command の値セルの宣言名。command の scope の中に 1 個だけ置く内部セル
+/// (`#` 予約 namespace なので結果にも sources にも現れない) で、親スコープのキーへは resolve 相の
+/// command 射影が値を運ぶ。
+pub fn command_value_cell() -> String {
+  "#command_value"
+}
+
+///|
+/// 値の型は**値そのものの JSON 型**が決める。command node は `type` に `"command"` を名乗って
+/// いるので値の型を宣言する場所が無く、`value:` / `default:` に書かれた literal の型がそのまま
+/// セルの値空間になる (`fixtures/command-scope/value-command.json` の `default: 7` が number 7 の
+/// まま座ることが pin)。literal を伴わない `default_fn` だけの担体は型の手掛かりが無いので、
+/// 値なし node の既定と同じ string へ倒す。
+fn command_value_type(c : CommandDef) -> &TypeExt {
+  let literal = match c.const_values {
+    Some([v, ..]) => Some(v)
+    _ =>
+      match c.default_values {
+        Some([v, ..]) => Some(v)
+        _ => None
+      }
+  }
+  match literal {
+    Some(Number(_)) => number_type()
+    Some(Bool(_)) => bool_type()
+    _ => string_type()
+  }
+}
+
+///|
+/// DR-134 §1: value 持ち command の値セル。担体 (`value` / `default` / `default_fn`) がひとつも
+/// 無い command はスコープを名乗るだけなのでセルを持たない。
+fn command_value_entity(c : CommandDef) -> Entity? {
+  if c.const_values is None && c.default_values is None && c.default_fn is None {
+    return None
+  }
+  Some({
+    name: command_value_cell(),
+    declaring_path: [],
+    link: None,
+    ty: command_value_type(c),
+    env_key: None,
+    config_seat: false,
+    config_key: None,
+    is_config_file: false,
+    accum: None,
+    flatten: false,
+    is_multiple_decl: false,
+    collector: None,
+    default_values: c.default_values,
+    const_values: c.const_values,
+    default_fn: c.default_fn,
+    separator: None,
+    piece_filters: [],
+    value_filters: [],
+    final_filters: [],
+    accum_filters: [],
+    extension: entity_ext(),
+  })
+}
+
+///|
 fn completion_script_internal_entity() -> Entity {
   {
     name: "#completion_script",
@@ -6691,11 +6769,21 @@ fn gather_export_seats(
         node.occupy_scope(c.name)
         node.project_scope(c.name)
         seats.push({ element: c.name, key, space: scope_value_space() })
-        gather_export_scope(c.body, child, out, template_declarations)
+        let inner : Array[ExportSeat] = []
+        gather_export_seats(c.body, child, inner, out, template_declarations)
+        report_export_key_collisions(inner, out)
+        report_command_value_occupancy(c, inner, out)
       }
       // 透過 command: スコープキーが落ち、子の結果キー持ちが親スコープへ昇格する。
-      None =>
+      None => {
+        let before = seats.length()
         gather_export_seats(c.body, child, seats, out, template_declarations)
+        let inner : Array[ExportSeat] = []
+        for i in before..<seats.length() {
+          inner.push(seats[i])
+        }
+        report_command_value_occupancy(c, inner, out)
+      }
     }
   }
 }
@@ -6896,6 +6984,43 @@ fn register_element_axes(e : ElementDef, node : ExportScopeMap) -> Unit {
 /// 1 結果スコープぶんの席集合から衝突を error として積む。粒度は DR-120 §5: 衝突に関与する要素
 /// ごとに 1 件 (`element` = 当該要素) を全列挙する (衝突グループ単位の代表 1 件にすると、比較単位が
 /// `(element, kind)` の集合である以上 (DR-082 §1) 衝突相手が expect から読めなくなる)。
+/// DR-134 §2: command は値かスコープのどちらかを名乗る。`value` / `default` / `default_fn` を
+/// 持つ command の内側に**結果キー占有子** (DR-120 §4 の占有側) が 1 つでも居れば、選択時の射影は
+/// 宣言キー全列挙の kv に確定し (DR-130 §1)、値が同じ 1 セルの座を争う — 表現できない組合せなので
+/// definition-error kind=`invalid-range` (「その席に置けない属性の組合せ」の既存 kind)、element は
+/// 当該 command の name。`inner` はこの command の結果スコープに積まれた席そのものなので、
+/// 非占有子 (`link` / `alias` / `dd` / `type: "none"` / `#` 内部セル) と、占有する子を持たない
+/// 透過ノードは最初から入っていない。
+fn report_command_value_occupancy(
+  c : CommandDef,
+  inner : Array[ExportSeat],
+  out : Array[DefError],
+) -> Unit {
+  if c.const_values is None && c.default_values is None && c.default_fn is None {
+    return
+  }
+  if inner.length() == 0 {
+    return
+  }
+  let occupants : Array[String] = []
+  for seat in inner {
+    occupants.push("'" + seat.key + "'")
+  }
+  out.push(
+    def_err(
+      c.name,
+      InvalidRange,
+      "command '" +
+      c.name +
+      "' declares a value and also produces result keys " +
+      occupants.join(", ") +
+      " from its own scope",
+      "a command names either a value or a scope: drop the value, or move it onto a child element",
+    ),
+  )
+}
+
+///|
 fn report_export_key_collisions(
   seats : Array[ExportSeat],
   out : Array[DefError],
