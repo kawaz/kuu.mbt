@@ -54,13 +54,14 @@ pub fn completion_query(
   // 素材集め: DR-104 の候補 wire を complete() 経由で取得 (front_door.mbt の complete)。
   // 内部で @engine.complete_tree が subcommand を追いかけて active scope の候補を吐く。
   let raw = complete_sourced(ast, args_before, args_after~)
-  // help model 取得: 候補ごとの帰属 scope (DR-066 §4 fire_path) で help carrier を引く。
-  // help_query capability 未登録 or path 到達不能な scope は carrier 無し = 説明引き直しと
-  // 整列を素材順で縮退。
-  let help_by_scope = collect_scope_help(ast, raw)
+  // 帰属 scope (DR-066 §4 fire_path) と面 (CMP-Q1) を候補ごとに 1 度だけ解決する。
+  let scoped = resolve_scoped(ast, raw)
+  // help model 取得: 帰属 scope ごとに help carrier を引く。help_query capability 未登録 or
+  // path 到達不能な scope は carrier 無し = 説明引き直しと整列を素材順で縮退。
+  let help_by_scope = collect_scope_help(ast, scoped)
   // policy 段
   let (rows, shell_actions) = apply_policy(
-    raw,
+    scoped,
     cursor_word,
     help_by_scope,
     ast.completion_insert_form,
@@ -125,6 +126,124 @@ fn attributed_scope(sourced : SourcedCandidate) -> Array[String] {
 }
 
 ///|
+/// policy 段が扱う候補 — 素材 candidate に、帰属 scope (DR-066 §4) と面 (CMP-Q1) を解決済みで
+/// 添えたもの。どちらも candidate wire の成分ではない (DR-104 §2 は `path` を wire から外し、
+/// 面は wire 語彙に無い) ため、生成器が definition から引き直す内部素材として持つ。
+priv struct ScopedCandidate {
+  candidate : Candidate
+  scope : Array[String]
+  face : CompletionFace
+}
+
+///|
+/// 素材候補に帰属 scope と面を解決して添える。
+fn resolve_scoped(
+  ast : AtomicAST,
+  sourced : Array[SourcedCandidate],
+) -> Array[ScopedCandidate] {
+  let definitions : Map[String, @engine.Definition?] = Map([])
+  let out : Array[ScopedCandidate] = []
+  for candidate in sourced {
+    let scope = attributed_scope(candidate)
+    let key = scope_key(scope)
+    let definition = match definitions.get(key) {
+      Some(cached) => cached
+      None => {
+        let looked_up = select_definition(ast.declaration, scope)
+        definitions[key] = looked_up
+        looked_up
+      }
+    }
+    out.push({
+      candidate: candidate.candidate,
+      scope,
+      face: candidate_face(definition, candidate.candidate),
+    })
+  }
+  out
+}
+
+///|
+/// 候補の面を、帰属 scope の definition が宣言した綴り集合と突き合わせて決める (CMP-Q1)。
+///
+/// `origin` は要素名までしか区別しない (DR-104 §3) ので、同名の option と command が同居する
+/// 構成では名前照合だけでは面が決まらない。exact 候補は「その面が実際に宣言している綴り」に
+/// 当たるかで判定し、値位置候補は値スロットを持つ要素 (option か positional) を名前で引く。
+///
+/// 面 3 種のどれとも決められない候補は UnknownFace — 誤った面の entry へ接続して他要素の説明を
+/// 貼るより、無印のまま素材順で出す方が害が小さい。
+fn candidate_face(
+  definition : @engine.Definition?,
+  candidate : Candidate,
+) -> CompletionFace {
+  match definition {
+    None => UnknownFace
+    Some(scope) => {
+      if candidate.is_value {
+        // 値位置候補: 値スロットの持ち主を名前で引く。command は v1 で値を取らない
+        // (DR-134 の command value 担体は未実装) ので option → positional の順で照合する。
+        for element in scope.options {
+          if element.name == candidate.origin {
+            return OptionFace
+          }
+        }
+        for element in scope.positionals {
+          if element.name == candidate.origin {
+            return PositionalFace
+          }
+        }
+        return UnknownFace
+      }
+      // exact 候補: 宣言された綴りに当たる面を採る。DR-115 §2.2 の面の並び (commands →
+      // options → positionals) を照合順にも使い、両面が同じ綴りを宣言する退化構成
+      // (long_prefix 空の option と同名 command) では先の面を採る。
+      for command in scope.commands {
+        if command.name == candidate.origin &&
+          candidate.spelling == command.name {
+          return CommandFace
+        }
+      }
+      for entry in command_alias_map(scope) {
+        if entry.0 == candidate.origin {
+          for spelling in entry.1 {
+            if candidate.spelling == spelling {
+              return CommandFace
+            }
+          }
+        }
+      }
+      for element in scope.options {
+        if element.name != candidate.origin {
+          continue
+        }
+        for spelling in option_spellings(element) {
+          if candidate.spelling == spelling {
+            return OptionFace
+          }
+        }
+      }
+      for pair in option_alias_pairs(scope) {
+        if pair.0.target != candidate.origin {
+          continue
+        }
+        for spelling in option_spellings(pair.1) {
+          if candidate.spelling == spelling {
+            return OptionFace
+          }
+        }
+      }
+      // DR-063 A.1 の裸文字列→exact 正規化が生む匿名 exact は positional 面 (DR-117 §5)。
+      for element in scope.positionals {
+        if element.name == candidate.origin {
+          return PositionalFace
+        }
+      }
+      UnknownFace
+    }
+  }
+}
+
+///|
 /// 帰属 scope path を Map キーへ畳む。要素名に現れない U+001F を区切りに使う。
 fn scope_key(path : Array[String]) -> String {
   let out = StringBuilder::new()
@@ -140,11 +259,11 @@ fn scope_key(path : Array[String]) -> String {
 /// help_query が応えない」= 説明引き直しと整列を素材順へ縮退させる印。
 fn collect_scope_help(
   ast : AtomicAST,
-  sourced : Array[SourcedCandidate],
+  scoped : Array[ScopedCandidate],
 ) -> Map[String, Array[CompletionHelpEntry]?] {
   let out : Map[String, Array[CompletionHelpEntry]?] = Map([])
-  for candidate in sourced {
-    let path = attributed_scope(candidate)
+  for candidate in scoped {
+    let path = candidate.scope
     let key = scope_key(path)
     if out.get(key) is Some(_) {
       continue
@@ -160,10 +279,10 @@ fn collect_scope_help(
 ///|
 /// 候補の帰属 scope の help carrier を返す (無ければ空列)。
 fn scope_entries(
-  sourced : SourcedCandidate,
+  scoped : ScopedCandidate,
   help_by_scope : Map[String, Array[CompletionHelpEntry]?],
 ) -> Array[CompletionHelpEntry] {
-  match help_by_scope.get(scope_key(attributed_scope(sourced))) {
+  match help_by_scope.get(scope_key(scoped.scope)) {
     Some(Some(entries)) => entries
     _ => []
   }
@@ -185,7 +304,7 @@ priv struct QueryRow {
 /// ものは emit 段で spelling に `"="` を付け + nospace を立てる (DR §2.6)。順序と説明は
 /// candidate.origin で解決するため、挿入文字列への転写は emit 段でだけ行う。
 priv struct PolicyCandidate {
-  sourced : SourcedCandidate
+  scoped : ScopedCandidate
   eq_form : Bool
 }
 
@@ -197,13 +316,13 @@ priv struct PolicyCandidate {
 /// に使う definition-wide 静的属性 (§2.6、AtomicAST が carry)。値域は "space" (既定) / "eq" — invalid
 /// は parse_definition が弾き済みなので policy 段では self-defense しない。
 fn apply_policy(
-  raw : Array[SourcedCandidate],
+  raw : Array[ScopedCandidate],
   cursor_word : String,
   help_by_scope : Map[String, Array[CompletionHelpEntry]?],
   insert_form : String,
 ) -> (Array[QueryRow], Array[String]) {
   // step 1: hidden 除外 (DR-116 §5) + 搬送不能除外 (DR-117 §4.3、spelling に tab/newline)
-  let visible : Array[SourcedCandidate] = []
+  let visible : Array[ScopedCandidate] = []
   for s in raw {
     if s.candidate.hidden {
       continue
@@ -216,7 +335,7 @@ fn apply_policy(
   // step 2: 値位置 marker を挿入候補から分離する。builtin completer marker は候補行でなく
   // shell_action directive へ翻訳し、形態 B の custom completer marker は候補提供なしへ縮退する。
   let shell_actions : Array[String] = []
-  let insertion_candidates : Array[SourcedCandidate] = []
+  let insertion_candidates : Array[ScopedCandidate] = []
   for s in visible {
     if s.candidate.spelling.length() == 0 {
       match s.candidate.completer {
@@ -232,7 +351,7 @@ fn apply_policy(
   }
   // step 3: cursor_word による prefix 絞りは挿入文字列を持つ候補だけに適用する。
   // 候補ゼロになっても空リストのまま返す (DR-117 §5 kawaz 裁定 2026-07-23)。
-  let candidates : Array[SourcedCandidate] = []
+  let candidates : Array[ScopedCandidate] = []
   for s in insertion_candidates {
     if spelling_has_prefix(s.candidate.spelling, cursor_word) {
       candidates.push(s)
@@ -249,10 +368,11 @@ fn apply_policy(
   //         eq_form=true の PolicyCandidate は spelling に `"="` を付け nospace を強制立て。
   let rows : Array[QueryRow] = []
   for pc in ordered {
-    let c = pc.sourced.candidate
+    let c = pc.scoped.candidate
     let base_help = lookup_help_by_origin(
+      pc.scoped.face,
       c.origin,
-      scope_entries(pc.sourced, help_by_scope),
+      scope_entries(pc.scoped, help_by_scope),
     )
     let annotated = annotate_description(base_help, c.deprecated, c.is_alias)
     let description = normalize_description(annotated)
@@ -277,7 +397,7 @@ fn apply_policy(
 /// DR-104 §3 明確化が合法とする「同綴り別 origin」(DR-041 §4 の重複トリガ) は別 entry 由来の
 /// 別候補であり、spelling 単独をキーにすると無関係な候補どうしがペア扱いされて片方が消える。
 fn merge_insert_form(
-  candidates : Array[SourcedCandidate],
+  candidates : Array[ScopedCandidate],
   insert_form : String,
 ) -> Array[PolicyCandidate] {
   // origin と spelling の組ごとに word_end / cont の bit を集計する。同綴りでも由来 entry が
@@ -301,7 +421,7 @@ fn merge_insert_form(
     let c = s.candidate
     // 値位置候補・値候補は merge 対象外 (§5 は long option の word_end/cont 併存が唯一の対象)
     if c.is_value {
-      out.push({ sourced: s, eq_form: false })
+      out.push({ scoped: s, eq_form: false })
       continue
     }
     let key = c.origin + "\u{001f}" + c.spelling
@@ -310,7 +430,7 @@ fn merge_insert_form(
     if !pair_present {
       // 単独候補 — §5「insert_form は『ペアが併存した時どちらへ畳むか』だけを定め、単独候補
       // の形を書き換えない」
-      out.push({ sourced: s, eq_form: false })
+      out.push({ scoped: s, eq_form: false })
       continue
     }
     // ペア併存 — insert_form で残す side を決める
@@ -319,13 +439,13 @@ fn merge_insert_form(
       if c.term == WordEnd {
         continue
       }
-      out.push({ sourced: s, eq_form: true })
+      out.push({ scoped: s, eq_form: true })
     } else {
       // 既定 "space": word_end を残す、cont を落とす
       if c.term == Continue {
         continue
       }
-      out.push({ sourced: s, eq_form: false })
+      out.push({ scoped: s, eq_form: false })
     }
   }
   out
@@ -386,17 +506,18 @@ fn order_policy_candidates_by_origin(
     if used[i] {
       continue
     }
-    let key = scope_key(attributed_scope(candidates[i].sourced))
-    let entries = scope_entries(candidates[i].sourced, help_by_scope)
+    let key = scope_key(candidates[i].scoped.scope)
+    let entries = scope_entries(candidates[i].scoped, help_by_scope)
     for entry in entries {
       for j = i; j < candidates.length(); j = j + 1 {
         if used[j] {
           continue
         }
-        if scope_key(attributed_scope(candidates[j].sourced)) != key {
+        if scope_key(candidates[j].scoped.scope) != key {
           continue
         }
-        if candidates[j].sourced.candidate.origin == entry.identity {
+        if candidates[j].scoped.face == entry.face &&
+          candidates[j].scoped.candidate.origin == entry.identity {
           out.push(candidates[j])
           used[j] = true
         }
@@ -406,7 +527,7 @@ fn order_policy_candidates_by_origin(
       if used[j] {
         continue
       }
-      if scope_key(attributed_scope(candidates[j].sourced)) != key {
+      if scope_key(candidates[j].scoped.scope) != key {
         continue
       }
       out.push(candidates[j])
@@ -420,11 +541,12 @@ fn order_policy_candidates_by_origin(
 /// candidate.origin が指す canonical entry の help を引き直す。候補 spelling は alias や
 /// completer 由来値で任意に異なり得るため、説明解決には使わない。
 fn lookup_help_by_origin(
+  face : CompletionFace,
   origin : String,
   entries : Array[CompletionHelpEntry],
 ) -> String? {
   for entry in entries {
-    if entry.identity == origin {
+    if entry.face == face && entry.identity == origin {
       return entry.help
     }
   }

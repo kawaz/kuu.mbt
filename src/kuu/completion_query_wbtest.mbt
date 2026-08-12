@@ -98,13 +98,16 @@ fn directives_of(response : String) -> Array[String] {
 }
 
 ///|
-/// 手組み candidate を「全件 root scope 由来」の SourcedCandidate 列にする検証補助。帰属 scope の
-/// 分岐そのものを見る test は実物の completion_query 経路で書く (本補助は policy 段だけを単体で
-/// 突く test 向け)。
-fn sourced_at_root(candidates : Array[Candidate]) -> Array[SourcedCandidate] {
-  let out : Array[SourcedCandidate] = []
+/// 手組み candidate を「全件 root scope 由来・面は指定のもの」の ScopedCandidate 列にする検証
+/// 補助。帰属 scope と面の解決そのものを見る test は実物の completion_query 経路で書く (本補助は
+/// policy 段だけを単体で突く test 向け)。
+fn scoped_at_root(
+  candidates : Array[Candidate],
+  face : CompletionFace,
+) -> Array[ScopedCandidate] {
+  let out : Array[ScopedCandidate] = []
   for candidate in candidates {
-    out.push({ candidate, scope_paths: [[]] })
+    out.push({ candidate, scope: [], face })
   }
   out
 }
@@ -340,11 +343,11 @@ test "DR-116 §2〜§4: completer 由来候補は origin の位置で供給順�
     },
   ]
   let completion_help : Array[CompletionHelpEntry] = [
-    { identity: "alpha", help: Some("alpha help") },
-    { identity: "beta", help: Some("beta help") },
+    { face: OptionFace, identity: "alpha", help: Some("alpha help") },
+    { face: OptionFace, identity: "beta", help: Some("beta help") },
   ]
   let (rows, shell_actions) = apply_policy(
-    sourced_at_root(raw),
+    scoped_at_root(raw, OptionFace),
     "",
     root_help_map(completion_help),
     "space",
@@ -397,7 +400,7 @@ test "DR-117 §5: insert_form merge は origin と spelling の組でペア判�
     },
   ]
   let (rows, shell_actions) = apply_policy(
-    sourced_at_root(raw),
+    scoped_at_root(raw, OptionFace),
     "",
     root_help_map([]),
     "eq",
@@ -630,3 +633,37 @@ test "DR-116 §2/§4: option を挟んでも child scope の順序と説明に�
     None => fail("--zeta must be in response")
   }
 }
+
+///|
+/// 面修飾 (CMP-Q1): `origin` は要素名までしか区別しないので、同じ scope に同名の option と
+/// command が居ると名前照合だけでは entry を取り違える。面を突き合わせキーに含めて、それぞれが
+/// 自分の面の説明を得ることを固定する (DR-116 §4 の「origin が指す定義要素から引き直す」)。
+///
+/// 同名 2 面は既定では export_key 衝突 (fixtures/export-key/collision-option-command.json) なので、
+/// option 側を export_key でリネームして合法な同名構成にする。
+test "DR-116 §4: 同名の option と command は各々の面の説明を得る" {
+  let ast = ast_or_fail(
+    "{\"options\":[{\"name\":\"build\",\"type\":\"flag\",\"long\":true," +
+    "\"export_key\":\"build_flag\",\"help\":\"option side\"}]," +
+    "\"commands\":[{\"type\":\"command\",\"name\":\"build\",\"help\":\"command side\"," +
+    "\"positionals\":[{\"name\":\"target\",\"type\":\"string\"}]}]}",
+  )
+  let response = completion_query(ast, ["app"])
+  match find_line(response, "--build") {
+    Some(line) =>
+      assert_true(
+        string_contains(line, "option side"),
+        msg="--build must take the option entry's help, got: " + line,
+      )
+    None => fail("--build must be in response")
+  }
+  match find_line(response, "build") {
+    Some(line) =>
+      assert_true(
+        string_contains(line, "command side"),
+        msg="build must take the command entry's help, got: " + line,
+      )
+    None => fail("build must be in response")
+  }
+}
+

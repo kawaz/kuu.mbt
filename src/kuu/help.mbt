@@ -228,7 +228,21 @@ priv struct SortableCommand {
 ///|
 /// completion policy が candidate.origin を help の適用済み列へ接続する package 内 carrier。
 /// HelpModel の公開 schema へ canonical identity を複製せず、同じ順序計算の結果を再利用する。
+/// 候補と help entry を突き合わせる面 (DR-115 §2.2 のセクション区分と同じ 3 面)。`origin` は
+/// 要素名なので、同じ scope に同名の option と command が居ると (DR-041 §4 が認める構成) 名前
+/// だけでは誤接続する。面を identity に添えて区別する (CMP-Q1)。
+priv enum CompletionFace {
+  CommandFace
+  OptionFace
+  PositionalFace
+  /// 帰属 scope の definition から面を決められなかった候補。どの entry とも一致しないので、
+  /// 整列は素材順のまま・説明は付かない (誤った面へ接続するより無印で出す方が安全)。
+  UnknownFace
+} derive(Eq)
+
+///|
 priv struct CompletionHelpEntry {
+  face : CompletionFace
   identity : String
   help : String?
 }
@@ -727,17 +741,32 @@ fn completion_help_entries(
   // 面間の連結順は生成器裁量 (DR-115 §6.2)。DR-115 §2.2 のセクション識別子閉集合が
   // commands / options / positionals の順で並ぶので、その列挙順に合わせる。
   for command in model.commands {
-    output.push({ identity: command.name, help: command.help })
+    output.push({
+      face: CommandFace,
+      identity: command.name,
+      help: command.help,
+    })
   }
   match select_definition(ast.declaration, path) {
-    Some(definition) =>
+    Some(definition) => {
       for carrier in ordered_option_carriers(definition, model.command_path) {
         match (carrier.identity, carrier.entry) {
           (Some(identity), Option(option)) =>
-            output.push({ identity, help: option.help })
+            output.push({ face: OptionFace, identity, help: option.help })
           _ => ()
         }
       }
+      // 値位置候補の説明引き直し (DR-116 §4) と匿名 exact の整列 (DR-117 §5) は positional 面が
+      // 担う。positional は DR-113 §8 の order / help_after 語彙を持たないので、help model の列
+      // ではなく definition の宣言順をそのまま使う (DR-117 §5 「positional の定義順に従属」)。
+      for element in definition.positionals {
+        output.push({
+          face: PositionalFace,
+          identity: element.name,
+          help: element.help_meta.help,
+        })
+      }
+    }
     None => ()
   }
   output
