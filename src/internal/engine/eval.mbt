@@ -2930,6 +2930,11 @@ fn seq_boundary_name(node : Node) -> String? {
           match node {
             RequiredArgument(name) | Bind(name, _) | Scoped(name, _) =>
               Some(name)
+            // `values` 糖衣 / value-enum 形の `or` (DESIGN §5.3, wire_decode の `Enum` body) が
+            // 積む `enum_value_node`: 名前包みのない `Or([Seq([Exact(v), Bind(name, ...)]), ..])`。
+            // 枝はどれも同じ要素名で `Bind` するので先頭枝から読めばよい。MDR-004 §3 の消費文法
+            // としての `or` は `Scoped(e.name, Or(..))` なので上の `Scoped` アームが拾う。
+            Or([Seq([Exact(_), Bind(name, _), ..]), ..]) => Some(name)
             _ => None
           }
       }
@@ -2938,14 +2943,20 @@ fn seq_boundary_name(node : Node) -> String? {
 
 ///|
 /// Whether `g` is (possibly through a `Rooted` global-link wrap) an option satellite's head Seq —
-/// and if so, the real origin name its tail carries. `None` for any other shape (CommandSatisfied/DdSatisfied/
-/// DdMatchSatisfied/NativeMatch already carry their own correct origin, no fixup needed there; a bare
-/// `Exact` alone or an unrecognized tail shape is left as the spelling fallback, unchanged).
-fn cand_boundary_origin(g : Node) -> String? {
+/// and if so, `(trigger spelling, the real origin name its tail carries)`. `None` for any other shape
+/// (CommandSatisfied/DdSatisfied/DdMatchSatisfied/NativeMatch already carry their own correct origin,
+/// no fixup needed there; a bare `Exact` alone or an unrecognized tail shape is left as the spelling
+/// fallback, unchanged). The trigger spelling comes back with the name because the fixup targets the
+/// head `Exact`'s OWN candidate only — see `fixup_boundary_cands`.
+fn cand_boundary_origin(g : Node) -> (String, String)? {
   match g {
     LinkTarget(_, _, _, _, _, _, _, _, _, inner) => cand_boundary_origin(inner)
     Rooted(inner, _) => cand_boundary_origin(inner)
-    Seq([Exact(_), rest, ..]) => seq_boundary_name(rest)
+    Seq([Exact(trigger), rest, ..]) =>
+      match seq_boundary_name(rest) {
+        Some(name) => Some((trigger, name))
+        None => None
+      }
     _ => None
   }
 }
@@ -2963,10 +2974,14 @@ fn entity_extension(sc : Scope, name : String) -> &EntityExt? {
 }
 
 ///|
-/// Apply `cand_boundary_origin`'s correction (+ the owning element's `hidden` declaration) to every
-/// exact-trigger candidate (`is_value:false`) a satellite's Pending carries; a value-position
-/// candidate (`is_value:true`, always built via `pending_value_candidate` with the correct origin already) is
-/// left untouched. A `None` origin (not an option-satellite boundary shape) is a no-op passthrough.
+/// Apply `cand_boundary_origin`'s correction (+ the owning element's `hidden` declaration) to the
+/// satellite's HEAD `Exact` candidate — the one whose `spelling` is the trigger itself, which the
+/// `Exact` arm could only name after its own spelling. Every other candidate in the same Pending is
+/// left untouched: a value-position candidate (`is_value:true`) is built via `pending_value_candidate`
+/// with the correct origin already, and an exact candidate coming from DEEPER in the satellite (the
+/// `or`/`values` enum branches, DR-063 §A.1 anonymous exacts) is a nameless element whose origin IS
+/// its own spelling (DR-104 §2 note (iii)) — the entry name must not overwrite it. A `None` origin
+/// (not an option-satellite boundary shape) is a no-op passthrough.
 fn fixup_boundary_cands(
   g : Node,
   sc : Scope,
@@ -2974,11 +2989,11 @@ fn fixup_boundary_cands(
 ) -> Array[Candidate] {
   match cand_boundary_origin(g) {
     None => cs
-    Some(origin) => {
+    Some((trigger, origin)) => {
       let extension = entity_extension(sc, origin)
       let out : Array[Candidate] = []
       for c in cs {
-        if c.is_value {
+        if c.is_value || c.spelling != trigger {
           out.push(c)
         } else {
           let candidate = { ..c, origin, }
