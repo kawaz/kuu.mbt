@@ -86,3 +86,34 @@ test "default_fn observes cycle reports every participant as circular-ref" {
     _ => fail("cyclic default_fn dependencies must be rejected")
   }
 }
+
+///|
+/// DR-134 §5: command 担体の `default_fn` も element と同じ observes グラフに乗る。担体セルは
+/// `init_sb` が command 自身の scope へ内部セルとして降ろす (§1/§4) ので、グラフ上の名前は
+/// `@engine.command_value_cell()` (= `#command_value`) — `borrow` の観測辺 `option:<source>` が
+/// resolve 相で担体 entity に届く綴りと同じにしてある。エラーの帰属だけは DR-134 §2 のとおり
+/// command 名。
+///
+/// 閉路は担体の**自己借用**で作る。担体を巻き込む閉路はこの形しか無い: 相手役になれるのは
+/// 担体と同じ scope に居て `default_fn` を持てる要素だけだが、値セルを持つ子は結果キー占有子
+/// なので DR-134 §2 が先に invalid-range で落とす (共存できる非占有子は `type: "none"` と `dd`
+/// = 値セルを持たない、`command-scope/value-command-non-occupying-children.json`)。
+///
+/// fixture が無い面なのでここで pin する (spec 側の definition-error/ には担体の default 席検査
+/// しか無い)。
+test "command carrier default_fn joins the observes cycle graph as its own cell" {
+  let json = @json.parse(
+    "{\"commands\":[{\"type\":\"command\",\"name\":\"c\",\"default_fn\":\"borrow:#command_value\"}]}",
+  )
+  match parse_definition(json) {
+    Err(Rejected(errors)) => {
+      assert_eq(errors.length(), 1)
+      assert_eq(errors[0].element, "c")
+      assert_eq(errors[0].kind, @abi.CircularRef)
+    }
+    _ =>
+      fail(
+        "a cycle through the command value carrier must be a definition error",
+      )
+  }
+}

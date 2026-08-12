@@ -3961,11 +3961,11 @@ fn def_err(
 
 ///|
 fn default_fn_edges(
-  element : ElementDef,
+  default_fn : DefaultFnCall?,
   extensions : Registry,
 ) -> Array[String] {
   let edges : Array[String] = []
-  match element.default_fn {
+  match default_fn {
     Some(Wire(invocation)) =>
       match extensions.lookup_cell_fn(invocation.name) {
         Some(descriptor) =>
@@ -4013,26 +4013,77 @@ fn default_fn_cycle_from(
 }
 
 ///|
+/// `default_fn` 検査を受ける 1 セル。`cell` は observes グラフ上の名前で、resolve 相の
+/// `default_order` / `entity_named` が突き合わせる **entity 名**と一致させる。`attribution` は
+/// definition-error の `element` 欄に出す名前。option/positional では両者が同じ綴りになり、
+/// command 担体だけがずれる — 担体セルの entity 名は `command_value_cell()` (`observes:
+/// option:<name>` はこの綴りでしか担体に届かない) だが、帰属は DR-134 §2 のとおり command 名。
+priv struct DefaultFnSite {
+  cell : String
+  attribution : String
+  default_fn : DefaultFnCall?
+  default_declared : Bool
+}
+
+///|
+fn element_default_fn_site(element : ElementDef) -> DefaultFnSite {
+  {
+    cell: element.name,
+    attribution: element.name,
+    default_fn: element.default_fn,
+    default_declared: element.default_declared,
+  }
+}
+
+///|
+/// DR-134 §5「値の供給は既存の node 意味論のまま」: command 担体の default 席は element の
+/// default 席と同じ検査を受ける。担体セルは `init_sb` が command 自身の scope へ内部セルとして
+/// 降ろす (§1/§4) ので、site も親ではなく **その command の body scope** の検査に合流させる —
+/// observes 辺の解決範囲が resolve 相 (`resolve_default_fn` の siblings) と一致する。
+///
+/// `default_fn` を持たない担体は site を持たない: 検査はすべて `default_fn` を起点にし、辺を
+/// 出さないノードは observes cycle にも入りようがないので、site 化しても何も変わらない。
+fn command_default_fn_site(command : CommandDef) -> DefaultFnSite? {
+  if command.default_fn is None {
+    return None
+  }
+  Some({
+    cell: command_value_cell(),
+    attribution: command.name,
+    default_fn: command.default_fn,
+    // command の wire には `default_declared` に当たる別フィールドが無い。`dec_command` が
+    // `"default"` キーの有無をそのまま `default_values` の Some/None に写すので、これが
+    // ElementDef の `default_declared` と同じ「default 席を明示宣言したか」を表す。
+    default_declared: command.default_values is Some(_),
+  })
+}
+
+///|
 fn collect_default_fn_errors(
   def : Definition,
   out : Array[DefError],
   extensions : Registry,
+  carrier : DefaultFnSite?,
 ) -> Unit {
-  let elements : Array[ElementDef] = []
+  let sites : Array[DefaultFnSite] = []
   for element in def.options {
-    elements.push(element)
+    sites.push(element_default_fn_site(element))
   }
   for element in def.positionals {
-    elements.push(element)
+    sites.push(element_default_fn_site(element))
+  }
+  match carrier {
+    Some(site) => sites.push(site)
+    None => ()
   }
   let graph : Map[String, Array[String]] = Map([])
-  for element in elements {
-    match element.default_fn {
+  for site in sites {
+    match site.default_fn {
       Some(call) => {
-        if element.default_declared && call is Wire(_) {
+        if site.default_declared && call is Wire(_) {
           out.push(
             def_err(
-              element.name,
+              site.attribution,
               InvalidRange,
               "default and default_fn both declare the default seat",
               "declare exactly one default-seat supplier",
@@ -4044,7 +4095,7 @@ fn collect_default_fn_errors(
           None =>
             out.push(
               def_err(
-                element.name,
+                site.attribution,
                 UnknownVocab,
                 "default_fn '" + fn_call.name + "' is not registered",
                 "register the cell fn or use a registered name",
@@ -4055,7 +4106,7 @@ fn collect_default_fn_errors(
               Err({ reason: _, message, .. }) =>
                 out.push(
                   def_err(
-                    element.name,
+                    site.attribution,
                     InvalidArgument,
                     message,
                     "match the cell fn descriptor's argument contract",
@@ -4066,7 +4117,7 @@ fn collect_default_fn_errors(
             if descriptor.output() is Sentinel(_) {
               out.push(
                 def_err(
-                  element.name,
+                  site.attribution,
                   InvalidRange,
                   "default_fn '" +
                   fn_call.name +
@@ -4080,22 +4131,27 @@ fn collect_default_fn_errors(
       }
       None => ()
     }
-    graph.set(element.name, default_fn_edges(element, extensions))
+    graph.set(site.cell, default_fn_edges(site.default_fn, extensions))
   }
-  for element in elements {
-    if default_fn_cycle_from(element.name, element.name, graph, []) {
+  for site in sites {
+    if default_fn_cycle_from(site.cell, site.cell, graph, []) {
       out.push(
         def_err(
-          element.name,
+          site.attribution,
           CircularRef,
-          "default_fn observes cycle includes '" + element.name + "'",
+          "default_fn observes cycle includes '" + site.cell + "'",
           "remove one option dependency edge from the cycle",
         ),
       )
     }
   }
   for command in def.commands {
-    collect_default_fn_errors(command.body, out, extensions)
+    collect_default_fn_errors(
+      command.body,
+      out,
+      extensions,
+      command_default_fn_site(command),
+    )
   }
 }
 
@@ -7113,7 +7169,7 @@ fn lower_definition_snapshot_impl(
       errs.push(error)
     }
   }
-  collect_default_fn_errors(def, errs, extensions)
+  collect_default_fn_errors(def, errs, extensions, None)
   // DR-117 §2.6 / §8.1: `insert_form` の 3 種 invalid (enum 逸脱・非 completion_script への宣言・
   // 複数入口間の食い違い) を invalid-range で一括収集する。
   collect_completion_script_errors(def, errs)
