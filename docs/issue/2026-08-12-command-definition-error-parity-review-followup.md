@@ -102,6 +102,46 @@ DR-133/134 実装 (commit 61715d3c) のレビューで見つかった 3 件の�
    通常要素が同スコープに並ぶと、実セルの binding/[] が巻き添えで落ちる (既存欠陥)。
    `resolve.mbt:1055` / `resolve.mbt:1329` 参照。
 
+   **実測 + 修正 (2026-08-12)**: 再現条件は「同名」ではなく **露出キーの一致**だった。
+   negative list は (path,name) を **露出キー軸** で持っていたのに対し、`config_file` は
+   DR-120 §4 の「露出キーを占有しない要素」なので露出キー衝突検査に参加しない。したがって
+   内部セルの露出キーは同スコープの実セルの露出キーと**合法に一致しうる**:
+
+   ```json
+   {"options": [
+     {"name": "cfg", "type": "config_file", "long": true, "default": "/app.toml", "export_key": "user"},
+     {"name": "user", "type": "string", "long": true, "multiple": true}
+   ]}
+   ```
+
+   この定義は definition-error にならず decode を通る。修正前の実測 (リポ外 `$PROBE_FIXTURES`
+   の一時 fixture を conformance runner で実食):
+
+   ```console
+   [json-conformance] decoded=1 ran_cases=2 skipped=0 mismatches=2
+     diverge exportkey.json::fired :: result got={user=null} want={user=[string:alice]}
+     diverge exportkey.json::unfired :: result got={user=null} want={user=[]}
+   ```
+
+   `--user alice` の値も 0 発火の `[]` (DR-044) も、内部セルの席 `([], "user")` に巻き添えで
+   落ちていた (effects には `entity: "user"` の set が出るので、消えるのは射影だけ)。
+
+   **修正**: 内部セルの除外を **宣言名軸** へ移した (`effects` 側
+   `front_door.output_internal_cell` と同じ軸に揃える)。宣言名はスコープ内で一意 (DR-006 /
+   DR-003「重複ルール」) なので、非占有要素でも同定が割れない。
+
+   - `internal_cells` / `collect_config_file_seats` を宣言名軸に変更 (`ek` 射影を通さない)
+   - 新設 `drop_internal_bindings` が **射影 (`apply_export_keys`) の前**に内部セルの binding を
+     落とす。適用点は `build_result_export` / `source_seats` / `result_sources` の 3 経路
+   - `push_accum_cell` が内部セルの席を作らない (`collect_defaults` の既存ガードと同型) —
+     0 発火の `[]` 注入はこれで止まる。`multiple` な config_file は実在する
+     (`value-sources/config/multi-file-multiple`)
+   - 結果として露出キー軸の negative list (`build_result` の `nones` 引数、`source_shadow` の
+     `internal` 引数) は不要になり削除
+
+   `drop_internal_bindings` を素通しにすると conformance が 12 件 mismatch する
+   (`value-typing/none-exclusion-*` 等) ので、除外そのものは既存 corpus が pin している。
+
 レビュー出典: fable5-high 2026-08-12。レビュー担当の指摘は実物照合済み。
 
 ## 背景
@@ -115,8 +155,13 @@ M1 は definition-error 検査のパリティ欠如、m1/m3 は既存の細部�
       observes cycle graph が element 系検査と同等にカバーされる (spec fixture 込み)
       (commit af7a1a3c、v0.0.28。配列 value 系は CVQ-Q1/Q2 裁定待ちで未着手)
 - [ ] m1: Link 由来供給が committed 判定に含まれるべきか実測 + 必要なら Q 化
-- [ ] m3: config_file と同名の通常要素が同スコープに並んでも実セルの binding/[] が巻き添えで
-      落ちないよう negative list の同定方法を修正
+- [x] m3: 内部セルの除外を宣言名軸へ移し、露出キーが実セルと重なっても実セルの binding/[] が
+      巻き添えで落ちないようにした (`resolve.mbt` の `drop_internal_bindings` / `push_accum_cell`、
+      e2e pin は `front_door_wbtest.mbt` の「露出キーが実セルと重なる config_file」テスト)。
+      **派生の別欠陥**: 同一スコープの **同名** 要素 (`config_file "user"` + option `"user"`) は
+      DR-006 / DR-003「重複ルール」が禁じているのに definition-error にならず、`--user alice` が
+      config path として消費される。宣言名軸では同定不能な構成なので射影側では直せない —
+      別 issue (`2026-08-12-duplicate-element-name-not-rejected.md`) に分離
 
 ## TODO
 
