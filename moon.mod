@@ -1,6 +1,6 @@
 name = "kawaz/kuu"
 
-version = "0.0.27"
+version = "0.0.28"
 
 source = "src"
 
