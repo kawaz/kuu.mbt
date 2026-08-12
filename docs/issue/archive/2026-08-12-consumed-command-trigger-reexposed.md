@@ -1,6 +1,6 @@
 ---
 title: 消費済み command トリガが positional なし子スコープで候補に再露出する
-status: open
+status: resolved
 category: bug
 created: 2026-08-12T19:55:00+09:00
 last_read: 2026-08-12T13:50:21+09:00
@@ -9,10 +9,10 @@ wip_entered:
 blocked_entered:
 pending_entered:
 discarded_entered:
-resolved_entered:
+resolved_entered: 2026-08-12T14:36:45+09:00
 discard_reason:
 pending_reason:
-close_reason:
+close_reason: ["done: eval.mbt の complete arm に command_scope_selected ガードを追加して修正 (commit 5828c289, Release v0.0.30)","fixture:complete/consumed-command-trigger-no-reexposure.json (pin, conformance 409 decoded / mismatches=0)","cause: 親再開後の complete arm が選択済み command marker を無視していた"]
 blocked_by:
 origin: DR-116 実装サイクルでの副次観測
 ---
