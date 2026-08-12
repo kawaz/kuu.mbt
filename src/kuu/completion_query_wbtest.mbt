@@ -669,3 +669,105 @@ test "DR-116 §4: 同名の option と command は各々の面の説明を得る
     None => fail("build must be in response")
   }
 }
+
+///|
+/// 同一 flag が応答に 2 行出ないことを固定する (DR-117「word_end / cont ペアの 2 行 emit」棄却)。
+///
+/// §5 のペア判定は候補 identity のレイヤ (同綴り別 origin は別物、DR-104 §3) で、2 重表示を
+/// 見せない要求は表示行のレイヤ。両者は直交するので、畳みは emit 段の重複行除去で行う。応答行の
+/// 内容は非規範 (DR-115 §6.2 / DR-116 §6 / DR-117 §8.1) なので生成器裁量の範囲。
+///
+/// or ブランチ形は word_end 側の origin が要素名、eq-split の cont 側がブランチ leaf 名になり
+/// §5 のペアが成立しない。それでも plain 形と同じ 1 行に落ちることを pin する。
+test "DR-117 §4: 同一挿入文字列の行は 1 行に畳む (plain と or ブランチで同形)" {
+  let plain = ast_or_fail(
+    "{\"options\":[{\"name\":\"mode\",\"type\":\"string\",\"long\":true,\"help\":\"H\"}]}",
+  )
+  let branched = ast_or_fail(
+    "{\"options\":[{\"name\":\"mode\",\"long\":true,\"help\":\"H\"," +
+    "\"or\":[{\"type\":\"int\",\"name\":\"a\"},{\"type\":\"bool\",\"name\":\"b\"}]}]}",
+  )
+  let plain_response = completion_query(plain, ["app"])
+  let branched_response = completion_query(branched, ["app"])
+  assert_eq(plain_response, branched_response)
+  assert_eq(spellings_of(branched_response), ["--mode"])
+}
+
+///|
+/// 畳み先は insert_form の畳み先規則と同じ向き (DR-117 §2.6/§5) — "eq" なら cont 側 (nospace)、
+/// 既定 "space" なら word_end 側。ペア成立時の §5 の畳み先と揃えることで、ペア不成立の
+/// or ブランチ形とペア成立の plain 形の観測が一致する。
+test "DR-117 §4: 重複行の畳み先は insert_form の向きに従う" {
+  let raw : Array[Candidate] = [
+    {
+      spelling: "--mode",
+      is_value: false,
+      type_name: "string",
+      origin: "mode",
+      term: WordEnd,
+      is_alias: false,
+      hidden: false,
+      deprecated: false,
+      completer: None,
+    },
+    {
+      spelling: "--mode",
+      is_value: false,
+      type_name: "int",
+      origin: "a",
+      term: Continue,
+      is_alias: false,
+      hidden: false,
+      deprecated: false,
+      completer: None,
+    },
+  ]
+  // "space": word_end 側 (nospace なし) が残る
+  let (space_rows, space_actions) = apply_policy(
+    scoped_at_root(raw, OptionFace),
+    "",
+    root_help_map([]),
+    "space",
+  )
+  assert_eq(emit_response(space_rows, space_actions), "--mode\n")
+  // "eq": cont 側へ畳む — §5 のペア成立時と同じ `spelling + "="` + nospace の形にする
+  // (plain 形との観測一致が畳み先を揃える目的なので、形も §5 に揃える)
+  let (eq_rows, eq_actions) = apply_policy(
+    scoped_at_root(raw, OptionFace),
+    "",
+    root_help_map([]),
+    "eq",
+  )
+  assert_eq(emit_response(eq_rows, eq_actions), "--mode=\t\tnospace\n")
+}
+
+///|
+/// insert_form="eq" でも plain 形と or ブランチ形の観測が一致する (畳み先を §5 に揃えた目的)。
+test "DR-117 §4: insert_form=eq でも plain と or ブランチの応答が一致する" {
+  let preset = "{\"name\":\"completions\",\"type\":\"completion_script\"," +
+    "\"long\":true,\"insert_form\":\"eq\"}"
+  let plain = ast_or_fail(
+    "{\"options\":[" +
+    preset +
+    ",{\"name\":\"mode\",\"type\":\"string\",\"long\":true,\"help\":\"H\"}]}",
+  )
+  let branched = ast_or_fail(
+    "{\"options\":[" +
+    preset +
+    ",{\"name\":\"mode\",\"long\":true,\"help\":\"H\"," +
+    "\"or\":[{\"type\":\"int\",\"name\":\"a\"},{\"type\":\"bool\",\"name\":\"b\"}]}]}",
+  )
+  let plain_line = find_line(
+    completion_query(plain, ["app", "--mode"], cword=Some(1)),
+    "--mode=",
+  )
+  let branched_line = find_line(
+    completion_query(branched, ["app", "--mode"], cword=Some(1)),
+    "--mode=",
+  )
+  assert_eq(plain_line, branched_line)
+  assert_true(
+    plain_line is Some(_),
+    msg="--mode= must be produced under insert_form=eq",
+  )
+}

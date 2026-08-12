@@ -380,7 +380,63 @@ fn apply_policy(
     let nospace = if pc.eq_form { true } else { c.term == Continue }
     rows.push({ spelling, description, nospace })
   }
-  (rows, shell_actions)
+  // step 7: 表示レイヤの重複行畳み。§5 のペア判定は候補 identity のレイヤ (同綴り別 origin は
+  // 別物、DR-104 §3) で、「同一 flag を 2 回見せない」は表示行のレイヤ — 直交する 2 要求なので
+  // 畳みをここで分けて行う (DR-117「word_end / cont ペアの 2 行 emit」棄却の要求を満たす)。
+  (collapse_duplicate_rows(rows, insert_form), shell_actions)
+}
+
+///|
+/// 同一挿入文字列の行を 1 行へ畳む (DR-117 §4)。
+///
+/// or ブランチを持つ option では word_end 側の origin が要素名、eq-split の cont 側がブランチ
+/// leaf 名になるため §5 のペアが成立せず、同じ flag が複数行に出る。畳み先は §5 と同じ向き
+/// (insert_form が "eq" なら cont 側 = `spelling + "="` + nospace、既定 "space" なら word_end 側)
+/// に揃える — こうするとペア成立の plain 形とペア不成立の or ブランチ形が同じ行に落ち、観測が
+/// 一致する。この一致が「§5 に無い段を足す」のではなく非規範の表示品質 (DR-115 §6.2 /
+/// DR-116 §6 / DR-117 §8.1) を整えているという裁量の説明になる。
+///
+/// 説明は先に現れた非空を優先する。or ブランチ形では entry を引けるのが word_end 側だけなので、
+/// 単純な先着や後着では畳んだ行の説明が消える。
+fn collapse_duplicate_rows(
+  rows : Array[QueryRow],
+  insert_form : String,
+) -> Array[QueryRow] {
+  let fold_to_eq = insert_form == "eq"
+  // 畳み先が spelling を書き換える ("eq" 側) ので、突き合わせキーは元の挿入文字列を別に持つ。
+  let keys : Array[String] = []
+  let out : Array[QueryRow] = []
+  for row in rows {
+    let mut found = -1
+    for i = 0; i < keys.length(); i = i + 1 {
+      if keys[i] == row.spelling {
+        found = i
+        break
+      }
+    }
+    if found < 0 {
+      keys.push(row.spelling)
+      out.push(row)
+      continue
+    }
+    let kept = out[found]
+    let description = if kept.description.length() > 0 {
+      kept.description
+    } else {
+      row.description
+    }
+    if kept.nospace == row.nospace {
+      out[found] = { ..kept, description, }
+      continue
+    }
+    // word_end 行と cont 行の併存 = 表示レイヤのペア。§5 と同じ向きへ畳む。
+    out[found] = if fold_to_eq {
+      { spelling: keys[found] + "=", description, nospace: true }
+    } else {
+      { spelling: keys[found], description, nospace: false }
+    }
+  }
+  out
 }
 
 ///|
