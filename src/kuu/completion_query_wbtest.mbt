@@ -422,7 +422,10 @@ test "DR-116 §2: commands は options より先に提示する" {
   )
   let response = completion_query(ast, ["app"])
   let spellings = spellings_of(response)
-  assert_true(spellings.length() >= 2, msg="command and option must both appear")
+  assert_true(
+    spellings.length() >= 2,
+    msg="command and option must both appear",
+  )
   assert_eq(spellings[0], "build")
   assert_eq(spellings[1], "--verbose")
 }
@@ -666,4 +669,3 @@ test "DR-116 §4: 同名の option と command は各々の面の説明を得る
     None => fail("build must be in response")
   }
 }
-

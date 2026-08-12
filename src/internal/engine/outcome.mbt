@@ -357,9 +357,7 @@ pub fn complete_tree(
   extensions? : Registry = Registry::new(),
 ) -> Array[Candidate] {
   let out : Array[Candidate] = []
-  for sourced in complete_tree_sourced(
-      root, before, defs~, after~, extensions~,
-    ) {
+  for sourced in complete_tree_sourced(root, before, defs~, after~, extensions~) {
     out.push(sourced.candidate)
   }
   out
