@@ -771,3 +771,32 @@ test "DR-117 §4: insert_form=eq でも plain と or ブランチの応答が一
     msg="--mode= must be produced under insert_form=eq",
   )
 }
+
+///|
+/// M1 の観測 test: positional 配置の型所有展開値が positional 腕の名前照合に掛かり、説明と順序を
+/// 得ることを固定する。
+///
+/// `completion_script` 型 (DR-117 §2.3 で positional 配置は合法) は zsh / bash / fish を型所有の
+/// 展開値として供給する。これらは `is_value:false`・`origin` = 持ち主要素名・綴りは宣言外という
+/// 形なので、candidate_face の宣言綴り照合 (command / option) には掛からず、positional の名前照合
+/// だけが拾える。つまり本 test は positional carrier (DR-116 §4 の引き直しを positional 面へ
+/// 通す) が効いていることの観測そのもの。
+///
+/// option 配置の同型候補は宣言綴り照合をすり抜けて UnknownFace に落ち説明を得られない
+/// (docs/issue/2026-08-12 RE-1)。その非対称の対照実験も兼ねる。
+test "DR-116 §4: positional 配置の型所有展開値は positional の説明を引き直す" {
+  let ast = ast_or_fail(
+    "{\"positionals\":[{\"name\":\"shell\",\"type\":\"completion_script\"," +
+    "\"help\":\"target shell\"}]}",
+  )
+  let response = completion_query(ast, ["app"])
+  // 型が供給する 3 値がその供給順で並ぶ (DR-116 §3: completer 由来候補は供給順が確定順)
+  assert_eq(spellings_of(response), ["zsh", "bash", "fish"])
+  // 3 行とも origin (= positional `shell`) の help を引き直している
+  for spelling in ["zsh", "bash", "fish"] {
+    match find_line(response, spelling) {
+      Some(line) => assert_eq(line, spelling + "\ttarget shell")
+      None => fail(spelling + " must be in response")
+    }
+  }
+}
