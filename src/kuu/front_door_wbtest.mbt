@@ -453,6 +453,40 @@ test "front_door.config_from_json: JSON から組んだ @abi.ConfigVal が confi
 }
 
 ///|
+/// 保証 (e2e、issue command-definition-error-parity-review-followup の m3): `config_file` は
+/// DR-120 §4 の「露出キーを占有しない要素」なので、その `export_key` が同じスコープの実セルの
+/// 露出キー (`user`) と一致しても definition-error にならない。この構成で実セル `user` の値が
+/// result / sources から消えないことを公開 API 経由で固定する — 内部セルの除外を露出キー軸の
+/// negative list で行っていた頃は、発火時は `--user alice` が、0 発火時は DR-044 の `[]` が、
+/// どちらも巻き添えで落ちていた (実機実測)。
+test "front_door: 露出キーが実セルと重なる config_file は実セルの値を巻き添えにしない (DR-050 / DR-120 §4)" {
+  let src =
+    #|{"options": [
+    #|  {"name": "cfg", "type": "config_file", "long": true, "default": "/app.toml", "export_key": "user"},
+    #|  {"name": "user", "type": "string", "long": true, "multiple": true}
+    #|]}
+  let ast = match parse_definition(@json.parse(src)) {
+    Ok(a) => a
+    Err(_) => abort("parse_definition should accept a non-occupying export_key")
+  }
+  let cfg = config_from_json(@json.parse("{}"))
+  let config_provider : (String) -> @abi.ConfigVal? = fn(_p) { Some(cfg) }
+  let run = fn(args : Array[String]) -> (String, String) {
+    let po = parse_legacy(ast, args, config=config_provider)
+    let rb = match resolve_legacy(ast, po, args, config=config_provider) {
+      @engine.Success(b) => b
+      other => abort("resolve should succeed, got " + render_outcome(other))
+    }
+    let view = output_legacy(ast, effects=rb)
+    (render_rval_sorted(view.result), render_rval_sorted(view.sources))
+  }
+  // 発火: 実セルの値が残り、config path (`/app.toml`) はどこにも現れない
+  assert_eq(run(["--user", "alice"]), ("{user=[alice]}", "{user=[cli]}"))
+  // 0 発火: DR-044 の一様配列 `[]` も巻き添えで落ちない
+  assert_eq(run([]), ("{user=[]}", "{user=[]}"))
+}
+
+///|
 /// 保証 (DR-129 §1): 外部利用者が観測した端末判定 (`stream → bool`) を `parse_legacy()`/
 /// `resolve_legacy()` の `tty?` 引数経由で `builtin/tty` preset 型要素の default 席解決規則
 /// (`resolved_default = 観測 ?? 宣言 default ?? absent`、`tty-ladder.json` と同型) に実際に

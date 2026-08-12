@@ -957,7 +957,6 @@ fn build_result(
   cells : Array[AccumCell],
   defaults : Array[DefaultCell],
   path : Array[String],
-  nones? : Array[InternalCell] = [],
   extensions? : @node.Registry = canonical_registry(),
   shape? : @engine.ExportScopeMap? = None,
   complete_static? : Bool = false,
@@ -980,7 +979,6 @@ fn build_result(
           row_seated_cells(cells, path, row),
           defaults,
           path,
-          nones~,
           extensions~,
           shape~,
           complete_static~,
@@ -1014,7 +1012,6 @@ fn build_result(
                 cells,
                 defaults,
                 path,
-                nones~,
                 extensions~,
                 shape~,
                 complete_static~,
@@ -1032,7 +1029,6 @@ fn build_result(
               cells,
               defaults,
               path,
-              nones~,
               extensions~,
               shape~,
               complete_static~,
@@ -1044,17 +1040,14 @@ fn build_result(
     return @abi.Array(elems)
   }
   // gather direct named keys (skip sentinels) and nested (named) scopes
-  // DR-089 §3 / DR-050: 内部セル (none / config_file) の値は result に現れない — sentinel key と
-  // 同じ除外機構で、席は `InternalCell` が `AccumCell`/`DefaultCell` と同じ per-scope の
-  // (露出 path, 露出 key) 形で持つ。
+  // DR-089 §3 / DR-050: 内部セル (none / config_file) の値は result に現れない — その binding は
+  // 射影前に宣言名軸で落としてある (`drop_internal_bindings`) ので、ここには届かない。
   let named : Array[String] = []
   for b in binds {
     if b.scope.length() == 0 &&
       !is_sentinel(b.key) &&
       !str_contains(named, b.key) {
-      if !is_internal_cell(nones, path, b.key) {
-        named.push(b.key)
-      }
+      named.push(b.key)
     }
   }
   let segs : Array[String] = []
@@ -1253,7 +1246,6 @@ fn build_result(
               cells,
               defaults,
               path_push(path, seg),
-              nones~,
               extensions~,
               shape=child_shape,
               complete_static~,
@@ -1281,7 +1273,6 @@ fn build_result(
         cells,
         defaults,
         path_push(path, seg),
-        nones~,
         extensions~,
         shape=child_shape,
         complete_static~,
@@ -1320,13 +1311,12 @@ fn build_result(
   // real repetition emits one, `ref_row_head`) — check that directly instead of trusting `segs`
   // membership as a proxy for it.
   //
-  // 内部セル (config_file、DR-121 §2 / DR-050) はこの注入からも外す — 値空間は持つので
-  // `accum_cells` には乗るが、結果に現れない席なので 0 発火の `[]` も出してはいけない
-  // (`named` 側と同じ `nones` の席で、同じ露出キー軸の判定)。
+  // 内部セル (config_file、DR-121 §2 / DR-050) はこの注入からも外れる — 値空間は持つが結果に
+  // 現れない席なので 0 発火の `[]` も出してはいけない。席自体を作らないのが除外の実装で、
+  // `push_accum_cell` が宣言名軸の entity identity で弾く (`collect_defaults` と同型)。
   for c in cells {
     if path_eq(c.path, path) &&
       !str_contains(named, c.name) &&
-      !is_internal_cell(nones, path, c.name) &&
       !has_direct_key(sub_under(binds, c.name), "#row") {
       let empty = c.accum.collect([])
       let collected = match c.collector {
@@ -1385,6 +1375,12 @@ fn push_accum_cell(
   ek : @engine.ExportScopeMap,
   out : Array[AccumCell],
 ) -> Unit {
+  // 内部セル (`none` / `config_file`) は結果に現れないので席も作らない — 作ると 0 発火の `[]` が
+  // 注入される (`multiple` な config_file は実在する、`value-sources/config/multi-file-multiple`)。
+  // `collect_defaults` の同型ガードと揃える (除外は宣言名軸の entity identity で行う)。
+  if entity.ty.name() == "none" || entity.is_config_file {
+    return
+  }
   match entity.accum {
     Some(accum) =>
       match ek.exposed_cell(entity.name) {
@@ -1485,93 +1481,70 @@ fn collect_accum(
 }
 
 ///|
-/// 結果にも由来にも現れない **内部セル** の席 (露出キー軸で同定したもの)。2 種を同じ形で運ぶ:
+/// 結果にも由来にも現れない **内部セル** の席 (宣言名軸で同定したもの)。2 種を同じ形で運ぶ:
 /// `type: "none"` (DR-089 §3「none has no value」— 値空間が無いので result にも sources にも
 /// 出ない) と `type: "config_file"` (DR-050、値は config provider を解決するための PATH であって
 /// 利用者向けの結果ではない)。dd trigger (`DdSatisfied` / `DdMatchSatisfied` の element、
 /// DR-093 §2/§7) も engine 側で none 扱いなので同じ席に入る。
 ///
-/// **キー軸**: `path` / `name` とも `walk_export_path` + `exposed_cell` を通した **露出キー**
-/// (binding / default / accum と同一の DR-052 §1 軸)。engine の `@engine.NoneCell` は宣言名の
-/// ままなので、射影後の (path, key) と突き合わせるには写し直しが要る — 生のまま比べると
-/// `export_key` で rename された scope 配下 (`serve` → `sv`) で除外が外れ、内部セルが result /
-/// sources に漏れる。透過セル (`exposed_cell` が `None`) は結果キー軸を持たず射影側にも
-/// 現れないので席を作らない。
+/// **キー軸**: `path` / `name` とも **宣言名** (`@engine.NoneCell` / `@engine.Entity.name` の
+/// ままの軸、binding の生の `scope` / `key` と同じ)。`effects` 側の除外
+/// (`front_door.output_internal_cell`) と同一の軸で、内部セルの除外はすべてここに揃える。
+///
+/// **露出キー軸で同定してはいけない**: 内部セルは DR-120 §4 の「露出キーを占有しない要素」で、
+/// 露出キー衝突検査に参加しない。したがって内部セルの露出キーは、同じスコープに実在する
+/// 別セルの露出キーと合法に一致しうる (`{name:"cfg", type:"config_file", export_key:"user"}`
+/// + `{name:"user", multiple:true}` は definition-error にならない)。露出キー軸の negative list
+/// で照合すると、この構成で実セル `user` の値が result / sources から巻き添えで消える (実測)。
+/// 宣言名はスコープ内で一意 (DR-006 / DR-003「重複ルール」) なので、宣言名軸なら同定が割れない。
 priv struct InternalCell {
   path : Array[String]
   name : String
 }
 
 ///|
-/// 内部セルの席を **露出キー軸** で集める。`none` / dd trigger の宣言名軸の席は
-/// `@engine.none_cells` が結果木全体分を返すので、それを `walk_export_path` + `exposed_cell`
-/// で写すだけ (binding / default / accum と同じ 3 値解決)。`config_file` は engine 側の
-/// 「値空間の無いセル」ではなく `Entity.is_config_file` フラグの別軸なので、ここで追加収集する。
-/// `binds` は未射影の解決済み binding — 未選択 command scope 配下の席を落とすのに使う。
-/// **除外側の席にも選択判定が要る** のは、内部セルの席が「出力から落とす対象」を (path, key) で
-/// 同定する negative list だから: 未選択の透過 command 配下に `cfg` (config_file) があると、
-/// `walk_export_path` が透過ラベルを落として席が `([], "cfg")` に着地し、**root に実在する別の
-/// `cfg` 値セルを巻き添えで除外**する (実測: root の `--cfg hello` が result / sources の
-/// 両方から消える。identity なら席が `(["c"], "cfg")` なので衝突せず無害)。`none` セルも同型。
+/// 内部セルの席を **宣言名軸** で集める。`none` / dd trigger の席は `@engine.selected_none_cells`
+/// がそのまま宣言名軸で返す。`config_file` は engine 側の「値空間の無いセル」ではなく
+/// `Entity.is_config_file` フラグの別軸なので、ここで追加収集する。`binds` は解決済み binding —
+/// 未選択 command scope 配下へ降りないための選択判定に使う (`collect_defaults` と同じ gate)。
 fn internal_cells(
   sc : @engine.Scope,
-  ek : @engine.ExportScopeMap,
   binds : Array[@abi.Binding],
   templates? : Map[String, @engine.Node] = Map([]),
 ) -> Array[InternalCell] {
   let out : Array[InternalCell] = []
   for cell in @engine.selected_none_cells(sc, templates, binds) {
-    let (path, node) = walk_export_path(cell.path(), ek, binds)
-    match node.exposed_cell(cell.name()) {
-      None => () // 透過: 結果キー軸を持たないので射影側にも現れない
-      Some(name) => out.push({ path, name })
-    }
+    out.push({ path: cell.path(), name: cell.name() })
   }
-  collect_config_file_seats(sc, [], [], ek, binds, out)
+  collect_config_file_seats(sc, [], binds, out)
   out
 }
 
 ///|
 /// `type: "config_file"` セル (DR-050) の席。`none` と違い engine の `none_cells` には乗らない
-/// (値空間はあり、config provider の解決に使われる) ので、`collect_accum` と同じ walk で集める。
-/// `path` は露出キー軸 / `decl_path` は選択判定用の宣言名軸 (`collect_accum` と同じ並走)。
+/// (値空間はあり、config provider の解決に使われる) ので、`collect_defaults` と同じ walk で集める。
+/// `path` は宣言名軸。
 fn collect_config_file_seats(
   sc : @engine.Scope,
   path : Array[String],
-  decl_path : Array[String],
-  ek : @engine.ExportScopeMap,
   binds : Array[@abi.Binding],
   out : Array[InternalCell],
 ) -> Unit {
   for e in sc.entities {
     if e.is_config_file {
-      match ek.exposed_cell(e.name) {
-        None => ()
-        Some(name) => out.push({ path, name })
+      let seat = path.copy()
+      for segment in e.declaring_path {
+        seat.push(segment)
       }
+      out.push({ path: seat, name: e.name })
     }
   }
   for g in sc.greedy {
     match g {
       @engine.CommandSatisfied(name, ordinal, child) => {
-        let child_decl = path_push(decl_path, name)
-        if @engine.command_scope_selected(binds, child_decl, ordinal) {
-          let child_ek = ek.command_child(name, ordinal)
-          match ek.exposed_command_scope(name, ordinal) {
-            None =>
-              collect_config_file_seats(
-                child, path, child_decl, child_ek, binds, out,
-              )
-            Some(s) =>
-              collect_config_file_seats(
-                child,
-                path_push(path, s),
-                child_decl,
-                child_ek,
-                binds,
-                out,
-              )
-          }
+        let child_path = path_push(path, name)
+        if @engine.command_scope_selected(binds, child_path, ordinal) {
+          collect_config_file_seats(child, child_path, binds, out)
         }
       }
       _ => ()
@@ -1580,8 +1553,26 @@ fn collect_config_file_seats(
 }
 
 ///|
-/// `internal_cells` の席と (path, key) が一致するか — `result` / `sources` の射影が内部セルを
-/// 落とすのに使う (`effects` は宣言名軸なので `front_door.output_internal_cell` が別に持つ)。
+/// 内部セルの binding を落とす — 射影 (`apply_export_keys`) の **前** に、宣言名軸で行う。
+/// result / sources はこの後段だけを素材にするので、内部セルは射影側に一度も現れない。
+fn drop_internal_bindings(
+  binds : Array[@abi.Binding],
+  cells : Array[InternalCell],
+) -> Array[@abi.Binding] {
+  if cells.length() == 0 {
+    return binds
+  }
+  let out : Array[@abi.Binding] = []
+  for b in binds {
+    if !is_internal_cell(cells, b.scope, b.key) {
+      out.push(b)
+    }
+  }
+  out
+}
+
+///|
+/// `internal_cells` の席と (path, name) が一致するか — 宣言名軸の照合。
 ///
 /// 照合前に **index segment (`#k`) を落とす**。セルの席は「どのセルか」であって「配列の何番目の
 /// 発火か」ではない — `repeat` 配下の同じセルは発火ごとに `grp/#0`, `grp/#1` … と別 path を
@@ -1930,8 +1921,11 @@ fn build_result_export(
   templates? : Map[String, @engine.Node] = Map([]),
   complete_static? : Bool = true,
 ) -> @abi.ResultValue {
+  let internal = internal_cells(sc, binds, templates~)
   let projected = apply_export_keys(
-    active_link_bindings(drop_value_command_subtrees(sc, binds)),
+    active_link_bindings(
+      drop_internal_bindings(drop_value_command_subtrees(sc, binds), internal),
+    ),
     ek,
   )
   command_value_bindings(sc, binds, [], [], ek, projected)
@@ -1944,7 +1938,6 @@ fn build_result_export(
     accum_cells(sc, ek, binds),
     apply_export_to_defaults(default_cells(sc, binds), ek, binds),
     [],
-    nones=internal_cells(sc, ek, binds, templates~),
     extensions~,
     shape=Some(ek),
     complete_static~,
@@ -2055,15 +2048,10 @@ fn source_seats(
   ek : @engine.ExportScopeMap,
   extensions : @node.Registry,
   templates : Map[String, @engine.Node],
-) -> (
-  Array[SourceSeat],
-  Array[AccumCell],
-  Array[DefaultCell],
-  Array[InternalCell],
-) {
+) -> (Array[SourceSeat], Array[AccumCell], Array[DefaultCell]) {
   let seats : Array[SourceSeat] = []
   let cells = accum_cells(sc, ek, resolved)
-  let internal = internal_cells(sc, ek, resolved, templates~)
+  let internal = internal_cells(sc, resolved, templates~)
   let defaults = apply_export_to_defaults(
     default_cells(sc, resolved),
     ek,
@@ -2071,11 +2059,13 @@ fn source_seats(
   )
   // DR-134 §3: 値を名乗った command は親スコープのキーに値が座る — sources もその座のタグを
   // 持つ (DR-122 の shadow tree) ので、result と同じ射影を席の素材にも掛ける。
-  let exposed = apply_export_keys(drop_value_command_subtrees(sc, resolved), ek)
+  let exposed = apply_export_keys(
+    drop_internal_bindings(drop_value_command_subtrees(sc, resolved), internal),
+    ek,
+  )
   command_value_bindings(sc, resolved, [], [], ek, exposed)
   for binding in exposed {
-    if (binding.key != "" && is_sentinel(binding.key)) ||
-      is_internal_cell(internal, binding.scope, binding.key) {
+    if binding.key != "" && is_sentinel(binding.key) {
       continue
     }
     let binding = match binding.op {
@@ -2154,7 +2144,7 @@ fn source_seats(
       }
     }
   }
-  (seats, cells, defaults, internal)
+  (seats, cells, defaults)
 }
 
 ///|
@@ -2213,7 +2203,6 @@ fn source_shadow(
   seats : Array[SourceSeat],
   cells : Array[AccumCell],
   defaults : Array[DefaultCell],
-  internal : Array[InternalCell],
   extensions : @node.Registry,
   path : Array[String],
 ) -> @abi.ResultValue {
@@ -2286,12 +2275,11 @@ fn source_shadow(
                       cells,
                       defaults,
                       child_path,
-                      nones=internal,
                       extensions~,
                     )
                     let accumulated_sources = source_shadow(
-                      accumulated, child_binds, seats, cells, defaults, internal,
-                      extensions, child_path,
+                      accumulated, child_binds, seats, cells, defaults, extensions,
+                      child_path,
                     )
                     let collector = cell.collector.unwrap()
                     out.push(
@@ -2330,7 +2318,6 @@ fn source_shadow(
                           seats,
                           cells,
                           defaults,
-                          internal,
                           extensions,
                           path_push(path, field.0),
                         )
@@ -2352,9 +2339,7 @@ fn source_shadow(
         for i, value in values {
           let row = if i < rows.length() { rows[i] } else { [] }
           out.push(
-            source_shadow(
-              value, row, seats, cells, defaults, internal, extensions, path,
-            ),
+            source_shadow(value, row, seats, cells, defaults, extensions, path),
           )
         }
       } else if has_direct_key(binds, "[]") {
@@ -2383,7 +2368,7 @@ fn source_shadow(
           }
           out.push(
             source_shadow(
-              value, child, seats, cells, defaults, internal, extensions, path,
+              value, child, seats, cells, defaults, extensions, path,
             ),
           )
         }
@@ -2397,7 +2382,6 @@ fn source_shadow(
               seats,
               cells,
               defaults,
-              internal,
               extensions,
               path_push(path, index),
             ),
@@ -2445,20 +2429,14 @@ fn result_sources(
   extensions : @node.Registry,
   templates? : Map[String, @engine.Node] = Map([]),
 ) -> @abi.ResultValue {
-  let projected = apply_export_keys(resolved, ek)
-  let (seats, cells, defaults, internal) = source_seats(
+  let projected = apply_export_keys(
+    drop_internal_bindings(resolved, internal_cells(sc, resolved, templates~)),
+    ek,
+  )
+  let (seats, cells, defaults) = source_seats(
     sc, resolved, ek, extensions, templates,
   )
-  source_shadow(
-    result,
-    projected,
-    seats,
-    cells,
-    defaults,
-    internal,
-    extensions,
-    [],
-  )
+  source_shadow(result, projected, seats, cells, defaults, extensions, [])
 }
 
 ///|

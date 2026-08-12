@@ -2327,15 +2327,12 @@ test "accum_cells 対極: a SELECTED identity command's accum cell nests under i
 }
 
 ///|
-/// 保証 (内部セルの席、issue の 3 断面目): 未選択の **透過** command 配下の `config_file` セルは
-/// 席を作らない。内部セルの席は「出力から落とす対象」を (path, key) で同定する **negative list**
-/// なので、除外側にも選択判定が要る — 未選択の透過 command 配下に `cfg` があると
-/// `walk_export_path` が透過ラベルを落として席が `([], "cfg")` に着地し、**root に実在する別の
-/// `cfg` 値セルを巻き添えで除外する** (実機実測: root の `--cfg hello` が result / sources の
-/// 両方から消えた)。identity なら席が `(["c"], "cfg")` なので衝突せず、症状は透過側だけに出る
-/// (`default_cells` の flag 漏れと同じ非対称の出方)。
-test "internal_cells: an UNSELECTED transparent command's config_file seat does not mask a real root cell" {
-  let ek = test_export_scopes(scopes=[("c", @engine.ExportKey::null())])
+/// 保証 (内部セルの席、issue の 3 断面目): 透過 command 配下の `config_file` セルは、root に
+/// 実在する同名の値セルをマスクしない。席は **宣言名軸** なので透過 command 配下は `(["c"],
+/// "cfg")` に立ち、root の `([], "cfg")` とは別物になる — 露出キー軸で持っていた頃は
+/// `walk_export_path` が透過ラベルを落として席が `([], "cfg")` へ着地し、root の `--cfg hello`
+/// が result / sources の両方から消えていた (実機実測)。選択・未選択のどちらでも同じ。
+test "internal_cells: a transparent command's config_file seat does not mask a real root cell" {
   let c : @engine.Scope = {
     greedy: [],
     positional: [],
@@ -2348,17 +2345,22 @@ test "internal_cells: an UNSELECTED transparent command's config_file seat does 
     entities: [ent("cfg", @builtins.string_type())], // root の実在する値セル (同名)
     constraints: [],
   }
-  // 未選択: 席が無い → root の cfg は除外されない
-  assert_eq(internal_cells(sc, ek, []).length(), 0)
-  assert_eq(is_internal_cell(internal_cells(sc, ek, []), [], "cfg"), false)
+  // 未選択: 配下へ降りないので席が無い (`collect_defaults` と同じ gate)
+  assert_eq(internal_cells(sc, []).length(), 0)
+  assert_eq(is_internal_cell(internal_cells(sc, []), [], "cfg"), false)
+  // 選択: 席は宣言名軸で command の下に立ち、root の同名セルには当たらない
+  let selected = internal_cells(sc, [selected_marker(["c"])])
+  assert_eq(selected.length(), 1)
+  assert_eq(is_internal_cell(selected, ["c"], "cfg"), true)
+  assert_eq(is_internal_cell(selected, [], "cfg"), false)
 }
 
 ///|
-/// 保証 (対極、回帰防止): **選択された** 透過 command 配下の `config_file` セルは従来どおり席を
-/// 持ち、出力から除外される (DR-050: config_file の値は provider 解決用の PATH であって利用者
-/// 向けの結果ではない)。選択判定の導入が内部セルの除外そのものを殺していないことを固定する。
-test "internal_cells 対極: a SELECTED transparent command's config_file seat still excludes the cell" {
-  let ek = test_export_scopes(scopes=[("c", @engine.ExportKey::null())])
+/// 保証 (対極、回帰防止): **選択された** 透過 command 配下の `config_file` セルの binding は
+/// 従来どおり出力の素材から落ちる (DR-050: config_file の値は provider 解決用の PATH であって
+/// 利用者向けの結果ではない)。席を宣言名軸へ移したことが除外そのものを殺していないことを固定
+/// する — binding の生の `scope` が席と同じ軸なので、射影の前に落ちる。
+test "drop_internal_bindings 対極: a SELECTED transparent command's config_file binding is dropped" {
   let c : @engine.Scope = {
     greedy: [],
     positional: [],
@@ -2371,43 +2373,51 @@ test "internal_cells 対極: a SELECTED transparent command's config_file seat s
     entities: [],
     constraints: [],
   }
-  let cells = internal_cells(sc, ek, [selected_marker(["c"])])
-  assert_eq(cells.length(), 1)
-  assert_eq(is_internal_cell(cells, [], "cfg"), true) // 透過昇格で root に着地
+  let binds = [
+    selected_marker(["c"]),
+    { ..cb("cfg", @abi.String("/app.toml"), @abi.Cli), scope: ["c"] },
+  ]
+  let kept = drop_internal_bindings(binds, internal_cells(sc, binds))
+  for b in kept {
+    assert_not_eq(b.key, "cfg")
+  }
 }
 
 ///|
-/// 保証 (対極、identity 側): 選択された identity command 配下の `config_file` 席は自名の下に
-/// 立ち、root の同名セルとは衝突しない (透過との対比 — 上の 2 テストの症状が透過固有である
-/// ことの裏取り)。
-test "internal_cells 対極: a SELECTED identity command's config_file seat nests under its own name" {
-  let ek = test_export_scopes()
-  let c : @engine.Scope = {
+/// 保証 (m3 の本体、露出キー軸では同定できない構成): `config_file` は DR-120 §4 の「露出キーを
+/// 占有しない要素」なので、その `export_key` は同じスコープの実セルの露出キーと**合法に一致
+/// しうる**。宣言名 (`cfg` / `user`) はスコープ内で一意 (DR-006) なので宣言名軸では割れないが、
+/// 露出キー軸の negative list で照合すると実セル `user` が巻き添えで落ちた (実機実測: result /
+/// sources から消えた)。席が実セルの (path, name) に当たらないことを固定する。
+test "internal_cells: a config_file's export_key colliding with a real cell does not mask it" {
+  let sc : @engine.Scope = {
     greedy: [],
     positional: [],
-    entities: [ent("cfg", @builtins.string_type(), is_config_file=true)],
+    entities: [
+      ent("cfg", @builtins.string_type(), is_config_file=true),
+      ent("user", @builtins.string_type(), accum=Some("append")),
+    ],
     constraints: [],
   }
-  let sc : @engine.Scope = {
-    greedy: [@engine.CommandSatisfied("c", 0, c)],
-    positional: [],
-    entities: [ent("cfg", @builtins.string_type())],
-    constraints: [],
-  }
-  let cells = internal_cells(sc, ek, [selected_marker(["c"])])
+  let cells = internal_cells(sc, [])
   assert_eq(cells.length(), 1)
-  assert_eq(is_internal_cell(cells, ["c"], "cfg"), true)
-  assert_eq(is_internal_cell(cells, [], "cfg"), false) // root の同名セルは巻き込まない
+  assert_eq(is_internal_cell(cells, [], "cfg"), true)
+  assert_eq(is_internal_cell(cells, [], "user"), false)
+  // 実セルの binding は残り、内部セルの binding だけが落ちる
+  let binds = [
+    cb("cfg", @abi.String("/app.toml"), @abi.Cli),
+    cb("user", @abi.String("alice"), @abi.Cli),
+  ]
+  let kept = drop_internal_bindings(binds, cells)
+  assert_eq(kept.length(), 1)
+  assert_eq(kept[0].key, "user")
 }
 
 ///|
-/// 保証 (`none` セルも同型、DR-089 §3): 未選択の透過 command 配下の `none` セルの席も、root の
-/// 同名値セルをマスクしない。`none` の席は `@engine.none_cells` (engine 側、宣言名軸) 由来で
-/// `collect_config_file_seats` とは別経路なので、gate も別に要る — その path は command segment
-/// 以外 (name 付き seq/or、repeat) も積むため `scope_selected` を path 全体に掛けられず、
-/// **未選択 command path を prefix として持つか** で判定している。
-test "internal_cells: an UNSELECTED transparent command's none-cell seat does not mask a real root cell" {
-  let ek = test_export_scopes(scopes=[("c", @engine.ExportKey::null())])
+/// 保証 (`none` セルも同型、DR-089 §3): 透過 command 配下の `none` セルの席も、root の同名値
+/// セルをマスクしない。`none` の席は `@engine.selected_none_cells` (engine 側) 由来で
+/// `collect_config_file_seats` とは別経路なので、同じ性質を別に固定する。
+test "internal_cells: a transparent command's none-cell seat does not mask a real root cell" {
   let c : @engine.Scope = {
     greedy: [],
     positional: [],
@@ -2420,28 +2430,11 @@ test "internal_cells: an UNSELECTED transparent command's none-cell seat does no
     entities: [ent("x", @builtins.string_type())], // root の実在する値セル (同名)
     constraints: [],
   }
-  assert_eq(internal_cells(sc, ek, []).length(), 0)
-}
-
-///|
-/// 保証 (対極): 選択された透過 command 配下の `none` セルは従来どおり席を持つ。
-test "internal_cells 対極: a SELECTED transparent command's none-cell seat still excludes the cell" {
-  let ek = test_export_scopes(scopes=[("c", @engine.ExportKey::null())])
-  let c : @engine.Scope = {
-    greedy: [],
-    positional: [],
-    entities: [ent("x", @builtins.none_type())],
-    constraints: [],
-  }
-  let sc : @engine.Scope = {
-    greedy: [@engine.CommandSatisfied("c", 0, c)],
-    positional: [],
-    entities: [],
-    constraints: [],
-  }
-  let cells = internal_cells(sc, ek, [selected_marker(["c"])])
-  assert_eq(cells.length(), 1)
-  assert_eq(is_internal_cell(cells, [], "x"), true)
+  assert_eq(internal_cells(sc, []).length(), 0)
+  let selected = internal_cells(sc, [selected_marker(["c"])])
+  assert_eq(selected.length(), 1)
+  assert_eq(is_internal_cell(selected, ["c"], "x"), true)
+  assert_eq(is_internal_cell(selected, [], "x"), false)
 }
 
 ///|
