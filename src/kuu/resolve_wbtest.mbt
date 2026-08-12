@@ -2487,3 +2487,41 @@ test "nested accum cell stays under its declaring wrapper and renders zero-fire 
     expected,
   )
 }
+
+///|
+/// DR-133 §1/§2 × DR-050 §4: パス列の fold で JSON `null` の読みは **fold に参加しない**。
+/// `ConfigVal::Null` は「供給なし」であって「空のオブジェクト」でも「値」でもない (DR-051) ので、
+/// 前段までに畳んだ結果を置き換える権利を持たない — 列 [Object, Null, Object] は 1・3 番目の
+/// トップキー重ねになり、Null だけの列は config 席を空のまま残す。
+/// conformance fixture の `config_files` は object 内容しか書けず null 本体を置けないため、ここで pin する。
+test "read_config_path_list: a JSON-null read does not join the fold" {
+  let supply = fn(p : String) -> ConfigPathSupply {
+    { path: p, committed: false, element: "cfg" }
+  }
+  let a = config_from_json(@json.parse("{\"port\":1,\"onlya\":11}"))
+  let b = config_from_json(@json.parse("{\"port\":2}"))
+  let null_read = config_from_json(@json.parse("null"))
+  let folded = config_from_json(@json.parse("{\"port\":2,\"onlya\":11}"))
+  let provider = fn(p : String) -> @abi.ConfigVal? {
+    match p {
+      "/a.toml" => Some(a)
+      "/b.toml" => Some(b)
+      _ => Some(null_read)
+    }
+  }
+  // 列 [Object, Null, Object]: Null を挟んでも /a.toml の onlya は残り、port は /b.toml が置換する。
+  assert_eq(
+    read_config_path_list(
+      [supply("/a.toml"), supply("/null.toml"), supply("/b.toml")],
+      provider,
+      0,
+      [],
+    ),
+    Ok(Some(folded)),
+  )
+  // Null だけの列: 畳むものが 1 つも無いので config 席は空 (= 読めなかった列と同じ形)。
+  assert_eq(
+    read_config_path_list([supply("/null.toml")], provider, 0, []),
+    Ok(None),
+  )
+}
