@@ -3057,8 +3057,13 @@ fn step_greedy(
             _ => out.push(r)
           }
         }
-      } else if pos >= ctx.toks.length() && in_complete(ctx) {
-        // complete: the command name is readable at the boundary (DR-060 §1).
+      } else if pos >= ctx.toks.length() &&
+        in_complete(ctx) &&
+        !command_scope_selected(acc, [name], ordinal) {
+        // A command trigger is completion material only before that declaration
+        // has entered from this scope. KNest records the selected declaration
+        // before resuming the parent, so an empty child backbone cannot expose
+        // its consumed trigger again; another same-name ordinal remains eligible.
         out.push(
           Pending([Candidate::trigger(name, name, "flag", WordEnd)], acc),
         )
