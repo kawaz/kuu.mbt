@@ -338,6 +338,68 @@ test "DR-116 §2〜§4: completer 由来候補は origin の位置で供給順�
 }
 
 ///|
+/// 同じ spelling でも origin が異なる候補は別 definition entry 由来であり、term のペアを形成しない。
+/// alpha の word_end は残し、beta の word_end/cont だけを eq 形へ統合する (DR-104 §3、DR-117 §5)。
+test "DR-117 §5: insert_form merge は origin と spelling の組でペア判定する" {
+  let raw : Array[Candidate] = [
+    {
+      spelling: "--shared",
+      is_value: false,
+      type_name: "flag",
+      origin: "alpha",
+      term: WordEnd,
+      is_alias: false,
+      hidden: false,
+      deprecated: false,
+      completer: None,
+    },
+    {
+      spelling: "--shared",
+      is_value: false,
+      type_name: "string",
+      origin: "beta",
+      term: WordEnd,
+      is_alias: false,
+      hidden: false,
+      deprecated: false,
+      completer: None,
+    },
+    {
+      spelling: "--shared",
+      is_value: false,
+      type_name: "string",
+      origin: "beta",
+      term: Continue,
+      is_alias: false,
+      hidden: false,
+      deprecated: false,
+      completer: None,
+    },
+  ]
+  let (rows, shell_actions) = apply_policy(raw, "", None, "eq")
+  assert_eq(
+    emit_response(rows, shell_actions),
+    "--shared\n--shared=\t\tnospace\n",
+  )
+}
+
+///|
+/// DR-116 §2 が正本とするのは options 列 / commands 列それぞれの内部順であり、面と面の連結順は
+/// 生成器裁量 (DR-115 §6.2)。canonical 生成器は DR-115 §2.2 のセクション識別子閉集合の列挙順
+/// (commands / options / positionals) に合わせる。裁量の選択なのでこの行応答で固定する。
+test "DR-116 §2: commands は options より先に提示する" {
+  let ast = ast_or_fail(
+    "{\"options\":[{\"name\":\"verbose\",\"type\":\"flag\",\"long\":true}]," +
+    "\"commands\":[{\"type\":\"command\",\"name\":\"build\"}]}",
+  )
+  let response = completion_query(ast, ["app"])
+  let spellings = spellings_of(response)
+  assert_true(spellings.length() >= 2, msg="command and option must both appear")
+  assert_eq(spellings[0], "build")
+  assert_eq(spellings[1], "--verbose")
+}
+
+///|
 /// 外部 definition を query する形態 B には custom completer のクロージャが存在しないため、値待ち
 /// marker は候補提供なしへ縮退する。marker の空 spelling を候補行として emit すると、第1フィールド
 /// 必須・非空の行文法を破る (DR-117 §4.1/§6)。

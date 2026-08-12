@@ -724,6 +724,11 @@ fn completion_help_entries(
   model : HelpModel,
 ) -> Array[CompletionHelpEntry] {
   let output : Array[CompletionHelpEntry] = []
+  // 面間の連結順は生成器裁量 (DR-115 §6.2)。DR-115 §2.2 のセクション識別子閉集合が
+  // commands / options / positionals の順で並ぶので、その列挙順に合わせる。
+  for command in model.commands {
+    output.push({ identity: command.name, help: command.help })
+  }
   match select_definition(ast.declaration, path) {
     Some(definition) =>
       for carrier in ordered_option_carriers(definition, model.command_path) {
@@ -734,9 +739,6 @@ fn completion_help_entries(
         }
       }
     None => ()
-  }
-  for command in model.commands {
-    output.push({ identity: command.name, help: command.help })
   }
   output
 }

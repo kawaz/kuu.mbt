@@ -241,26 +241,28 @@ fn apply_policy(
 /// - insert_form == "space" (既定): word_end 側を残す、cont 側を除外。spelling そのまま、nospace 無し
 /// - insert_form == "eq": cont 側を残す、word_end 側を除外。emit 段で `spelling + "="` + nospace 強制
 ///
-/// アルゴリズム: candidates を素材出現順で走査しつつ「同一 spelling の別 term」を同時に持つか
-/// で判定する。DR-104 §3 の 6 フィールド identity で同一 spelling は必ず origin と是本 spelling が
-/// 一致するため、spelling 単独の突き合わせで正しい (原理: eq-split の cont は元の option 綴りを
-/// そのまま cont term で emit する `fixtures/complete/eq-split-cont.json` の `word-end-and-cont-
-/// coexist-same-origin` 案件と対称)。
+/// ペア判定のキーは (origin, spelling) の組。eq-split の cont は元の option 綴りを同じ origin の
+/// まま cont term で emit する (`fixtures/complete/eq-split-cont.json` の
+/// `word-end-and-cont-coexist-same-origin`) ので、畳むべきペアは必ず origin も一致する。逆に
+/// DR-104 §3 明確化が合法とする「同綴り別 origin」(DR-041 §4 の重複トリガ) は別 entry 由来の
+/// 別候補であり、spelling 単独をキーにすると無関係な候補どうしがペア扱いされて片方が消える。
 fn merge_insert_form(
   candidates : Array[Candidate],
   insert_form : String,
 ) -> Array[PolicyCandidate] {
-  // まず spelling ごとに word_end / cont の bit を集計 (is_value=false の option 綴り候補のみ対象)
+  // origin と spelling の組ごとに word_end / cont の bit を集計する。同綴りでも由来 entry が
+  // 異なる候補は別物であり、互いの term とペアを形成しない。
   let has_word_end : Map[String, Bool] = Map([])
   let has_cont : Map[String, Bool] = Map([])
   for c in candidates {
     if c.is_value {
       continue
     }
+    let key = c.origin + "\u{001f}" + c.spelling
     if c.term == WordEnd {
-      has_word_end[c.spelling] = true
+      has_word_end[key] = true
     } else {
-      has_cont[c.spelling] = true
+      has_cont[key] = true
     }
   }
   let out : Array[PolicyCandidate] = []
@@ -270,8 +272,9 @@ fn merge_insert_form(
       out.push({ candidate: c, eq_form: false })
       continue
     }
-    let pair_present = has_word_end.get(c.spelling) is Some(true) &&
-      has_cont.get(c.spelling) is Some(true)
+    let key = c.origin + "\u{001f}" + c.spelling
+    let pair_present = has_word_end.get(key) is Some(true) &&
+      has_cont.get(key) is Some(true)
     if !pair_present {
       // 単独候補 — §5「insert_form は『ペアが併存した時どちらへ畳むか』だけを定め、単独候補
       // の形を書き換えない」
