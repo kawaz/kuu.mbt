@@ -53,20 +53,16 @@ pub fn completion_query(
   let (args_before, cursor_word, args_after) = decompose_words(words, cword)
   // 素材集め: DR-104 の候補 wire を complete() 経由で取得 (front_door.mbt の complete)。
   // 内部で @engine.complete_tree が subcommand を追いかけて active scope の候補を吐く。
-  let raw = complete(ast, args_before, args_after~)
-  // help model 取得: args_before の先頭連続 command 名から active scope path を計算し、
-  // dispatch_help_query で HelpModel を得る。help_query capability 未登録 or path 到達不能なら
-  // None (説明引き直しと整列は素材順で縮退)。
-  let active_path = active_scope_path(ast, args_before)
-  let completion_help = match dispatch_help_query(ast, path=active_path) {
-    Model(model) => Some(completion_help_entries(ast, active_path, model))
-    QueryError(_) | Unavailable => None
-  }
+  let raw = complete_sourced(ast, args_before, args_after~)
+  // help model 取得: 候補ごとの帰属 scope (DR-066 §4 fire_path) で help carrier を引く。
+  // help_query capability 未登録 or path 到達不能な scope は carrier 無し = 説明引き直しと
+  // 整列を素材順で縮退。
+  let help_by_scope = collect_scope_help(ast, raw)
   // policy 段
   let (rows, shell_actions) = apply_policy(
     raw,
     cursor_word,
-    completion_help,
+    help_by_scope,
     ast.completion_insert_form,
   )
   // §4 の行指向応答テキスト emit
@@ -106,40 +102,71 @@ fn decompose_words(
   (args_before, cursor_word, args_after)
 }
 
-// ── active scope path 計算 ───────────────────────────────────────────────────
+// ── scope 帰属 ───────────────────────────────────────────────────────────────
 
 ///|
-/// args_before の先頭から連続する command 名を追い、active scope の root-first path を返す。
-/// option / positional / 未定義 command が混ざった時点で追跡を止める素朴実装 — M1 のスコープ。
-/// より正確には parse() を走らせて subcommand 遷移を追う手だが、resolve 相を要さない補完面では
-/// この単純化で fixture の典型ケース (`app <sub> --flag <TAB>`) を捕らえる。option 挟み込み
-/// (`app --verbose build <TAB>`) のような edge case は将来 M3 の completion_entry で回収余地。
+/// 候補の帰属 scope を決める。複数 scope で読まれた候補 (DR-104 §3 の dedup が 1 件に畳んだもの)
+/// は最も深い scope を採る — 深い scope の help model は継承した祖先 entry も収載する (root の
+/// global option が child の model に現れる) ので、浅い側では引けない子孫由来の origin も含めて
+/// 1 つの model で整列・説明引き直しができる。同深さは先読み順で先勝ち。
 ///
 /// 返る path は help() の path 契約に合わせて root scope 名を含めない (help() 内部で
 /// declaration.scope.name を先頭 append する)。
-fn active_scope_path(
-  ast : AtomicAST,
-  args_before : Array[String],
-) -> Array[String] {
-  let path : Array[String] = []
-  let mut current = ast.declaration
-  for arg in args_before {
-    let mut next : @engine.Definition? = None
-    for cmd in current.commands {
-      if cmd.name == arg {
-        next = Some(cmd.body)
-        break
-      }
-    }
-    match next {
-      Some(body) => {
-        path.push(arg)
-        current = body
-      }
-      None => break
+fn attributed_scope(sourced : SourcedCandidate) -> Array[String] {
+  let mut best : Array[String] = []
+  let mut best_depth = -1
+  for path in sourced.scope_paths {
+    if path.length() > best_depth {
+      best = path
+      best_depth = path.length()
     }
   }
-  path
+  best
+}
+
+///|
+/// 帰属 scope path を Map キーへ畳む。要素名に現れない U+001F を区切りに使う。
+fn scope_key(path : Array[String]) -> String {
+  let out = StringBuilder::new()
+  for segment in path {
+    out.write_string(segment)
+    out.write_char('\u{001f}')
+  }
+  out.to_string()
+}
+
+///|
+/// 候補が帰属する scope ごとに help carrier を 1 度だけ引く。値 None は「その scope では
+/// help_query が応えない」= 説明引き直しと整列を素材順へ縮退させる印。
+fn collect_scope_help(
+  ast : AtomicAST,
+  sourced : Array[SourcedCandidate],
+) -> Map[String, Array[CompletionHelpEntry]?] {
+  let out : Map[String, Array[CompletionHelpEntry]?] = Map([])
+  for candidate in sourced {
+    let path = attributed_scope(candidate)
+    let key = scope_key(path)
+    if out.get(key) is Some(_) {
+      continue
+    }
+    out[key] = match dispatch_help_query(ast, path~) {
+      Model(model) => Some(completion_help_entries(ast, path, model))
+      QueryError(_) | Unavailable => None
+    }
+  }
+  out
+}
+
+///|
+/// 候補の帰属 scope の help carrier を返す (無ければ空列)。
+fn scope_entries(
+  sourced : SourcedCandidate,
+  help_by_scope : Map[String, Array[CompletionHelpEntry]?],
+) -> Array[CompletionHelpEntry] {
+  match help_by_scope.get(scope_key(attributed_scope(sourced))) {
+    Some(Some(entries)) => entries
+    _ => []
+  }
 }
 
 // ── policy 段 ────────────────────────────────────────────────────────────────
@@ -158,7 +185,7 @@ priv struct QueryRow {
 /// ものは emit 段で spelling に `"="` を付け + nospace を立てる (DR §2.6)。順序と説明は
 /// candidate.origin で解決するため、挿入文字列への転写は emit 段でだけ行う。
 priv struct PolicyCandidate {
-  candidate : Candidate
+  sourced : SourcedCandidate
   eq_form : Bool
 }
 
@@ -170,29 +197,29 @@ priv struct PolicyCandidate {
 /// に使う definition-wide 静的属性 (§2.6、AtomicAST が carry)。値域は "space" (既定) / "eq" — invalid
 /// は parse_definition が弾き済みなので policy 段では self-defense しない。
 fn apply_policy(
-  raw : Array[Candidate],
+  raw : Array[SourcedCandidate],
   cursor_word : String,
-  completion_help : Array[CompletionHelpEntry]?,
+  help_by_scope : Map[String, Array[CompletionHelpEntry]?],
   insert_form : String,
 ) -> (Array[QueryRow], Array[String]) {
   // step 1: hidden 除外 (DR-116 §5) + 搬送不能除外 (DR-117 §4.3、spelling に tab/newline)
-  let visible : Array[Candidate] = []
-  for c in raw {
-    if c.hidden {
+  let visible : Array[SourcedCandidate] = []
+  for s in raw {
+    if s.candidate.hidden {
       continue
     }
-    if spelling_untransportable(c.spelling) {
+    if spelling_untransportable(s.candidate.spelling) {
       continue
     }
-    visible.push(c)
+    visible.push(s)
   }
   // step 2: 値位置 marker を挿入候補から分離する。builtin completer marker は候補行でなく
   // shell_action directive へ翻訳し、形態 B の custom completer marker は候補提供なしへ縮退する。
   let shell_actions : Array[String] = []
-  let insertion_candidates : Array[Candidate] = []
-  for c in visible {
-    if c.spelling.length() == 0 {
-      match c.completer {
+  let insertion_candidates : Array[SourcedCandidate] = []
+  for s in visible {
+    if s.candidate.spelling.length() == 0 {
+      match s.candidate.completer {
         Some(name) =>
           if name == "files" || name == "dirs" {
             push_unique_string(shell_actions, name)
@@ -200,30 +227,33 @@ fn apply_policy(
         None => ()
       }
     } else {
-      insertion_candidates.push(c)
+      insertion_candidates.push(s)
     }
   }
   // step 3: cursor_word による prefix 絞りは挿入文字列を持つ候補だけに適用する。
   // 候補ゼロになっても空リストのまま返す (DR-117 §5 kawaz 裁定 2026-07-23)。
-  let candidates : Array[Candidate] = []
-  for c in insertion_candidates {
-    if spelling_has_prefix(c.spelling, cursor_word) {
-      candidates.push(c)
+  let candidates : Array[SourcedCandidate] = []
+  for s in insertion_candidates {
+    if spelling_has_prefix(s.candidate.spelling, cursor_word) {
+      candidates.push(s)
     }
   }
   // step 4: insert_form merge (DR-117 §5 / COMPQ-Q1): 同一 spelling で word_end / cont の
   // 併存ペアを 1 件に畳む。片側しか無い場合は素材のまま (§5 の「単独候補の形を書き換えない」)。
   let merged = merge_insert_form(candidates, insert_form)
-  // step 5: help model の適用済み列で整列 (DR-116 §2)。候補は表示綴りでなく
-  // candidate.origin を canonical identity へ突き合わせる。同一 origin 内は素材順を保つ。
-  let ordered = order_policy_candidates_by_origin(merged, completion_help)
+  // step 5: 帰属 scope ごとに、その scope の help model 適用済み列で整列 (DR-116 §2)。候補は
+  // 表示綴りでなく candidate.origin を entry identity へ突き合わせる。同一 origin 内は素材順。
+  let ordered = order_policy_candidates_by_origin(merged, help_by_scope)
   // step 6: 説明引き直し (DR-116 §4) + alias/deprecated 注記 (§5) + 説明の正規化 (§4.3) +
   //         nospace flag 翻訳 (candidate.term == Continue → nospace)。
   //         eq_form=true の PolicyCandidate は spelling に `"="` を付け nospace を強制立て。
   let rows : Array[QueryRow] = []
   for pc in ordered {
-    let c = pc.candidate
-    let base_help = lookup_help_by_origin(c.origin, completion_help)
+    let c = pc.sourced.candidate
+    let base_help = lookup_help_by_origin(
+      c.origin,
+      scope_entries(pc.sourced, help_by_scope),
+    )
     let annotated = annotate_description(base_help, c.deprecated, c.is_alias)
     let description = normalize_description(annotated)
     let spelling = if pc.eq_form { c.spelling + "=" } else { c.spelling }
@@ -247,14 +277,15 @@ fn apply_policy(
 /// DR-104 §3 明確化が合法とする「同綴り別 origin」(DR-041 §4 の重複トリガ) は別 entry 由来の
 /// 別候補であり、spelling 単独をキーにすると無関係な候補どうしがペア扱いされて片方が消える。
 fn merge_insert_form(
-  candidates : Array[Candidate],
+  candidates : Array[SourcedCandidate],
   insert_form : String,
 ) -> Array[PolicyCandidate] {
   // origin と spelling の組ごとに word_end / cont の bit を集計する。同綴りでも由来 entry が
   // 異なる候補は別物であり、互いの term とペアを形成しない。
   let has_word_end : Map[String, Bool] = Map([])
   let has_cont : Map[String, Bool] = Map([])
-  for c in candidates {
+  for s in candidates {
+    let c = s.candidate
     if c.is_value {
       continue
     }
@@ -266,10 +297,11 @@ fn merge_insert_form(
     }
   }
   let out : Array[PolicyCandidate] = []
-  for c in candidates {
+  for s in candidates {
+    let c = s.candidate
     // 値位置候補・値候補は merge 対象外 (§5 は long option の word_end/cont 併存が唯一の対象)
     if c.is_value {
-      out.push({ candidate: c, eq_form: false })
+      out.push({ sourced: s, eq_form: false })
       continue
     }
     let key = c.origin + "\u{001f}" + c.spelling
@@ -278,7 +310,7 @@ fn merge_insert_form(
     if !pair_present {
       // 単独候補 — §5「insert_form は『ペアが併存した時どちらへ畳むか』だけを定め、単独候補
       // の形を書き換えない」
-      out.push({ candidate: c, eq_form: false })
+      out.push({ sourced: s, eq_form: false })
       continue
     }
     // ペア併存 — insert_form で残す side を決める
@@ -287,13 +319,13 @@ fn merge_insert_form(
       if c.term == WordEnd {
         continue
       }
-      out.push({ candidate: c, eq_form: true })
+      out.push({ sourced: s, eq_form: true })
     } else {
       // 既定 "space": word_end を残す、cont を落とす
       if c.term == Continue {
         continue
       }
-      out.push({ candidate: c, eq_form: false })
+      out.push({ sourced: s, eq_form: false })
     }
   }
   out
@@ -337,33 +369,51 @@ fn push_unique_string(arr : Array[String], value : String) -> Unit {
 }
 
 ///|
-/// help model の適用済み identity 列へ candidate.origin を突き合わせる。同一 origin の候補は
-/// 素材出現順を保ち、対応 entry を持たない匿名 exact 等は末尾へ素材順のまま残す。
+/// 帰属 scope でまとめてから、その scope の help model 適用済み identity 列へ candidate.origin を
+/// 突き合わせる (DR-116 §2)。scope は候補の初出順、scope 内で対応 entry を持たない候補 (匿名
+/// exact 等) は同 scope 群の末尾へ素材順のまま残す。
+///
+/// scope でまとめるのは、help model 順が scope ごとに独立した列だから — 異なる scope の entry
+/// 列を 1 本に混ぜる規範は無く (DR-116 §2 は単一 model の列を正本とする)、混ぜると浅い scope の
+/// 順序が深い scope の候補を追い越す。
 fn order_policy_candidates_by_origin(
   candidates : Array[PolicyCandidate],
-  completion_help : Array[CompletionHelpEntry]?,
+  help_by_scope : Map[String, Array[CompletionHelpEntry]?],
 ) -> Array[PolicyCandidate] {
-  match completion_help {
-    None => candidates
-    Some(entries) => {
-      let out : Array[PolicyCandidate] = []
-      let used = Array::make(candidates.length(), false)
-      for entry in entries {
-        for i = 0; i < candidates.length(); i = i + 1 {
-          if !used[i] && candidates[i].candidate.origin == entry.identity {
-            out.push(candidates[i])
-            used[i] = true
-          }
+  let out : Array[PolicyCandidate] = []
+  let used = Array::make(candidates.length(), false)
+  for i = 0; i < candidates.length(); i = i + 1 {
+    if used[i] {
+      continue
+    }
+    let key = scope_key(attributed_scope(candidates[i].sourced))
+    let entries = scope_entries(candidates[i].sourced, help_by_scope)
+    for entry in entries {
+      for j = i; j < candidates.length(); j = j + 1 {
+        if used[j] {
+          continue
+        }
+        if scope_key(attributed_scope(candidates[j].sourced)) != key {
+          continue
+        }
+        if candidates[j].sourced.candidate.origin == entry.identity {
+          out.push(candidates[j])
+          used[j] = true
         }
       }
-      for i = 0; i < candidates.length(); i = i + 1 {
-        if !used[i] {
-          out.push(candidates[i])
-        }
+    }
+    for j = i; j < candidates.length(); j = j + 1 {
+      if used[j] {
+        continue
       }
-      out
+      if scope_key(attributed_scope(candidates[j].sourced)) != key {
+        continue
+      }
+      out.push(candidates[j])
+      used[j] = true
     }
   }
+  out
 }
 
 ///|
@@ -371,19 +421,14 @@ fn order_policy_candidates_by_origin(
 /// completer 由来値で任意に異なり得るため、説明解決には使わない。
 fn lookup_help_by_origin(
   origin : String,
-  completion_help : Array[CompletionHelpEntry]?,
+  entries : Array[CompletionHelpEntry],
 ) -> String? {
-  match completion_help {
-    None => None
-    Some(entries) => {
-      for entry in entries {
-        if entry.identity == origin {
-          return entry.help
-        }
-      }
-      None
+  for entry in entries {
+    if entry.identity == origin {
+      return entry.help
     }
   }
+  None
 }
 
 ///|

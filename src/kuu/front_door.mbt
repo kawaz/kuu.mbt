@@ -433,24 +433,52 @@ pub fn complete(
   args_after? : Array[String] = [],
 ) -> Array[Candidate] {
   let out : Array[Candidate] = []
+  for sourced in complete_sourced(ast, args_before, args_after~) {
+    out.push(sourced.candidate)
+  }
+  out
+}
+
+///|
+/// 候補と、その候補が読まれた command scope 群 (DR-066 §4 fire_path) の組。scope 帰属は
+/// candidate wire の成分ではない (DR-104 §2 は `path` を wire から外す) ため、公開 `Candidate`
+/// には載せず本 carrier に分ける。canonical 補完生成器 (completion_query) が DR-116 §2 の
+/// help model 突き合わせに使う package 内部素材。
+priv struct SourcedCandidate {
+  candidate : Candidate
+  scope_paths : Array[Array[String]]
+}
+
+///|
+/// `complete` の scope 帰属つき版。公開 wire に出さない fire_path を保ったまま候補を返す。
+fn complete_sourced(
+  ast : AtomicAST,
+  args_before : Array[String],
+  args_after? : Array[String] = [],
+) -> Array[SourcedCandidate] {
+  let out : Array[SourcedCandidate] = []
   for
-    candidate in @engine.complete_tree(
+    sourced in @engine.complete_tree_sourced(
       @engine.ScopeNode(ast.root),
       args_before,
       defs=ast.templates,
       after=args_after,
       extensions=ast.extensions.extensions(),
     ) {
+    let candidate = sourced.candidate
     out.push({
-      spelling: candidate.spelling,
-      is_value: candidate.is_value,
-      type_name: candidate.ty,
-      origin: candidate.origin,
-      term: candidate.term,
-      is_alias: candidate.is_alias,
-      hidden: candidate.hidden,
-      deprecated: candidate.deprecated,
-      completer: candidate.completer,
+      candidate: {
+        spelling: candidate.spelling,
+        is_value: candidate.is_value,
+        type_name: candidate.ty,
+        origin: candidate.origin,
+        term: candidate.term,
+        is_alias: candidate.is_alias,
+        hidden: candidate.hidden,
+        deprecated: candidate.deprecated,
+        completer: candidate.completer,
+      },
+      scope_paths: sourced.fire_paths,
     })
   }
   out

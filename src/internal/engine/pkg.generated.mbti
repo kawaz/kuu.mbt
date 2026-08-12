@@ -51,6 +51,8 @@ pub fn command_scope_selected(Array[@abi.Binding], Array[String], Int) -> Bool
 
 pub fn complete_tree(Node, Array[String], defs? : Map[String, Node], after? : Array[String], extensions? : @extension.Registry) -> Array[@abi.Candidate]
 
+pub fn complete_tree_sourced(Node, Array[String], defs? : Map[String, Node], after? : Array[String], extensions? : @extension.Registry) -> Array[SourcedCandidate]
+
 pub fn config_from_json(Json) -> @abi.ConfigVal
 
 pub fn configured_short_type(&@extension.TypeExt, @abi.RoundMode, Bool, @abi.BoolConfig) -> &@extension.TypeExt
@@ -518,6 +520,11 @@ pub struct ScopedCons {
   entities : Array[Entity]
 } derive(@debug.Debug)
 pub impl Eq for ScopedCons
+
+pub(all) struct SourcedCandidate {
+  candidate : @abi.Candidate
+  fire_paths : Array[Array[String]]
+} derive(Eq, @debug.Debug)
 
 pub(all) struct Variant {
   trigger : String

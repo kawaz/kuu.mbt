@@ -356,6 +356,38 @@ pub fn complete_tree(
   after? : Array[String] = [],
   extensions? : Registry = Registry::new(),
 ) -> Array[Candidate] {
+  let out : Array[Candidate] = []
+  for sourced in complete_tree_sourced(
+      root, before, defs~, after~, extensions~,
+    ) {
+    out.push(sourced.candidate)
+  }
+  out
+}
+
+///|
+/// A candidate paired with every command scope it was read under (DR-066 §4 `fire_path`).
+///
+/// `complete_tree`'s dedup folds readings that differ only by scope into one candidate (DR-104 §3
+/// keeps `path` out of the identity), which is right for the DR-104 wire but loses the material a
+/// completion generator needs: DR-116 §2 orders definition-derived candidates against the help
+/// model of the scope that offered them, and DR-117 §5 matches `origin` to that model's entries.
+/// `fire_paths` is that material — the walk-position paths, stable-unique, in first-reading order.
+pub(all) struct SourcedCandidate {
+  candidate : Candidate
+  fire_paths : Array[Array[String]]
+} derive(Eq, Debug)
+
+///|
+/// `complete_tree` (see its doc comment for the completion semantics) with each candidate's scope
+/// provenance retained.
+pub fn complete_tree_sourced(
+  root : Node,
+  before : Array[String],
+  defs? : Map[String, Node] = Map([]),
+  after? : Array[String] = [],
+  extensions? : Registry = Registry::new(),
+) -> Array[SourcedCandidate] {
   let ctx : Ctx = {
     toks: before,
     defs,
@@ -380,6 +412,10 @@ pub fn complete_tree(
   // mirroring how `nest_cands`/`nest_branches` built that candidate's `path` in the first place.
   let entities = collect_all_entities(root, defs)
   let cands : Array[Candidate] = []
+  // Parallel to `cands`: the stable-unique set of `fire_path`s each surviving candidate was read
+  // under. Kept beside the array rather than on `Candidate` because `fire_path` is a single-valued
+  // field there and the dedup below is exactly where the alternatives would otherwise be lost.
+  let fire_paths : Array[Array[Array[String]]] = []
   for b in branches {
     match b {
       Pending(cs, _) =>
@@ -427,7 +463,16 @@ pub fn complete_tree(
               }
               if dup_idx < 0 {
                 cands.push(c)
-              } else if cands[dup_idx].completer != c.completer {
+                fire_paths.push([c.fire_path])
+              } else {
+                // The 6-field identity deliberately ignores which scope offered the spelling, so
+                // the winning `Candidate` keeps only the FIRST reading's `fire_path`. A completion
+                // generator still needs every scope the candidate was read under (DR-116 §2 orders
+                // against the help model of THAT scope), so accumulate the readings here as a
+                // stable-unique set instead of letting the later ones evaporate.
+                push_unique_path(fire_paths[dup_idx], c.fire_path)
+              }
+              if dup_idx >= 0 && cands[dup_idx].completer != c.completer {
                 // DR-104 §3 明確化 note: two candidates that dedup-match on the 6-field identity
                 // but resolve to DIFFERENT completers (via their distinct `path`s, per the doc
                 // comment above) merge to "no completer" — neither producer's guess is privileged
@@ -443,13 +488,13 @@ pub fn complete_tree(
       _ => () // Accept: already complete, nothing to read; Held: dead end
     }
   }
-  if after.length() == 0 {
-    return cands
-  }
-  let out : Array[Candidate] = []
-  for c in cands {
-    if c.is_value || c.term == Continue {
-      out.push(c)
+  let out : Array[SourcedCandidate] = []
+  for i = 0; i < cands.length(); i = i + 1 {
+    let c = cands[i]
+    let survives = if after.length() == 0 {
+      true
+    } else if c.is_value || c.term == Continue {
+      true
     } else {
       let toks2 : Array[String] = []
       for t in before {
@@ -460,12 +505,26 @@ pub fn complete_tree(
         toks2.push(t)
       }
       match parse_tree(root, toks2, defs~) {
-        Success(_) | Ambiguous(_) => out.push(c)
-        Failure(_) => ()
+        Success(_) | Ambiguous(_) => true
+        Failure(_) => false
       }
+    }
+    if survives {
+      out.push({ candidate: c, fire_paths: fire_paths[i] })
     }
   }
   out
+}
+
+///|
+/// Append `path` to `paths` unless an equal path is already present (stable-unique set).
+fn push_unique_path(paths : Array[Array[String]], path : Array[String]) -> Unit {
+  for existing in paths {
+    if existing == path {
+      return
+    }
+  }
+  paths.push(path)
 }
 
 // ── Entity table for complete()'s completer lookup (DR-060 §4) ────────────────────────────

@@ -97,6 +97,26 @@ fn directives_of(response : String) -> Array[String] {
   out
 }
 
+///|
+/// 手組み candidate を「全件 root scope 由来」の SourcedCandidate 列にする検証補助。帰属 scope の
+/// 分岐そのものを見る test は実物の completion_query 経路で書く (本補助は policy 段だけを単体で
+/// 突く test 向け)。
+fn sourced_at_root(candidates : Array[Candidate]) -> Array[SourcedCandidate] {
+  let out : Array[SourcedCandidate] = []
+  for candidate in candidates {
+    out.push({ candidate, scope_paths: [[]] })
+  }
+  out
+}
+
+///|
+/// root scope 1 つだけを収めた help carrier map を組む検証補助。
+fn root_help_map(
+  entries : Array[CompletionHelpEntry],
+) -> Map[String, Array[CompletionHelpEntry]?] {
+  Map([(scope_key([]), Some(entries))])
+}
+
 // ── §8.2 シナリオ 4/5: INDEX 縮退・cword=0 ───────────────────────────────────
 
 ///|
@@ -324,9 +344,9 @@ test "DR-116 §2〜§4: completer 由来候補は origin の位置で供給順�
     { identity: "beta", help: Some("beta help") },
   ]
   let (rows, shell_actions) = apply_policy(
-    raw,
+    sourced_at_root(raw),
     "",
-    Some(completion_help),
+    root_help_map(completion_help),
     "space",
   )
   assert_eq(
@@ -376,7 +396,12 @@ test "DR-117 §5: insert_form merge は origin と spelling の組でペア判�
       completer: None,
     },
   ]
-  let (rows, shell_actions) = apply_policy(raw, "", None, "eq")
+  let (rows, shell_actions) = apply_policy(
+    sourced_at_root(raw),
+    "",
+    root_help_map([]),
+    "eq",
+  )
   assert_eq(
     emit_response(rows, shell_actions),
     "--shared\n--shared=\t\tnospace\n",
@@ -560,4 +585,48 @@ fn contains_spelling(response : String, spelling : String) -> Bool {
     }
   }
   false
+}
+
+///|
+/// active scope の帰属は argv 先頭の連続 command ではなく、候補が実際に読まれた scope
+/// (DR-066 §4 の fire_path) で決まる。global option を挟んだ `app --verbose build <TAB>` でも、
+/// child scope の候補は child の help model 順 (DR-116 §2) と child の説明 (DR-116 §4) を得る。
+test "DR-116 §2/§4: option を挟んでも child scope の順序と説明に帰属する" {
+  let ast = ast_or_fail(
+    "{\"options\":[{\"name\":\"verbose\",\"type\":\"flag\",\"long\":true,\"global\":true," +
+    "\"help\":\"root verbose\"}]," +
+    "\"commands\":[{\"type\":\"command\",\"name\":\"build\",\"options\":[" +
+    "{\"name\":\"zeta\",\"type\":\"flag\",\"long\":true,\"help\":\"child zeta\",\"help_order\":10}," +
+    "{\"name\":\"alpha\",\"type\":\"flag\",\"long\":true,\"help\":\"child alpha\",\"help_order\":1}]}]}",
+  )
+  let response = completion_query(ast, ["app", "--verbose", "build"])
+  // 整列は child の help model 順 — help_order を持つ alpha(1) / zeta(10) がその順に並ぶ。
+  // 継承した verbose は help_order 未指定で child の宣言 index に落ちるため 2 者の間に入るが、
+  // それも child model が決めた位置であり DR-116 §2 の「help model 順が正本」に従った結果。
+  let spellings = spellings_of(response)
+  let mut alpha_index = -1
+  let mut zeta_index = -1
+  for i = 0; i < spellings.length(); i = i + 1 {
+    if spellings[i] == "--alpha" {
+      alpha_index = i
+    }
+    if spellings[i] == "--zeta" {
+      zeta_index = i
+    }
+  }
+  assert_true(alpha_index >= 0, msg="--alpha must appear")
+  assert_true(zeta_index >= 0, msg="--zeta must appear")
+  assert_true(
+    alpha_index < zeta_index,
+    msg="child help_order must decide the order even behind a global option",
+  )
+  // 説明も child scope の entry から引き直す (root model には zeta/alpha の entry が無い)。
+  match find_line(response, "--zeta") {
+    Some(line) =>
+      assert_true(
+        string_contains(line, "child zeta"),
+        msg="--zeta must carry the child scope's help, got: " + line,
+      )
+    None => fail("--zeta must be in response")
+  }
 }
