@@ -22,7 +22,6 @@
 | 2026-08-02 | task | open | [resident-output-contract-generalization](./2026-08-02-resident-output-contract-generalization.md) | resident output contract の一般化 (provider/filter/cell_fns/collector) — DR-126 §4 の適用範囲残余 |
 | 2026-08-12 | task | open | [command-definition-error-parity-review-followup](./2026-08-12-command-definition-error-parity-review-followup.md) | command 担体の definition-error パリティ + 残余レビュー指摘 (DR-133/134 実装レビュー 2026-08-12) |
 | 2026-08-12 | bug | open | [consumed-command-trigger-reexposed](./2026-08-12-consumed-command-trigger-reexposed.md) | 消費済み command トリガが positional なし子スコープで候補に再露出する (complete corpus のカバレッジ欠落) |
-| 2026-08-12 | bug | open | [values-sugar-or-exacts-trigger-origin-spelling](./2026-08-12-values-sugar-or-exacts-trigger-origin-spelling.md) | values sugar / or-of-exacts の option で trigger 候補の origin が要素名でなく綴りになり help が消える |
 | 2026-08-12 | design | open | [m5-origin-spelling-pair-or-branch-duplicate-flag](./2026-08-12-m5-origin-spelling-pair-or-branch-duplicate-flag.md) | M5 の (origin,spelling) ペア判定により or-branch option で同一 flag が 2 行 emit される (DR-117 棄却案と衝突、裁定要) |
 | 2026-08-12 | bug | open | [type-owned-completion-values-option-face-unknown](./2026-08-12-type-owned-completion-values-option-face-unknown.md) | 型所有の展開値候補が option 配置で UnknownFace に落ち説明を引き直せない (RE-1) |
 | 2026-08-12 | design | open | [completion-query-residual-minors](./2026-08-12-completion-query-residual-minors.md) | completion_query の残 Minor 3 件 — fire_path 純度 pin / merge ペアキーの scope 欠落 / emit 畳みキーの取りこぼし (RE-3・RE-4・RE-6) |

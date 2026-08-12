@@ -1,6 +1,6 @@
 ---
 title: values sugar / or-of-exacts の option で trigger 候補の origin が要素名でなく綴りになり help が消える
-status: open
+status: resolved
 category: bug
 created: 2026-08-12T11:01:48+09:00
 last_read:
@@ -9,10 +9,10 @@ wip_entered:
 blocked_entered:
 pending_entered:
 discarded_entered:
-resolved_entered:
+resolved_entered: 2026-08-12T13:30:55+09:00
 discard_reason:
 pending_reason:
-close_reason:
+close_reason: ["done:eval.mbt の origin fixup を head Exact 限定に修正、spec fixture complete/values-sugar-or-exacts-origin.json で green (commit 5c08dcca)"]
 blocked_by:
 origin: 自リポ TODO
 ---
