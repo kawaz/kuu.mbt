@@ -38,8 +38,64 @@ DR-133/134 実装 (commit 61715d3c) のレビューで見つかった 3 件の�
 
 2. **m1 = committed 判定から Link 由来供給が漏れる**
    `resolve.mbt:4817` の committed 判定 (`source is Cli|Env`) から Link 由来の供給が漏れている。
-   link が config_file セルを target にできるかの実測が先。できるなら DR-133 §3 の
-   「cli/env 明示」に Link を含むかの Q 化が必要。
+
+   **実測結果 (2026-08-12): 再現、Q 化が必要。** `config_file` 要素 `config` と、CLI 入口
+   `config-link` (`link: "config"`) を同一 definition に置いた。一時 fixture の要点は次のとおり:
+
+   ```json
+   {
+     "definition": {"options": [
+       {"name":"config","type":"config_file","long":true},
+       {"name":"config-link","type":"string","long":true,"link":"config"},
+       {"name":"port","type":"number","long":true,"config_key":["port"],"default":7}
+     ]},
+     "cases": [
+       {"args":["--config-link","/linked.toml"],
+        "config_files":{"/linked.toml":{"port":41}},
+        "expect":{"outcome":"success","effects":[],"result":{"port":41},"sources":{"port":"config"}}},
+       {"args":["--config-link","/missing.toml"],
+        "config_files":{"/other.toml":{"port":99}},
+        "expect":{"outcome":"success","effects":[],"result":{"port":7},"sources":{"port":"default"}}}
+     ]
+   }
+   ```
+
+   リポ外の `$PROBE_FIXTURES` に上記 fixture を置き、公開 API を通す conformance runner を実行した:
+
+   ```console
+   $ KUU_FIXTURES="$PROBE_FIXTURES" moon test --target native \
+       src/kuu/json_conformance_test.mbt -f 'conformance: fixtures*'
+   [json-conformance] decoded=1 ran_cases=2 skipped=0 mismatches=0
+   [json-conformance] decoded: config-link-target.json
+   Total tests: 1, passed: 1, failed: 0.
+   ```
+
+   これにより wire decode、definition lint、parse、resolve の全経路を通って
+   `config_file` セルを Link target にできること、readable path は provider に渡されて
+   `port=41@config` として効くこと、同じ CLI 入口からの unreadable path は Error にならず
+   `port=7@default` へ黙認されることを観測した。
+
+   `config_file` の内部セルは公開 `effects` / `result` / `sources` から除外されるため、通常出力では
+   path binding 自身の source を表示できない。そこでリポ本体を変更せず `$PROBE_COPY` に作業ツリーを複製し、
+   同 package の一時 wbtest から `ParsedBindings.raw` を直接検査した:
+
+   ```console
+   $ moon test --target native src/kuu/link_config_source_probe_wbtest.mbt
+   key=config
+   value=/linked.toml
+   source=Link
+   Total tests: 1, passed: 1, failed: 0.
+   ```
+
+   probe は `binding.key == "config"`、`binding.value == String("/linked.toml")`、
+   `binding.source == Link` も assertion している。したがって CLI で明示した値でも Link 越しの最終 source は
+   `Link` であり、現行の `source is (Cli | Env)` から実際に漏れる。その結果、provider の読込失敗が
+   committed Error にならず黙認される。
+
+   DR-031 §「各順位の根拠」は CLI/link をともに「今この実行で明示的に言った」同順位の値源とし、
+   §「source の確定ルール」は Link 越しの効果を `link` とする。DR-121 §4 も `link` を CLI 直下の
+   独立した値源タグとして維持する。一方、DR-133 §3 の committed 規定は `cli / env 明示` とだけ書く。
+   Link が config path を供給できる実態に対し、この列挙へ `link` を含めるかを明文化する Q 化が必要である。
 
 3. **m3 = 内部セル negative list の (path,name) 同定不備**
    内部セルの negative list が (path,name) で同定されているため、config_file と同名の
