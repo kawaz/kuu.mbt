@@ -33,6 +33,9 @@ DR-133/134 実装 (commit 61715d3c) のレビューで見つかった 3 件の�
    (`definition-error/` に command 版) も要る。
    配列 value と透過 value command は spec の CVQ-Q1/Q2 裁定待ちで本 issue のスコープ外。
 
+   **進捗 (2026-08-12)**: 実装完了。commit af7a1a3c、Release v0.0.28 で push 済み、737 tests green。
+   配列 value 系 (collect_scalar_array_default への合流) は CVQ-Q1/Q2 裁定待ちのまま未着手で残る。
+
 2. **m1 = committed 判定から Link 由来供給が漏れる**
    `resolve.mbt:4817` の committed 判定 (`source is Cli|Env`) から Link 由来の供給が漏れている。
    link が config_file セルを target にできるかの実測が先。できるなら DR-133 §3 の
@@ -52,8 +55,9 @@ M1 は definition-error 検査のパリティ欠如、m1/m3 は既存の細部�
 
 ## 受け入れ条件
 
-- [ ] M1: command 担体の default+default_fn 併用・default_fn 名 UnknownVocab・sentinel 戻り検査・
+- [x] M1: command 担体の default+default_fn 併用・default_fn 名 UnknownVocab・sentinel 戻り検査・
       observes cycle graph が element 系検査と同等にカバーされる (spec fixture 込み)
+      (commit af7a1a3c、v0.0.28。配列 value 系は CVQ-Q1/Q2 裁定待ちで未着手)
 - [ ] m1: Link 由来供給が committed 判定に含まれるべきか実測 + 必要なら Q 化
 - [ ] m3: config_file と同名の通常要素が同スコープに並んでも実セルの binding/[] が巻き添えで
       落ちないよう negative list の同定方法を修正
