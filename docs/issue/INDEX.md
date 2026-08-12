@@ -20,6 +20,7 @@
 | 2026-08-02 | task | open | [w2-2-deferred-hygiene](./2026-08-02-w2-2-deferred-hygiene.md) | W2-2 実装の据え置きハイジーン 3 件 (F4/F6/F8) — Union uniqueItems 順序盲点 / builtin prefix 二重実装 / DefError 部分可視性 |
 | 2026-08-02 | bug | open | [wire-multiple-bool-decode-divergence](./2026-08-02-wire-multiple-bool-decode-divergence.md) | wire decode が multiple: true (bool) を受けるが spec wire.schema.json は string\|object の二形のみ (裁定要、部外者観測フラグ) |
 | 2026-08-02 | task | open | [resident-output-contract-generalization](./2026-08-02-resident-output-contract-generalization.md) | resident output contract の一般化 (provider/filter/cell_fns/collector) — DR-126 §4 の適用範囲残余 |
+| 2026-08-12 | task | open | [command-definition-error-parity-review-followup](./2026-08-12-command-definition-error-parity-review-followup.md) | command 担体の definition-error パリティ + 残余レビュー指摘 (DR-133/134 実装レビュー 2026-08-12) |
 | 2026-08-12 | bug | open | [consumed-command-trigger-reexposed](./2026-08-12-consumed-command-trigger-reexposed.md) | 消費済み command トリガが positional なし子スコープで候補に再露出する (complete corpus のカバレッジ欠落) |
 | 2026-08-12 | bug | open | [values-sugar-or-exacts-trigger-origin-spelling](./2026-08-12-values-sugar-or-exacts-trigger-origin-spelling.md) | values sugar / or-of-exacts の option で trigger 候補の origin が要素名でなく綴りになり help が消える |
 | 2026-08-12 | design | open | [m5-origin-spelling-pair-or-branch-duplicate-flag](./2026-08-12-m5-origin-spelling-pair-or-branch-duplicate-flag.md) | M5 の (origin,spelling) ペア判定により or-branch option で同一 flag が 2 行 emit される (DR-117 棄却案と衝突、裁定要) |
