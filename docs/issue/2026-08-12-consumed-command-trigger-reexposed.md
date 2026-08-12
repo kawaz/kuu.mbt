@@ -3,7 +3,7 @@ title: 消費済み command トリガが positional なし子スコープで候�
 status: open
 category: bug
 created: 2026-08-12T19:55:00+09:00
-last_read:
+last_read: 2026-08-12T13:50:21+09:00
 open_entered: 2026-08-12T19:55:00+09:00
 wip_entered:
 blocked_entered:
