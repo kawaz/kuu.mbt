@@ -186,29 +186,29 @@ fn apply_policy(
     }
     visible.push(c)
   }
-  // step 2: cursor_word による prefix 絞り (DR-117 §5、DR-060 §3 が生成器側の選択とした絞り)。
-  // 候補ゼロになっても空リストのまま返す (DR-117 §5 kawaz 裁定 2026-07-23)。
-  let prefixed : Array[Candidate] = []
+  // step 2: 値位置 marker を挿入候補から分離する。builtin completer marker は候補行でなく
+  // shell_action directive へ翻訳し、形態 B の custom completer marker は候補提供なしへ縮退する。
+  let shell_actions : Array[String] = []
+  let insertion_candidates : Array[Candidate] = []
   for c in visible {
-    if spelling_has_prefix(c.spelling, cursor_word) {
-      prefixed.push(c)
+    if c.spelling.length() == 0 {
+      match c.completer {
+        Some(name) =>
+          if name == "files" || name == "dirs" {
+            push_unique_string(shell_actions, name)
+          }
+        None => ()
+      }
+    } else {
+      insertion_candidates.push(c)
     }
   }
-  // step 3: shell_action 翻訳 (DR-117 §4.2/§7): completer 名が "files" / "dirs" の候補は
-  // 候補行として出さず :shell_action directive へ集約 (同名重複は 1 回)。他の completer 名は
-  // v1 で shell_action 対応語彙外なので通常候補として通す (glue の未知 directive 無視の
-  // 前方互換規則と対称)。
-  let shell_actions : Array[String] = []
+  // step 3: cursor_word による prefix 絞りは挿入文字列を持つ候補だけに適用する。
+  // 候補ゼロになっても空リストのまま返す (DR-117 §5 kawaz 裁定 2026-07-23)。
   let candidates : Array[Candidate] = []
-  for c in prefixed {
-    match c.completer {
-      Some(name) =>
-        if name == "files" || name == "dirs" {
-          push_unique_string(shell_actions, name)
-        } else if c.spelling.length() > 0 {
-          candidates.push(c)
-        }
-      None => if c.spelling.length() > 0 { candidates.push(c) }
+  for c in insertion_candidates {
+    if spelling_has_prefix(c.spelling, cursor_word) {
+      candidates.push(c)
     }
   }
   // step 4: insert_form merge (DR-117 §5 / COMPQ-Q1): 同一 spelling で word_end / cont の

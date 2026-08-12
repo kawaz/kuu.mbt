@@ -408,6 +408,23 @@ test "DR-117 §4.2/§7: completer 'files' は :shell_action files directive に�
 }
 
 ///|
+/// builtin completer の値位置 marker は shell に列挙を委譲する制御素材であり、挿入文字列ではない。
+/// cursor_word に文字が入っていても marker 自身を prefix 比較せず、`:shell_action files` へ翻訳する。
+test "DR-117 §4.2/§5: 値位置 marker は prefix 絞りを越えて shell_action へ届く" {
+  let ast = ast_or_fail(
+    "{\"options\":[" +
+    "{\"name\":\"file\",\"type\":\"string\",\"long\":true,\"completer\":\"files\"}" +
+    "]}",
+  )
+  let response = completion_query(
+    ast,
+    ["app", "--file", "src/ku"],
+    cword=Some(2),
+  )
+  assert_eq(response, ":shell_action files\n")
+}
+
+///|
 /// DR-117 §5: cursor_word による prefix 絞り。
 test "DR-117 §5: cursor_word による prefix 絞り" {
   let ast = ast_or_fail(
