@@ -6713,15 +6713,18 @@ fn export_value_space(e : ElementDef) -> String {
 /// - 値セルも子も持たない要素 — `dd` (DR-064 §5: name はトリガ綴り軸にのみ効き `export_key` を
 ///   書いても結果に何も現れない)、裸 exact leaf (`is_exact`、DR-063 A.1 — name はトリガ綴り)、
 ///   `type: "none"` (DR-089 の空値空間。`fixtures/value-typing/none-value-space.json` が
-///   「発火しても結果に痕跡を残さない」を pin 済み)、`config_file` の内部セル (DR-050 —
-///   `fixtures/value-sources/config/*` の result に現れない)
+///   「発火しても結果に痕跡を残さない」を pin 済み)
+///
+/// `config_file` は占有側である (DR-135 §4) — 露出キーを持ち string のパス値を自分のラダーで
+/// 確定させる通常の値セルなので、同一結果スコープの別セルと同じ露出キーを名乗れば
+/// `export-key-collision` になる (`fixtures/export-key/collision-config-file-option.json`)。
+/// 結果に出したくない config_file は `export_key: null` で透過にすれば非占有側へ移る (DR-135 §5)。
 fn element_occupies_seat(e : ElementDef) -> Bool {
   if e.link_path is Some(_) ||
     e.is_alias ||
     e.link_depth > 0 ||
     e.is_dd ||
-    e.is_exact ||
-    e.is_config_file {
+    e.is_exact {
     return false
   }
   e.ty.name() != "none"
