@@ -4410,7 +4410,7 @@ fn parse_fold_ladder(
         None => return default_scalar(entity)
       }
     }
-    // config_file セルの path 列 (`resolve_scope_config_with_export` Phase 1/2 と同素材、DR-133 §1)。
+    // config_file セルの path 列 (`resolve_scope_config_with_export` Phase 1/2 と同素材、DR-133 §2)。
     // committed path の読み失敗 Error はここでは合成しない — その入力では resolve 相自身が
     // 同じ Err を出すので、ここは供給なしとして縮退すれば十分。
     let scoped_eff : Array[@abi.Binding] = []
@@ -4709,7 +4709,7 @@ fn config_seat_for(
 }
 
 ///|
-/// DR-133 §1 のパス列の 1 本。`committed` は cli / env 明示のパス (§3 — 読込失敗が Error になる)、
+/// DR-133 §2 のパス列の 1 本。`committed` は源席が cli / env 明示のパス (§4 — 読込失敗が Error になる)、
 /// `element` はその Error の帰属先になる config_file 要素の宣言名。
 priv struct ConfigPathSupply {
   path : String
@@ -4718,9 +4718,10 @@ priv struct ConfigPathSupply {
 }
 
 ///|
-/// DR-133 §1 step 1 + §1.1: scope の config_file 要素を**宣言順**に走査し、各要素が自分のラダー
-/// (cli > env > default、DR-050 §1) で供給したパスを列の末尾へ足す。`multiple` の要素は自分の位置に
-/// 供給順で inline 展開され (§1.1)、どの席からも供給されなかった要素は列に参加しない。
+/// DR-133 §2 step 1: このスコープの config_file 要素が自分のラダー (cli > env > default、DR-050 §1)
+/// で供給したパスを**供給順**に並べて列にする。`multiple` なら供給順の列、単値は列長 1 の縮退形で、
+/// どの席からも供給されなければ列は空になる (§2.1 — エラーではない)。スコープの config_file が
+/// 1 つであることは `collect_config_file_siblings` が定義時に保証する (§1)。
 ///
 /// パス解決そのものは要素のラダーを `resolve_entity` にそのまま解かせる — config_file 要素も普通の
 /// 値セルであり、単体 / `multiple` / filters の違いは要素側の意味論が持つ。config 席だけは循環禁止
@@ -4821,9 +4822,9 @@ fn fold_top_keys(
 }
 
 ///|
-/// DR-133 §1 step 2/3: パス列の各パスを provider へ渡し (契約は 1 パス → 1 オブジェクトのまま、
+/// DR-133 §2 step 2/3: パス列の各パスを provider へ渡し (契約は 1 パス → 1 オブジェクトのまま、
 /// 列の長さだけ呼ぶ)、読めたオブジェクトを**トップレベルキー置換**で畳んだ 1 個を返す。後のキーが
-/// 前を置き換え、後に無いトップキーは前の値が残る。深いマージはしない (§2) — 値の中身は検査せず、
+/// 前を置き換え、後に無いトップキーは前の値が残る。深いマージはしない (§3) — 値の中身は検査せず、
 /// キーに対応する値をそのまま置く。
 ///
 /// JSON `null` の読みは「供給なし」(DR-050 §4 / DR-051) なので **fold に参加しない** — 空の
@@ -4831,7 +4832,7 @@ fn fold_top_keys(
 /// config 席を空のまま残す)。それ以外の非 object の読み (provider 契約違反の入力) は畳む単位を
 /// 持たないので、それ自体が前を置き換える縮退にする。
 ///
-/// 読込失敗の判定は各パス独立 (§3): committed なパスが読めなければその要素に帰属する Error、
+/// 読込失敗の判定は各パス独立 (§4): committed なパスが読めなければその要素に帰属する Error、
 /// default 由来のパスの不在は黙認して列の残りを読み続ける。
 fn read_config_path_list(
   supplies : Array[ConfigPathSupply],
@@ -4872,7 +4873,7 @@ fn read_config_path_list(
 
 ///|
 /// Resolve a scope WITH a config-file value source (DR-050 §5 dependency order):
-///   1. build the DR-133 §1 path list this scope's config_file element supplies (it resolves its own
+///   1. build the DR-133 §2 path list this scope's config_file element supplies (it resolves its own
 ///      path down cli > env > default; it has NO config seat, 循環禁止)
 ///   2. read the provider once per path and fold the readable objects by top-level key replacement
 ///      into the ONE object that sits in the config seat. A committed path (cli/env) that reads None
@@ -4898,13 +4899,13 @@ fn resolve_scope_config_with_export(
   include_default : Bool,
   firings? : @fold.FiringLedger,
 ) -> Result[Array[@abi.Binding], @abi.ParseError] {
-  // Phase 1 (DR-133 §1/§1.1): build the path list this scope's config_file elements supply.
+  // Phase 1 (DR-133 §2): build the path list this scope's config_file element supplies.
   let supplies = match
     config_path_list(sc, cli, env_map, at_pos, path, tty, extensions) {
     Ok(ps) => ps
     Err(pe) => return Err(pe)
   }
-  // Phase 2 (DR-133 §1/§2/§3): read each path and fold by top-level key replacement.
+  // Phase 2 (DR-133 §2/§3/§4): read each path and fold by top-level key replacement.
   let config_obj = match
     read_config_path_list(supplies, provider, at_pos, path) {
     Ok(obj) => obj
