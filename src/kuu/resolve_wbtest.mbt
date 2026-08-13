@@ -952,6 +952,75 @@ test "resolve_scope_config: a committed unreadable config path errors, a default
 }
 
 ///|
+/// 保証 (DR-133 §4.1、CFL-Q1a): **committed 判定は link を透過する**。committed かどうかは値を
+/// 運んだ経路ではなく値の源席の cli / env 性で決まり、`@abi.Link` はパース相の `LinkTarget` が
+/// argv 発火の効果を target の key へ書き換えるときのタグ = 源席は cli なので、link 経由で供給
+/// されたパスも「利用者が明示した」側にある。読めなければ Error (DR-050 §2)。
+///
+/// 対比の相方 (default 由来パスの不在は黙認) は直上のテストが持つ。両者を分ける軸は経路ではなく
+/// 源席であることが本テストの要点で、link を非 committed 扱いすると「CLI で指定したのに黙って
+/// 無視される」経路ができる。
+///
+/// **conformance fixture では固定できない**: resolve 相のエラーは runtimeError が required とする
+/// args_pos 対応トークンを持たず、kind 語彙 (parse / filter / constraint) にも席が無いので、
+/// 成功輪郭しか書けない (`link-supplied-path.json` は読める側だけを pin している)。
+test "config_path_list: a link-supplied path is committed — an unreadable one errors (DR-133 §4.1)" {
+  let never_reads = fn(_p : String) -> @abi.ConfigVal? { None }
+  let cfg = ent("config", @builtins.string_type(), is_config_file=true)
+  let sc : @engine.Scope = {
+    greedy: [],
+    positional: [],
+    entities: [cfg],
+    constraints: [],
+  }
+  // link 経由 (パース相で target の key へ書き換わり Source::Link が立った binding)
+  match
+    resolve_scope_config(
+      sc,
+      [cb("config", @abi.String("/l.toml"), @abi.Link)],
+      Map([]),
+      never_reads,
+    ) {
+    Err(pe) => {
+      assert_eq(pe.element, "config")
+      assert_eq(pe.reason, "config_read_failed")
+    }
+    Ok(_) =>
+      fail(
+        "a link-supplied path is committed (DR-133 §4.1) — an unreadable one must error",
+      )
+  }
+  // 読める側では link も普通の搬送路にすぎない: config 席が埋まり、パスは自分の座に残る
+  let l_toml = config_from_json(@json.parse("{\"port\":9}"))
+  let reads = fn(p : String) -> @abi.ConfigVal? {
+    if p == "/l.toml" {
+      Some(l_toml)
+    } else {
+      None
+    }
+  }
+  let port = ent("port", @builtins.number_type(), config_seat=true)
+  let sc_port : @engine.Scope = {
+    greedy: [],
+    positional: [],
+    entities: [cfg, port],
+    constraints: [],
+  }
+  assert_eq(
+    resolve_scope_config(
+      sc_port,
+      [cb("config", @abi.String("/l.toml"), @abi.Link)],
+      Map([]),
+      reads,
+    ),
+    Ok([
+      mkb_pub("config", @abi.String("/l.toml"), @abi.Link),
+      mkb_pub("port", @abi.Number(9.0), @abi.Config),
+    ]),
+  )
+}
+
+///|
 /// Guarantees (DR-066 reason derivation, `config_mismatch_reason`): a config value of the wrong
 /// STRUCTURE for a scalar cell (a JSON array where a scalar is expected) is a DR-037/066 Error with
 /// a config-specific extension reason (no v1 reason covers structural mismatch yet, DR-066 §3).

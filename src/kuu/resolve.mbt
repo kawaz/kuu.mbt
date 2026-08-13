@@ -4763,9 +4763,16 @@ fn config_path_list(
         _ =>
           own.push({
             path: @extension.value_str(b.value),
-            // DR-133 §3: committed なのは cli / env 明示のパスだけ。default / const 由来の
-            // 不在は黙認される。判定はパスごとに閉じており要素間で持ち越さない。
-            committed: b.source is (@abi.Cli | @abi.Env),
+            // DR-133 §4: committed なのは cli / env 明示のパスだけ。default / const 由来の不在は
+            // 黙認される。判定はパスごとに閉じており、前のパスの committed 性を後段へ持ち越さない。
+            //
+            // DR-133 §4.1: **link は透過する** — committed かどうかは値を運んだ経路ではなく値の
+            // 源席の cli / env 性で決まる。`@abi.Link` はパース相の `LinkTarget` が argv 発火の
+            // 効果を target の key へ書き換えるときに立てるタグ (`@engine.Node::LinkTarget`) なので、
+            // 源席は argv = cli である (env / config / default 席はパース相を持たず、resolve 相で
+            // link を辿った copy は元の source タグを保つ)。したがって明示供給として扱う。
+            // 観測面の `sources` タグは link のまま (DR-121 §4) — 内部判定と観測面は別軸。
+            committed: b.source is (@abi.Cli | @abi.Env | @abi.Link),
             element: e.name,
           })
       }
