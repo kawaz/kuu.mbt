@@ -858,7 +858,9 @@ test "resolve_scope: a badly-typed env value is a DR-066 Error, not a silent @ab
 ///|
 /// Guarantees (DR-050 §5 dependency order): the config_file element's OWN path resolves cli >
 /// env > default first (no config seat, 循環禁止); the provider is then read with that path, and
-/// every other entity resolves down cli > env > config > default using it.
+/// every other entity resolves down cli > env > config > default using it. The config_file element
+/// is an ordinary value cell too (DR-135 §1), so the path it settled on takes its own seat in the
+/// resolved bindings with the ladder tag that supplied it.
 test "resolve_scope_config: the config seat fills below env, above default" {
   let cfg_path = ent(
     "config",
@@ -882,7 +884,13 @@ test "resolve_scope_config: the config seat fills below env, above default" {
     }
   }
   let bound = resolve_scope_config(sc, [], Map([]), provider)
-  assert_eq(bound, Ok([mkb_pub("port", @abi.Number(4321.0), @abi.Config)]))
+  assert_eq(
+    bound,
+    Ok([
+      mkb_pub("port", @abi.Number(4321.0), @abi.Config),
+      mkb_pub("config", @abi.String("app.json"), @abi.Default),
+    ]),
+  )
 }
 
 ///|
@@ -913,7 +921,9 @@ test "resolve_scope_config: a committed unreadable config path errors, a default
       fail("expected an Err, the committed config path could not be read")
   }
   // a default-only path (no cli/env) reading None is silently tolerated: no Error, the config seat
-  // just supplies nothing (later entities fall through to the default seat).
+  // just supplies nothing (later entities fall through to the default seat). The unread path still
+  // takes the config_file element's own seat — result carries the path that was SUPPLIED, not the
+  // one that could be read (DR-135 §2.1).
   let by_default = ent(
     "config",
     @builtins.string_type(),
@@ -934,7 +944,10 @@ test "resolve_scope_config: a committed unreadable config path errors, a default
   }
   assert_eq(
     resolve_scope_config(sc_default, [], Map([]), never_reads),
-    Ok([mkb_pub("port", @abi.Number(1.0), @abi.Default)]),
+    Ok([
+      mkb_pub("config", @abi.String("optional.json"), @abi.Default),
+      mkb_pub("port", @abi.Number(1.0), @abi.Default),
+    ]),
   )
 }
 
@@ -2327,12 +2340,10 @@ test "accum_cells 対極: a SELECTED identity command's accum cell nests under i
 }
 
 ///|
-/// 保証 (内部セルの席、issue の 3 断面目): 透過 command 配下の `config_file` セルは、root に
-/// 実在する同名の値セルをマスクしない。席は **宣言名軸** なので透過 command 配下は `(["c"],
-/// "cfg")` に立ち、root の `([], "cfg")` とは別物になる — 露出キー軸で持っていた頃は
-/// `walk_export_path` が透過ラベルを落として席が `([], "cfg")` へ着地し、root の `--cfg hello`
-/// が result / sources の両方から消えていた (実機実測)。選択・未選択のどちらでも同じ。
-test "internal_cells: a transparent command's config_file seat does not mask a real root cell" {
+/// 保証 (DR-135 §1): `config_file` は内部セルではないので席を持たず、その binding は射影の素材から
+/// 落ちない — 値を持たない構造マーカー (`none` / dd trigger) だけが `internal_cells` に立つ。
+/// 透過 command 配下でも root でも同じで、根拠は「値セルを持つか」の一軸 (DR-135 §1 の分界表)。
+test "internal_cells: a config_file cell has no internal seat and its binding survives (DR-135 §1)" {
   let c : @engine.Scope = {
     greedy: [],
     positional: [],
@@ -2342,75 +2353,33 @@ test "internal_cells: a transparent command's config_file seat does not mask a r
   let sc : @engine.Scope = {
     greedy: [@engine.CommandSatisfied("c", 0, c)],
     positional: [],
-    entities: [ent("cfg", @builtins.string_type())], // root の実在する値セル (同名)
-    constraints: [],
-  }
-  // 未選択: 配下へ降りないので席が無い (`collect_defaults` と同じ gate)
-  assert_eq(internal_cells(sc, []).length(), 0)
-  assert_eq(is_internal_cell(internal_cells(sc, []), [], "cfg"), false)
-  // 選択: 席は宣言名軸で command の下に立ち、root の同名セルには当たらない
-  let selected = internal_cells(sc, [selected_marker(["c"])])
-  assert_eq(selected.length(), 1)
-  assert_eq(is_internal_cell(selected, ["c"], "cfg"), true)
-  assert_eq(is_internal_cell(selected, [], "cfg"), false)
-}
-
-///|
-/// 保証 (対極、回帰防止): **選択された** 透過 command 配下の `config_file` セルの binding は
-/// 従来どおり出力の素材から落ちる (DR-050: config_file の値は provider 解決用の PATH であって
-/// 利用者向けの結果ではない)。席を宣言名軸へ移したことが除外そのものを殺していないことを固定
-/// する — binding の生の `scope` が席と同じ軸なので、射影の前に落ちる。
-test "drop_internal_bindings 対極: a SELECTED transparent command's config_file binding is dropped" {
-  let c : @engine.Scope = {
-    greedy: [],
-    positional: [],
-    entities: [ent("cfg", @builtins.string_type(), is_config_file=true)],
-    constraints: [],
-  }
-  let sc : @engine.Scope = {
-    greedy: [@engine.CommandSatisfied("c", 0, c)],
-    positional: [],
-    entities: [],
+    entities: [ent("root_cfg", @builtins.string_type(), is_config_file=true)],
     constraints: [],
   }
   let binds = [
     selected_marker(["c"]),
     { ..cb("cfg", @abi.String("/app.toml"), @abi.Cli), scope: ["c"] },
+    cb("root_cfg", @abi.String("/root.toml"), @abi.Cli),
   ]
-  let kept = drop_internal_bindings(binds, internal_cells(sc, binds))
-  for b in kept {
-    assert_not_eq(b.key, "cfg")
-  }
-}
-
-///|
-/// 保証 (m3 の本体、露出キー軸では同定できない構成): `config_file` は DR-120 §4 の「露出キーを
-/// 占有しない要素」なので、その `export_key` は同じスコープの実セルの露出キーと**合法に一致
-/// しうる**。宣言名 (`cfg` / `user`) はスコープ内で一意 (DR-006) なので宣言名軸では割れないが、
-/// 露出キー軸の negative list で照合すると実セル `user` が巻き添えで落ちた (実機実測: result /
-/// sources から消えた)。席が実セルの (path, name) に当たらないことを固定する。
-test "internal_cells: a config_file's export_key colliding with a real cell does not mask it" {
-  let sc : @engine.Scope = {
-    greedy: [],
-    positional: [],
-    entities: [
-      ent("cfg", @builtins.string_type(), is_config_file=true),
-      ent("user", @builtins.string_type(), accum=Some("append")),
-    ],
-    constraints: [],
-  }
-  let cells = internal_cells(sc, [])
-  assert_eq(cells.length(), 1)
-  assert_eq(is_internal_cell(cells, [], "cfg"), true)
-  assert_eq(is_internal_cell(cells, [], "user"), false)
-  // 実セルの binding は残り、内部セルの binding だけが落ちる
-  let binds = [
-    cb("cfg", @abi.String("/app.toml"), @abi.Cli),
-    cb("user", @abi.String("alice"), @abi.Cli),
-  ]
+  // 選択済み (= 配下へ降りる) でも config_file の席は立たない
+  let cells = internal_cells(sc, binds)
+  assert_eq(cells.length(), 0)
+  assert_eq(is_internal_cell(cells, ["c"], "cfg"), false)
+  assert_eq(is_internal_cell(cells, [], "root_cfg"), false)
+  // したがって binding は両方とも残る (射影が確定パスを座に置く、DR-135 §2)
   let kept = drop_internal_bindings(binds, cells)
-  assert_eq(kept.length(), 1)
-  assert_eq(kept[0].key, "user")
+  let mut nested = false
+  let mut root = false
+  for b in kept {
+    if b.key == "cfg" {
+      nested = true
+    }
+    if b.key == "root_cfg" {
+      root = true
+    }
+  }
+  assert_true(nested)
+  assert_true(root)
 }
 
 ///|

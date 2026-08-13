@@ -3433,8 +3433,8 @@ test "DR-092 §5 end-to-end: config-origin \"Infinity\" reaches a float element 
     #|      "expect": {
     #|        "outcome": "success",
     #|        "effects": [],
-    #|        "result": {"t": "Infinity"},
-    #|        "sources": {"t": "config"}
+    #|        "result": {"config": "/app.toml", "t": "Infinity"},
+    #|        "sources": {"config": "default", "t": "config"}
     #|      }
     #|    },
     #|    {
@@ -3444,8 +3444,8 @@ test "DR-092 §5 end-to-end: config-origin \"Infinity\" reaches a float element 
     #|      "expect": {
     #|        "outcome": "success",
     #|        "effects": [],
-    #|        "result": {"t": "-Infinity"},
-    #|        "sources": {"t": "config"}
+    #|        "result": {"config": "/app.toml", "t": "-Infinity"},
+    #|        "sources": {"config": "default", "t": "config"}
     #|      }
     #|    }
     #|  ]
@@ -4132,8 +4132,8 @@ test "CONST-Q1: the config seat overrides a const (upper seats supply, const is 
     #|      "expect": {
     #|        "outcome": "success",
     #|        "effects": [],
-    #|        "result": {"port": 3000},
-    #|        "sources": {"port": "config"}
+    #|        "result": {"config": "/app.toml", "port": 3000},
+    #|        "sources": {"config": "default", "port": "config"}
     #|      }
     #|    }
     #|  ]

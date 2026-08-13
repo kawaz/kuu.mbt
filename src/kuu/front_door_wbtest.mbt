@@ -231,10 +231,11 @@ test "front_door.parse + @engine.warnings_of: deprecated alias 発火は構造�
 
 ///|
 /// 保証 (MDR-006 §7-3): `output` の effects 射影は利用者が値セルの発火だけを観測できる形を返し、
-/// lowering/eval 内部の sentinel (`@depr:` を含む) と、値空間を持たない none/dd、config provider を
-/// 選ぶ config_file cell を一律に除外する。各内部表現を呼び出し側が `is_sentinel` や Scope/Node 走査で
-/// 再判定しないことが玄関契約であり、通常の値 effect は op/operand/source を失わず残る。
-test "front_door.output: effects は sentinel・config_file・none・dd を吸収し通常値だけを返す (MDR-006 §7-3)" {
+/// lowering/eval 内部の sentinel (`@depr:` を含む) と、値空間を持たない none/dd を一律に除外する。
+/// 各内部表現を呼び出し側が `is_sentinel` や Scope/Node 走査で再判定しないことが玄関契約であり、
+/// 通常の値 effect は op/operand/source を失わず残る。config_file は値セルを持つ通常要素なので
+/// 除外側ではなく、cli 発火は他の要素と同じく effects に載る (DR-135 §3)。
+test "front_door.output: effects は sentinel・none・dd を吸収し通常値だけを返す (MDR-006 §7-3)" {
   fn view_of(src : String, args : Array[String]) -> OutputView raise {
     let ast = match parse_definition(@json.parse(src)) {
       Ok(a) => a
@@ -268,14 +269,18 @@ test "front_door.output: effects は sentinel・config_file・none・dd を吸�
   assert_eq(normal.effects[0].operand, Some(@abi.Number(80.0)))
   assert_eq(normal.effects[0].source, @abi.Cli)
 
-  // config_file は config provider 選択用の配線セルであり、発火しても利用者 effects には出ない。
+  // config_file は通常要素なので、cli 発火はパース時効果としてそのまま載る (DR-135 §3)。
   let config_file = view_of(
     (
       #|{"options": [{"name": "config", "type": "config_file", "long": true}]}
     ),
     ["--config", "/app.toml"],
   )
-  assert_eq(config_file.effects, [])
+  assert_eq(config_file.effects.length(), 1)
+  assert_eq(config_file.effects[0].entity, "config")
+  assert_eq(config_file.effects[0].op, @abi.Set)
+  assert_eq(config_file.effects[0].operand, Some(@abi.String("/app.toml")))
+  assert_eq(config_file.effects[0].source, @abi.Cli)
 
   // none は値空間を持たない発火観測であり、placeholder Binding を effect として発明しない。
   let none = view_of(
@@ -393,8 +398,8 @@ test "front_door.output: command 木でも子 scope の値源を OutputView.sour
 /// `config_from_json` が JSON から組んだ `@abi.ConfigVal` を `parse_legacy()`/`resolve_legacy()` の `config?` provider
 /// 経由で実際に config 席へ流し込めることを e2e で固定する。`config_file` 型要素 + `config_key`
 /// を持つ `port` の値が config 由来 (`8080`, source=config) で result/sources 双方に現れ、
-/// `config_file` 要素自身はインフラなので結果に現れない (`piece-filters/config-source.json` の
-/// 輪郭と同型)。
+/// `config_file` 要素自身も通常要素として確定パスを座に持つ (DR-135 §1/§2 —
+/// `piece-filters/config-source.json` の輪郭と同型)。
 test "front_door.config_from_json: JSON から組んだ @abi.ConfigVal が config 席経由で result/sources に反映される (DR-050 §2/§4, @abi.ConfigVal 入力構築 API)" {
   let src =
     #|{"options": [
@@ -431,43 +436,46 @@ test "front_door.config_from_json: JSON から組んだ @abi.ConfigVal が confi
   match rval {
     @abi.Object(kvs) => {
       let mut port_val : @abi.ResultValue? = None
-      let mut has_config_key = false
+      let mut config_val : @abi.ResultValue? = None
       for kv in kvs {
         if kv.0 == "port" {
           port_val = Some(kv.1)
         }
         if kv.0 == "config" {
-          has_config_key = true
+          config_val = Some(kv.1)
         }
       }
       assert_eq(port_val, Some(@abi.Scalar(@abi.Number(8080.0))))
-      // config_file 要素自身はインフラで結果非掲載 (config-source.json の why 参照)。
-      assert_false(has_config_key)
+      // config_file 要素自身も通常要素として確定パスを座に持つ (DR-135 §2)。
+      assert_eq(config_val, Some(@abi.Scalar(@abi.String("/app.toml"))))
     }
     _ => fail("output.result should be @abi.Object")
   }
   assert_eq(
     render_rval_sorted(output_legacy(ast, effects=rb).sources),
-    "{port=config}",
+    "{config=default,port=config}",
   )
 }
 
 ///|
-/// 保証 (e2e、issue command-definition-error-parity-review-followup の m3): `config_file` は
-/// DR-120 §4 の「露出キーを占有しない要素」なので、その `export_key` が同じスコープの実セルの
-/// 露出キー (`user`) と一致しても definition-error にならない。この構成で実セル `user` の値が
-/// result / sources から消えないことを公開 API 経由で固定する — 内部セルの除外を露出キー軸の
-/// negative list で行っていた頃は、発火時は `--user alice` が、0 発火時は DR-044 の `[]` が、
-/// どちらも巻き添えで落ちていた (実機実測)。
-test "front_door: 露出キーが実セルと重なる config_file は実セルの値を巻き添えにしない (DR-050 / DR-120 §4)" {
+/// 保証 (e2e、issue command-definition-error-parity-review-followup の m3 を DR-135 §4/§5 の下で
+/// 引き直したもの): 結果に出したくない config_file は `export_key: null` の透過で書く。透過セルは
+/// DR-120 §4 の非占有側なので、同じスコープの実セル `user` と露出キーが重なっても definition-error
+/// にならず、実セル `user` の値も巻き添えにしない — 内部セルの除外を露出キー軸の negative list で
+/// 行っていた頃は、発火時は `--user alice` が、0 発火時は DR-044 の `[]` が、どちらも巻き添えで
+/// 落ちていた (実機実測)。透過なので config path (`/app.toml`) 自身は結果に出ない (DR-052 §2)。
+///
+/// 対になる占有側 (`export_key` が実セルと同じキーへ解決する config_file = `export-key-collision`)
+/// は下のテストが持つ。
+test "front_door: export_key:null の透過 config_file は実セルの値を巻き添えにしない (DR-052 §2 / DR-120 §4)" {
   let src =
     #|{"options": [
-    #|  {"name": "cfg", "type": "config_file", "long": true, "default": "/app.toml", "export_key": "user"},
+    #|  {"name": "cfg", "type": "config_file", "long": true, "default": "/app.toml", "export_key": null},
     #|  {"name": "user", "type": "string", "long": true, "multiple": true}
     #|]}
   let ast = match parse_definition(@json.parse(src)) {
     Ok(a) => a
-    Err(_) => abort("parse_definition should accept a non-occupying export_key")
+    Err(_) => abort("parse_definition should accept a transparent config_file")
   }
   let cfg = config_from_json(@json.parse("{}"))
   let config_provider : (String) -> @abi.ConfigVal? = fn(_p) { Some(cfg) }
@@ -484,6 +492,40 @@ test "front_door: 露出キーが実セルと重なる config_file は実セル�
   assert_eq(run(["--user", "alice"]), ("{user=[alice]}", "{user=[cli]}"))
   // 0 発火: DR-044 の一様配列 `[]` も巻き添えで落ちない
   assert_eq(run([]), ("{user=[]}", "{user=[]}"))
+}
+
+///|
+/// 保証 (DR-135 §4、上のテストの対極): 露出キーを持つ config_file は DR-120 §4 の**占有側**なので、
+/// その露出キーが同じ結果スコープの実セルと一致すれば `export-key-collision` になる。関与要素ごとに
+/// 1 件を全列挙する (DR-120 §5) ので、`cfg` / `user` の両方が error を持つ。
+test "front_door: 露出キーが実セルと重なる config_file は export-key-collision (DR-135 §4)" {
+  let src =
+    #|{"options": [
+    #|  {"name": "cfg", "type": "config_file", "long": true, "default": "/app.toml", "export_key": "user"},
+    #|  {"name": "user", "type": "string", "long": true, "multiple": true}
+    #|]}
+  match parse_definition(@json.parse(src)) {
+    Err(Rejected(errors)) => {
+      let mut cfg_reported = false
+      let mut user_reported = false
+      for error in errors {
+        if error.kind == @abi.ExportKeyCollision {
+          if error.element == "cfg" {
+            cfg_reported = true
+          }
+          if error.element == "user" {
+            user_reported = true
+          }
+        }
+      }
+      assert_true(cfg_reported)
+      assert_true(user_reported)
+    }
+    _ =>
+      fail(
+        "config_file occupies its exported key — expected ExportKeyCollision",
+      )
+  }
 }
 
 ///|
@@ -2176,25 +2218,28 @@ test "front_door.output: none セルは scope rename の 3 境界すべてで 3 
 }
 
 ///|
-/// 同上の `config_file` 版 (DR-050: 値は config provider を解決する PATH であって利用者向けの
-/// 結果ではない)。`none` と違い engine の値空間なしセルではない (`Entity.is_config_file` の別軸)
-/// ので、席の収集経路も別。
-test "front_door.output: config_file セルは scope rename の 3 境界すべてで 3 面から消える (DR-050)" {
+/// 同上の対極 (`config_file` 版、DR-135 §1): config_file は値セルを持つ**通常要素**なので上の
+/// 3 面から消える側ではない。確定したパスが result に、それを供給したラダー席のタグが sources に
+/// 座り、scope ラベルの export_key 3 境界 (identity / renamed / transparent) では他の値セルと
+/// まったく同じ追随をする。ここで発火するのは `--keep` だけなので (パスは default 席由来)、
+/// effects には config_file が出ない — env / default 由来のラダー充填は effects に載らない
+/// (DR-135 §3) からで、cli 発火が載る側は上の `effects は sentinel・none・dd を吸収…` が持つ。
+test "front_door.output: config_file セルは scope rename の 3 境界すべてで通常要素として座る (DR-135 §1)" {
   let body =
     #|"options":[{"name":"cfg","type":"config_file","long":true,"default":"/app.toml"},
     #|           {"name":"keep","type":"flag","long":true}]
   let args = ["serve", "--keep"]
   assert_eq(
     wbtest_view_of(wbtest_under_command(body, None), args),
-    "result={serve={keep=true}} sources={serve={keep=cli}} effects=keep",
+    "result={serve={cfg=/app.toml,keep=true}} sources={serve={cfg=default,keep=cli}} effects=keep",
   )
   assert_eq(
     wbtest_view_of(wbtest_under_command(body, Some("\"sv\"")), args),
-    "result={sv={keep=true}} sources={sv={keep=cli}} effects=keep",
+    "result={sv={cfg=/app.toml,keep=true}} sources={sv={cfg=default,keep=cli}} effects=keep",
   )
   assert_eq(
     wbtest_view_of(wbtest_under_command(body, Some("null")), args),
-    "result={keep=true} sources={keep=cli} effects=keep",
+    "result={cfg=/app.toml,keep=true} sources={cfg=default,keep=cli} effects=keep",
   )
 }
 
