@@ -498,9 +498,9 @@ impl @node.InstallerExt for CommandInstaller with fn apply(_self, _builder) {
 ///|
 impl @node.InstallerExt for CommandInstaller with fn collect_defs_errors(
   _self,
-  _view,
+  view,
 ) {
-  []
+  @node.defs_builtin_errors(view, "command")
 }
 
 ///|

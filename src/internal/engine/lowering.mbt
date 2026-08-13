@@ -5594,6 +5594,53 @@ fn collect_scalar_array_default(
 }
 
 ///|
+/// DR-134 §1 (CVQ-Q1a): 値持ち command の担体は **scalar literal のみ**。配列 `value` / 配列
+/// `default` は definition-error kind=`invalid-range` になる。値持ち command は `multiple` 宣言を
+/// 持たない単値セルなので、要素の値空間 (scalar) と literal の構造 (配列) の不一致が定義時点で
+/// 静的に既知になる — `collect_scalar_array_default` (非 multiple 要素への配列 default、DR-083 §5)
+/// と同族の検査で、値の供給規則に command 専用の特例は無い (DR-134 §5) という帰結にすぎない。
+///
+/// 判定は同じ「一様配列の長さ」軸で行う (`json_to_default_values` が scalar を `[v]` へ持ち上げる)
+/// ので、`length != 1` が配列 literal を書いた形になる。const (`value:`) 席と default 席で扱いは
+/// 割れない — 値の形の話であって供給位相の話ではない。
+fn collect_command_array_carrier(
+  def : Definition,
+  out : Array[DefError],
+) -> Unit {
+  for c in def.commands {
+    match c.const_values {
+      Some(vs) =>
+        if vs.length() != 1 {
+          out.push(
+            def_err(
+              c.name,
+              InvalidRange,
+              "a value-carrying command's `value` must be exactly ONE scalar piece, got \{vs.length()} — the carrier of a command node is a scalar literal, never an array (DR-134 §1)",
+              "write a single scalar `value`, or drop the carrier and let this command name a scope holding a `multiple` element instead",
+            ),
+          )
+        }
+      None => ()
+    }
+    match c.default_values {
+      Some(vs) =>
+        if vs.length() != 1 {
+          out.push(
+            def_err(
+              c.name,
+              InvalidRange,
+              "a value-carrying command's `default` must be exactly ONE scalar piece, got \{vs.length()} — the carrier of a command node is a scalar literal, never an array (DR-134 §1)",
+              "write a single scalar `default`, or drop the carrier and let this command name a scope holding a `multiple` element instead",
+            ),
+          )
+        }
+      None => ()
+    }
+    collect_command_array_carrier(c.body, out)
+  }
+}
+
+///|
 /// DESIGN §2.3 / DR-031 (CONST-Q1=a): 構造子 wrapper (`or` / `seq` を持つノード) は結果スコープを
 /// 作るが**値セルを持たない** (`ensure_entity_body` の Or/Group 分岐が `multiple` 無しでは entity を
 /// 登録しないのがその実装)。そこへ root の `value:` を書くと宣言定数の置き場が無く、黙って捨てる
@@ -6313,6 +6360,69 @@ fn collect_config_cycle(def : Definition, out : Array[DefError]) -> Unit {
   }
   for c in def.commands {
     collect_config_cycle(c.body, out)
+  }
+}
+
+///|
+/// DR-133 §1: 1 スコープ 1 config_file。同一スコープに `type: "config_file"` 要素が 2 つ以上あれば
+/// definition-error kind=`invalid-range` を **関与要素ごとに 1 件** 全列挙する (DR-054 §4 — 代表 1 件
+/// にすると相方が expect から読めない)。config 席はスコープに 1 つ (DR-031 #3) で、それを埋める
+/// オブジェクトも 1 つ (DR-133 §2) なので、2 つ以上は同じ 1 席への重複宣言 = 席の値域外にある。
+///
+/// **スコープの単位は command スコープ** — resolve が config 席を埋めるとき見るのは `@engine.Scope`
+/// 1 つぶんの entities (`config_path_list`) であり、`or` / `seq` の wrapper が結果スコープを作っても
+/// config 席は分かれない。したがって走査も wrapper の内側へ降り (`collect_scalar_array_default` と
+/// 同じ辿り方)、子 command でだけ席を数え直す。
+///
+/// alias コピーと `global` の入口コピー (`link_depth > 0`) は数えない — canonical と同じセルへ
+/// 合流する写しであって新しい席を作らないため (`element_occupies_seat` と同じ非参加判定)。
+fn collect_config_file_siblings(
+  def : Definition,
+  out : Array[DefError],
+) -> Unit {
+  let declared : Array[String] = []
+  fn scan(e : ElementDef) -> Unit {
+    if e.is_alias || e.link_depth > 0 {
+      return
+    }
+    if e.is_config_file {
+      declared.push(e.name)
+    }
+    match e.body {
+      Or(branches) =>
+        for branch in branches {
+          for item in branch.items {
+            scan(item)
+          }
+        }
+      Group(items) =>
+        for item in items {
+          scan(item)
+        }
+      Cell | Enum(_) => ()
+    }
+  }
+
+  for e in def.options {
+    scan(e)
+  }
+  for e in def.positionals {
+    scan(e)
+  }
+  if declared.length() > 1 {
+    for name in declared {
+      out.push(
+        def_err(
+          name,
+          InvalidRange,
+          "this scope declares \{declared.length()} `config_file` elements — a scope has exactly ONE config seat (DR-031 #3) and exactly one object fills it (DR-133 §2), so two or more config_file elements are a duplicate declaration of the same seat",
+          "keep one config_file element and let it supply every path: `multiple` for 重ね (system + user 設定), `alias` for 綴り違いの入口, the element's own cli > env > default ladder for 由来違いの入口, `default_fn: \"borrow:<outer>\"` to split the supply (DR-133 §1.1)",
+        ),
+      )
+    }
+  }
+  for c in def.commands {
+    collect_config_file_siblings(c.body, out)
   }
 }
 
@@ -7326,7 +7436,12 @@ pub fn collect_builtin_installer_errors(
       collect_flatten_non_append(definition, errors)
       collect_invalid_numeric_filter_args(definition, errors)
     }
-    "config" => collect_config_cycle(view.definition(), errors)
+    "command" => collect_command_array_carrier(view.definition(), errors)
+    "config" => {
+      let definition = view.definition()
+      collect_config_cycle(definition, errors)
+      collect_config_file_siblings(definition, errors)
+    }
     "alias" =>
       collect_invalid_alias_long_override(
         view.source_definition(),
