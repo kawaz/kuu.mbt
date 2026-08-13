@@ -492,12 +492,6 @@ fn export_map(ast : AtomicAST) -> @engine.ExportScopeMap {
 }
 
 ///|
-priv struct ConfigFileCell {
-  path : Array[String]
-  name : String
-}
-
-///|
 fn output_path_push(path : Array[String], segment : String) -> Array[String] {
   let out : Array[String] = []
   for part in path {
@@ -569,35 +563,14 @@ fn filter_interpretation_result(
 }
 
 ///|
-fn collect_config_file_cells(
-  scope : @engine.Scope,
-  path : Array[String],
-  bindings : Array[@abi.Binding],
-  out : Array[ConfigFileCell],
-) -> Unit {
-  for entity in scope.entities {
-    if entity.is_config_file {
-      out.push({ path, name: entity.name })
-    }
-  }
-  for node in scope.greedy {
-    match node {
-      @engine.CommandSatisfied(name, ordinal, child) => {
-        let child_path = output_path_push(path, name)
-        if @engine.command_scope_selected(bindings, child_path, ordinal) {
-          collect_config_file_cells(child, child_path, bindings, out)
-        }
-      }
-      _ => ()
-    }
-  }
-}
-
-///|
 /// `effects` 側の内部セル除外。effects は **宣言名軸** (DR-045: 効果は entity 単位 — entity は
-/// 値セルであって露出パスではない) なので、席も宣言名のまま持つ engine の `@engine.NoneCell` /
-/// `ConfigFileCell` と照合する。露出キー軸で除外する `result` / `sources` 側
-/// (`internal_cells`) とは軸が違うので、両者を混ぜてはいけない。
+/// 値セルであって露出パスではない) なので、席も宣言名のまま持つ engine の `@engine.NoneCell` と
+/// 照合する。露出キー軸で除外する `result` / `sources` 側 (`internal_cells`) とは軸が違うので、
+/// 両者を混ぜてはいけない。
+///
+/// 内部セルは `type: "none"` (DR-089) と dd trigger (DR-064) の 2 者だけ — どちらも値セルを持たない
+/// 構造マーカーである。`type: "config_file"` は string のパス値を自分のラダーで確定させる通常の値セル
+/// (DR-050 §1 / DR-135 §1) なので、cli / link 由来の発火は他の要素と同じく effects に載る (DR-135 §3)。
 ///
 /// 席の path に index segment (`#k`) が入らないのは `is_internal_cell` と同じ理由 (席は
 /// 「どのセルか」であって「何番目の発火か」ではない) なので、照合前に落とす。
@@ -605,16 +578,10 @@ fn output_internal_cell(
   path : Array[String],
   name : String,
   none_cells : Array[@engine.NoneCell],
-  config_file_cells : Array[ConfigFileCell],
 ) -> Bool {
   let seat = drop_index_segments(path)
   for cell in none_cells {
     if cell.name() == name && path_eq(cell.path(), seat) {
-      return true
-    }
-  }
-  for cell in config_file_cells {
-    if cell.name == name && path_eq(cell.path, seat) {
       return true
     }
   }
@@ -897,8 +864,6 @@ fn project_effects(
   firings? : @fold.FiringLedger,
 ) -> Array[OutputEffect] {
   let none_cells = @engine.selected_none_cells(ast.root, ast.templates, binds)
-  let config_file_cells : Array[ConfigFileCell] = []
-  collect_config_file_cells(ast.root, [], binds, config_file_cells)
   let effects : Array[OutputEffect] = []
   let seats = @fold.CellSeats::new()
   let default_seats : Array[DefaultSeat] = []
@@ -911,12 +876,7 @@ fn project_effects(
   for binding in binds {
     let record = firing_cursor.next(firings, binding)
     if (is_sentinel(binding.key) && binding.observation is None) ||
-      output_internal_cell(
-        binding.scope,
-        binding.key,
-        none_cells,
-        config_file_cells,
-      ) {
+      output_internal_cell(binding.scope, binding.key, none_cells) {
       continue
     }
     // CONFORMANCE §2「effects に載るのは cli / link 由来のパース時効果のみ」(DR-065): 値源ラダー

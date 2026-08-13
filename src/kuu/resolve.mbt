@@ -1375,10 +1375,9 @@ fn push_accum_cell(
   ek : @engine.ExportScopeMap,
   out : Array[AccumCell],
 ) -> Unit {
-  // 内部セル (`none` / `config_file`) は結果に現れないので席も作らない — 作ると 0 発火の `[]` が
-  // 注入される (`multiple` な config_file は実在する、`value-sources/config/multi-file-multiple`)。
+  // 内部セル (`none`) は結果に現れないので席も作らない — 作ると 0 発火の `[]` が注入される。
   // `collect_defaults` の同型ガードと揃える (除外は宣言名軸の entity identity で行う)。
-  if entity.ty.name() == "none" || entity.is_config_file {
+  if entity.ty.name() == "none" {
     return
   }
   match entity.accum {
@@ -1481,11 +1480,12 @@ fn collect_accum(
 }
 
 ///|
-/// 結果にも由来にも現れない **内部セル** の席 (宣言名軸で同定したもの)。2 種を同じ形で運ぶ:
-/// `type: "none"` (DR-089 §3「none has no value」— 値空間が無いので result にも sources にも
-/// 出ない) と `type: "config_file"` (DR-050、値は config provider を解決するための PATH であって
-/// 利用者向けの結果ではない)。dd trigger (`DdSatisfied` / `DdMatchSatisfied` の element、
-/// DR-093 §2/§7) も engine 側で none 扱いなので同じ席に入る。
+/// 結果にも由来にも現れない **内部セル** の席 (宣言名軸で同定したもの)。ここに入るのは値セルを
+/// 持たない構造マーカーだけ — `type: "none"` (DR-089 §3「none has no value」— 値空間が無いので
+/// result にも sources にも出ない) と dd trigger (`DdSatisfied` / `DdMatchSatisfied` の element、
+/// DR-093 §2/§7、engine 側で none 扱い)。`type: "config_file"` は string のパス値を自分のラダーで
+/// 確定させる通常の値セル (DR-050 §1) なので内部セルではなく、他の値要素と同じ規則で射影される
+/// (DR-135 §1)。結果に出したくない config_file は `export_key: null` か nameless で書く (DR-135 §5)。
 ///
 /// **キー軸**: `path` / `name` とも **宣言名** (`@engine.NoneCell` / `@engine.Entity.name` の
 /// ままの軸、binding の生の `scope` / `key` と同じ)。`effects` 側の除外
@@ -1504,9 +1504,8 @@ priv struct InternalCell {
 
 ///|
 /// 内部セルの席を **宣言名軸** で集める。`none` / dd trigger の席は `@engine.selected_none_cells`
-/// がそのまま宣言名軸で返す。`config_file` は engine 側の「値空間の無いセル」ではなく
-/// `Entity.is_config_file` フラグの別軸なので、ここで追加収集する。`binds` は解決済み binding —
-/// 未選択 command scope 配下へ降りないための選択判定に使う (`collect_defaults` と同じ gate)。
+/// がそのまま宣言名軸で返す。`binds` は解決済み binding — 未選択 command scope 配下へ降りない
+/// ための選択判定に使う (`collect_defaults` と同じ gate)。
 fn internal_cells(
   sc : @engine.Scope,
   binds : Array[@abi.Binding],
@@ -1516,40 +1515,7 @@ fn internal_cells(
   for cell in @engine.selected_none_cells(sc, templates, binds) {
     out.push({ path: cell.path(), name: cell.name() })
   }
-  collect_config_file_seats(sc, [], binds, out)
   out
-}
-
-///|
-/// `type: "config_file"` セル (DR-050) の席。`none` と違い engine の `none_cells` には乗らない
-/// (値空間はあり、config provider の解決に使われる) ので、`collect_defaults` と同じ walk で集める。
-/// `path` は宣言名軸。
-fn collect_config_file_seats(
-  sc : @engine.Scope,
-  path : Array[String],
-  binds : Array[@abi.Binding],
-  out : Array[InternalCell],
-) -> Unit {
-  for e in sc.entities {
-    if e.is_config_file {
-      let seat = path.copy()
-      for segment in e.declaring_path {
-        seat.push(segment)
-      }
-      out.push({ path: seat, name: e.name })
-    }
-  }
-  for g in sc.greedy {
-    match g {
-      @engine.CommandSatisfied(name, ordinal, child) => {
-        let child_path = path_push(path, name)
-        if @engine.command_scope_selected(binds, child_path, ordinal) {
-          collect_config_file_seats(child, child_path, binds, out)
-        }
-      }
-      _ => ()
-    }
-  }
 }
 
 ///|
@@ -1658,7 +1624,6 @@ fn collect_defaults(
   for e in sc.entities {
     if e.declaring_path.length() == 0 &&
       e.ty.name() != "none" &&
-      !e.is_config_file &&
       e.accum is None {
       out.push({ path, name: e.name, value: default_scalar(e) })
     }
@@ -4729,6 +4694,21 @@ fn resolve_default_fn(
 }
 
 ///|
+/// DR-050 §5 の循環禁止: config_file 要素のラダーは config 席を持たない — 自分のパスを config
+/// ファイルから引くことはできない。それ以外の要素は畳んだ config オブジェクトを見る。config_file が
+/// 通常の値セルとして同じ解決ループに乗る (DR-135 §1) 一方で席の非対称だけが残る、その差分をここが持つ。
+fn config_seat_for(
+  e : @engine.Entity,
+  config_obj : @abi.ConfigVal?,
+) -> @abi.ConfigVal? {
+  if e.is_config_file {
+    None
+  } else {
+    config_obj
+  }
+}
+
+///|
 /// DR-133 §1 のパス列の 1 本。`committed` は cli / env 明示のパス (§3 — 読込失敗が Error になる)、
 /// `element` はその Error の帰属先になる config_file 要素の宣言名。
 priv struct ConfigPathSupply {
@@ -4885,15 +4865,16 @@ fn read_config_path_list(
 
 ///|
 /// Resolve a scope WITH a config-file value source (DR-050 §5 dependency order):
-///   1. build the DR-133 §1 path list from EVERY config_file element of this scope, in declaration
-///      order (each element resolves its own path down cli > env > default; it has NO config seat,
-///      循環禁止)
+///   1. build the DR-133 §1 path list this scope's config_file element supplies (it resolves its own
+///      path down cli > env > default; it has NO config seat, 循環禁止)
 ///   2. read the provider once per path and fold the readable objects by top-level key replacement
 ///      into the ONE object that sits in the config seat. A committed path (cli/env) that reads None
 ///      is a DR-037/DR-066 Error (指定したのに読めない); a default path reading None is silently
-///      tolerated — the judgement is per path (DR-133 §3), never carried over between elements
-///   3. resolve every (non config_file) entity down cli > env > config > default, using
-///      the config object and each entity's absolute config path (config_key, else 同型 = scope path + name)
+///      tolerated — the judgement is per path (DR-133 §4), never carried over between paths
+///   3. resolve every entity down cli > env > config > default, using the config object and each
+///      entity's absolute config path (config_key, else 同型 = scope path + name). config_file
+///      elements take part as ordinary value cells here too (DR-135 §1 — their path lands in
+///      `result` / `sources`), only their own config seat stays closed (`config_seat_for`)
 /// `provider` is the config_provider stub (path → config object | None). `path` is this scope's
 /// result path (for 同型 correspondence). `at_pos` is the position an Error is reported at.
 fn resolve_scope_config_with_export(
@@ -4929,41 +4910,36 @@ fn resolve_scope_config_with_export(
   let occupied : Array[String] = []
   let option_values : Map[String, @abi.Value] = Map([])
   for e in sc.entities {
-    if !e.is_config_file {
-      let cpath = config_path_of(e, path)
-      match
-        resolve_entity(
-          e,
-          cli,
-          env_map,
-          config_obj,
-          cpath,
-          at_pos,
-          path,
-          tty,
-          extensions,
-          false,
-          firings?,
-        ) {
-        Ok(bs) =>
-          if bs.length() > 0 {
-            supplied.push(e.name)
-            for b in bs {
-              out.push(b)
-              if b.op is @abi.Set {
-                option_values.set(e.name, b.value)
-              }
-            }
-            match ek.exposed_cell(e.name) {
-              Some(key) =>
-                if !str_contains(occupied, key) {
-                  occupied.push(key)
-                }
-              None => ()
+    let cpath = config_path_of(e, path)
+    match
+      resolve_entity(
+        e,
+        cli,
+        env_map,
+        config_seat_for(e, config_obj),
+        cpath,
+        at_pos,
+        path,
+        tty,
+        extensions,
+        false,
+        firings?,
+      ) {
+      Ok(bs) =>
+        if bs.length() > 0 {
+          supplied.push(e.name)
+          for b in bs {
+            out.push(b)
+            if b.op is @abi.Set {
+              option_values.set(e.name, b.value)
             }
           }
-        Err(pe) => return Err(pe)
-      }
+          match ek.exposed_cell(e.name) {
+            Some(key) => if !str_contains(occupied, key) { occupied.push(key) }
+            None => ()
+          }
+        }
+      Err(pe) => return Err(pe)
     }
   }
   if !include_default {
@@ -4975,7 +4951,7 @@ fn resolve_scope_config_with_export(
   // Only the first default that can actually fill an empty cell is admitted; later co-exported
   // defaults see the occupied cell and do not run their value pipeline at all.
   for e in default_order(sc.entities, extensions) {
-    if !e.is_config_file && !str_contains(supplied, e.name) {
+    if !str_contains(supplied, e.name) {
       let exposed = ek.exposed_cell(e.name)
       let cell_empty = match exposed {
         Some(key) => !str_contains(occupied, key)
@@ -5005,7 +4981,7 @@ fn resolve_scope_config_with_export(
             e,
             cli,
             env_map,
-            config_obj,
+            config_seat_for(e, config_obj),
             cpath,
             at_pos,
             path,
