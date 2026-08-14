@@ -3,7 +3,7 @@ title: 同一スコープの同名要素が definition-error にならない (DR
 status: open
 category: bug
 created: 2026-08-12T18:00:00+09:00
-last_read:
+last_read: 2026-08-14T21:13:19+09:00
 open_entered: 2026-08-12T18:00:00+09:00
 wip_entered:
 blocked_entered:
