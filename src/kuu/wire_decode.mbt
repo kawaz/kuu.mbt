@@ -276,6 +276,7 @@ fn opt(
 ) -> @engine.ElementDef {
   {
     name,
+    id: None,
     ty,
     long,
     variants,
@@ -395,6 +396,7 @@ fn pos(
 ) -> @engine.ElementDef {
   {
     name,
+    id: None,
     ty,
     long: List([]),
     variants: [],
@@ -476,6 +478,7 @@ fn dd_marker(
 ) -> @engine.ElementDef {
   {
     name: "--",
+    id: None,
     ty: @builtins.string_type(),
     long: List([]),
     variants: [],
@@ -554,6 +557,7 @@ fn dd_marker(
 fn exact_marker(spelling : String) -> @engine.ElementDef {
   {
     name: spelling,
+    id: None,
     ty: @builtins.none_type(),
     long: List([]),
     variants: [],
@@ -787,6 +791,23 @@ fn jf_str(o : Map[String, Json], key : String) -> String? {
 /// error と同じ語彙 (`raise DecodeSkip`) で reject する。呼び出し側は name/id を読んだ「その場」で
 /// これを通す (missing チェックの直後、他フィールドの decode より前 — 診断が name/id の妥当性で早期
 /// に止まるようにする)。
+/// DR-046 §1/§2: 明示 `id` を読む。未宣言なら `None` — その要素の参照識別子は name が供給する
+/// (`@engine.ElementDef::reference_identifier`)。予約名前空間の検査は name と同じ (DR-067 §2 は
+/// name/id の両方を縛る)。
+fn dec_reference_id(
+  o : Map[String, Json],
+  what : String,
+) -> String? raise DecodeSkip {
+  match jf_str(o, "id") {
+    Some(s) => {
+      check_reserved_name(s, what)
+      Some(s)
+    }
+    None => None
+  }
+}
+
+///|
 fn check_reserved_name(name : String, what : String) -> Unit raise DecodeSkip {
   if name.contains("#") {
     raise DecodeSkip(
@@ -2088,6 +2109,7 @@ fn dec_option(
     None => raise DecodeSkip("option missing 'name'")
   }
   check_reserved_name(name, "option")
+  let element_id = dec_reference_id(o, "option")
   // MDR-004 §2: "or" is shape-detected FIRST — the DR-055 value-enum form ({"exact":...} branches,
   // dec_or, parent name = branch-id フォールバック先) and the structural consumption-grammar form
   // (Or, dec_or_structural) share the same JSON key but are otherwise unrelated (§5.3 values 正規形
@@ -2128,6 +2150,7 @@ fn dec_option(
         required=owned.required,
       ),
       name,
+      id: element_id,
     })
   }
   // DR-061 §3: type shadow lookup — user 定義の type 名なら base type resident + parse 相 config を採用、
@@ -2434,6 +2457,7 @@ fn dec_option(
     separator: sep,
     collector: coll,
     deprecated,
+    id: element_id,
   })
 }
 
@@ -2580,6 +2604,7 @@ fn dec_positional(
     None => raise DecodeSkip("positional missing 'name'")
   }
   check_reserved_name(name, "positional")
+  let element_id = dec_reference_id(o, "positional")
   // DR-061 §3: positional も type shadow を consultation (dec_option と同型)。
   // DR-089 §2: type 省略 = none の糖衣 (旧実装は @builtins.string_type() を勝手にあてる default-typing だった —
   // DR-089 の「採用しなかった案」が明示的に否定するパターン。`ref` 付きの場合はそもそも ty が
@@ -2740,7 +2765,7 @@ fn dec_positional(
   }
   // DR-113 §7.2 / DR-048: 素の on_failure を positional でも受理 (dec_option と対称)。
   let fail_action = bool_field(o, "on_failure", false)
-  pos(
+  let decoded = pos(
     name,
     ty,
     repeat~,
@@ -2777,6 +2802,7 @@ fn dec_positional(
     help_meta=help_meta_with_type,
     fail_action~,
   )
+  { ..decoded, id: element_id }
 }
 
 ///|

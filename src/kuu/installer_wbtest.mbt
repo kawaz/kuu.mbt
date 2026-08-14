@@ -104,6 +104,7 @@ fn el(
 ) -> @engine.ElementDef {
   {
     name,
+    id: None,
     ty,
     long,
     variants: [],

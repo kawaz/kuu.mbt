@@ -119,6 +119,13 @@ pub fn decode_link_path(raw : String) -> LinkPathDecode {
 /// installer (global 等) も引き続き参照できる。Idempotency は add-if-absent が担う。
 pub(all) struct ElementDef {
   name : String
+  // DR-046 §1/§2: the explicit `id` — this element's identity on the reference (ref/link) axis.
+  // `None` means the axis is unsupplied and `name` supplies it (§2), which is why the two are read
+  // through `reference_identifier()` rather than separately. Orthogonal to the name's other two
+  // axes (綴り / 結果キー, DR-120 §4): giving two same-named siblings distinct `id`s separates them
+  // on this axis alone (`fixtures/dd/duplicate-decl.json`), and `collect_duplicate_names` judges
+  // exactly that axis.
+  id : String?
   ty : &TypeExt
   // long installer 所有: wire 二形 (DR-071 §1 — bool | array、"wire には二形とも載る、展開は long
   // installer の解釈"）。糖衣展開 (bool→リスト、DR-076 §2 flag 差し替え/補完) と colon DSL 分類
@@ -358,6 +365,15 @@ pub(all) struct ElementDef {
   // 各自の `ty` を持つ。
   body : ElementBody
 } derive(Eq, Debug)
+
+///|
+/// DR-046 §1/§2: この要素の参照識別子 — 明示 `id` があればその値、無ければ name が供給する。
+pub fn ElementDef::reference_identifier(self : ElementDef) -> String {
+  match self.id {
+    Some(v) => v
+    None => self.name
+  }
+}
 
 ///|
 /// DR-088 §1 の静的 presence。実際の値が供給可能かは探索時に評価せず、値源宣言の有無だけを見る。

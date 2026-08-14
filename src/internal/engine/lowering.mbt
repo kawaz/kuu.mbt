@@ -429,6 +429,7 @@ fn copy_variants(a : Array[Variant]) -> Array[Variant] {
 fn clone_elem(e : ElementDef) -> ElementDef {
   {
     name: e.name,
+    id: e.id,
     ty: e.ty,
     long: copy_long(e.long),
     variants: copy_variants(e.variants),
@@ -3325,6 +3326,7 @@ fn copy_global_into(
   let copy = clone_elem(opt)
   child.definition().options.push({
     name: copy.name,
+    id: copy.id,
     ty: copy.ty,
     long: copy.long,
     variants: copy.variants,
@@ -3761,6 +3763,9 @@ fn alias_entry(
 ) -> ElementDef {
   {
     name: canonical_name, // effect / entity / result key は全て canonical name で keying (link 同型)
+    // 参照識別子も canonical のものへ寄せる (DR-057 §2: alias 入口は実体を持たず canonical へ
+    // 解決する) — 明示 id 軸は canonical 側の宣言だけが持つ。
+    id: None,
     ty,
     // 既に導出済み explicit 綴り列 (`:set` は含まない — normalize/resolve_long の対象外、post-normalize
     // 相当の確定形として直接 List で持つ)。alias entry-copies は fixpoint installer (inst_long 等) が
@@ -7190,6 +7195,95 @@ fn report_command_value_occupancy(
 }
 
 ///|
+/// DR-054 更新5: 同一 lexical スコープ (DR-025 / DR-033) に同じ参照識別子 (DR-046 §1/§2 — 明示 `id`、
+/// 無ければ name) を持つ宣言要素が 2 つ以上あれば definition-error kind=`duplicate-name`。ref / link
+/// の解決先が曖昧になる形そのものであり (DR-006 が name 重複を禁じた根拠のうち、結果キー衝突の側は
+/// DR-120 が `export-key-collision` として引き取っている)、露出キー軸とは独立に破れる — 両軸が同時に
+/// 破れる定義では要素ごとに 2 kind が立つ (DR-054 §4 の全列挙、抑制規則は置かない)。
+///
+/// 参加するのは参照識別子を持つ宣言要素で、値セルの有無や露出キーの占有 (DR-120 §4) は条件でない —
+/// 透過 `config_file` のような非占有要素も参照識別子は持つ。`or` / `seq` の子は親が作る子スコープの
+/// 兄弟として同じ規則で参加する。参加しないもの:
+///
+/// - **command** — name は綴り軸を保ち、相異なる `export_key` を割った同名 command は両立する
+///   (DR-120 §7)。`def.commands` を識別子集合に混ぜず、子スコープとして再帰するだけなのがそれ
+/// - **alias 由来の entry-copy** (`is_alias`) — 入口だけの存在で実体を持たず、canonical の識別子へ
+///   解決する (DR-057 §2/§3)。`AliasDef` の宣言そのものは `def.aliases` に居て options に現れない
+/// - **global の copy** (`link_depth > 0`) — 祖先スコープの宣言の衛星であって、このスコープの
+///   lexical な宣言ではない (DR-042 の copy、`collect_config_file_siblings` と同じ除外)
+/// - **無名要素** (`name == ""` かつ id 無し、= help group 宣言 DR-113 §8.1) — 参照識別子を
+///   持たないので衝突しようがない
+fn collect_duplicate_names(def : Definition, out : Array[DefError]) -> Unit {
+  fn scope(elements : Array[ElementDef]) -> Unit {
+    let participants : Array[ElementDef] = []
+    for e in elements {
+      if e.is_alias || e.link_depth > 0 || e.reference_identifier() == "" {
+        continue
+      }
+      participants.push(e)
+    }
+    let reported : Array[String] = []
+    for e in participants {
+      let identifier = e.reference_identifier()
+      if str_in(reported, identifier) {
+        continue
+      }
+      reported.push(identifier)
+      let mut count = 0
+      for other in participants {
+        if other.reference_identifier() == identifier {
+          count = count + 1
+        }
+      }
+      if count < 2 {
+        continue
+      }
+      // 粒度は DR-054 更新5: 重複に関与する要素ごとに 1 件 (`element` = 当該要素の宣言名)。比較単位が
+      // `(element, kind)` の集合である以上 (DR-082 §1)、代表 1 件にすると相手が expect から読めない。
+      let message = "'" +
+        identifier +
+        "' is declared as the reference identifier of " +
+        count.to_string() +
+        " elements in the same scope"
+      let hint = "rename one of them, or give them different `id` values to separate them on the reference axis"
+      for participant in participants {
+        if participant.reference_identifier() == identifier {
+          out.push(def_err(participant.name, DuplicateName, message, hint))
+        }
+      }
+    }
+    // 構造の子は親が作る子スコープの兄弟同士で判定する (`or` の枝をまたぐ子も 1 つの子スコープ)。
+    for e in participants {
+      match e.body {
+        Or(branches) => {
+          let children : Array[ElementDef] = []
+          for branch in branches {
+            for item in branch.items {
+              children.push(item)
+            }
+          }
+          scope(children)
+        }
+        Group(items) => scope(items)
+        Cell | Enum(_) => ()
+      }
+    }
+  }
+
+  let siblings : Array[ElementDef] = []
+  for e in def.options {
+    siblings.push(e)
+  }
+  for e in def.positionals {
+    siblings.push(e)
+  }
+  scope(siblings)
+  for c in def.commands {
+    collect_duplicate_names(c.body, out)
+  }
+}
+
+///|
 fn report_export_key_collisions(
   seats : Array[ExportSeat],
   out : Array[DefError],
@@ -7290,6 +7384,11 @@ fn lower_definition_snapshot_impl(
   collect_unsupported_link_shape(def, errs)
   collect_type_reference_errors(def, extensions, template_declarations, errs)
   collect_empty_target_errors(def, extensions, errs)
+  // DR-054 更新5: 参照識別子の重複は alias desugar / global copy が始まる前の lexical な宣言面で
+  // 数える。積むのは `export-key-collision` と同じ post-fixpoint の窓 (下の Ok / Err 枝) — 2 軸は
+  // 独立に破れるので、片方が立っても他方の検査まで到達させる必要がある (DR-054 §4 の全列挙)。
+  let duplicate_names : Array[DefError] = []
+  collect_duplicate_names(def, duplicate_names)
   if errs.length() > 0 {
     return Err(errs) // ALL definition-error 列挙
   }
@@ -7315,6 +7414,9 @@ fn lower_definition_snapshot_impl(
     // 同じ面で衝突を数えて 1 つの list に足す。
     Ok(scope) => {
       let validation_errors : Array[DefError] = []
+      for error in duplicate_names {
+        validation_errors.push(error)
+      }
       collect_absent_link(def, extensions, validation_errors)
       let export_scopes = build_export_scopes(
         def, validation_errors, template_declarations,
@@ -7331,6 +7433,9 @@ fn lower_definition_snapshot_impl(
       }
     }
     Err(errors) => {
+      for error in duplicate_names {
+        errors.push(error)
+      }
       collect_absent_link(def, extensions, errors)
       let _ = build_export_scopes(def, errors, template_declarations)
       Err(errors)

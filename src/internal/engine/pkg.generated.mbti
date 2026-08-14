@@ -269,6 +269,7 @@ pub(all) enum ElementBody {
 
 pub(all) struct ElementDef {
   name : String
+  id : String?
   ty : &@extension.TypeExt
   long : @abi.LongDeclaration
   variants : Array[Variant]
@@ -328,6 +329,7 @@ pub(all) struct ElementDef {
   short_attached_value : @abi.AttachMode
   body : ElementBody
 } derive(Eq, @debug.Debug)
+pub fn ElementDef::reference_identifier(Self) -> String
 
 pub(all) struct Entity {
   name : String
