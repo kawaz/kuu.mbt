@@ -1,6 +1,6 @@
 ---
 title: 同一スコープの同名要素が definition-error にならない (DR-006 / DR-003 の name 重複禁止が未実装)
-status: open
+status: resolved
 category: bug
 created: 2026-08-12T18:00:00+09:00
 last_read: 2026-08-14T21:13:19+09:00
@@ -9,10 +9,10 @@ wip_entered:
 blocked_entered:
 pending_entered:
 discarded_entered:
-resolved_entered:
+resolved_entered: 2026-08-14T00:00:00+09:00
 discard_reason:
 pending_reason:
-close_reason:
+close_reason: ["dr/DR-054:implemented","done:spec pin 07d6b6254a61628fedc2d0557471d19cc671e141, just ci decoded=415 ran_cases=936 skipped=0 mismatches=0, Total 737 passed, commit 74610f73"]
 blocked_by:
 origin: 自リポ TODO
 ---
