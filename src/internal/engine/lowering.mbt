@@ -7360,19 +7360,50 @@ fn collect_duplicate_ids(def : Definition, out : Array[DefError]) -> Unit {
     }
   }
 
-  let participants : Array[(String, String)] = []
-  collect_scope_participants(def.options, participants)
-  collect_scope_participants(def.positionals, participants)
-  for command in def.commands {
-    let identifier = command.name
-    if identifier != "" {
-      participants.push((identifier, identifier))
+  // command も「解決後の結果キー軸を占有するか」でスコープを作るか決まる (DR-025 / DR-033
+  // TRG-Q4=a) — 綴り軸で子 command に入場することと、名前がスコープを作ることは別の軸である。
+  // `export_key: null` の透過 command は子 lexical scope を作らず、その named 子は囲みスコープの
+  // 兄弟として同じ id 集合に参加する (`{name, export_key:null}` の or/group が透けるのと同型)。
+  // command 自身は id 軸の住人なので、透過でも囲みスコープへ参加する (id 軸と結果キー軸は独立)。
+  // パース経路 (トリガ照合・入場・背骨) はこの判定に一切関与しない。
+  // 透過 command の内側にある占有 command は自分の scope を持つので、走査しながら集めて
+  // おき、この scope の report が終わってから各自の scope として再帰する (透過が何段
+  // 連なっても取りこぼさない)。
+  fn collect_command_participants(
+    commands : Array[CommandDef],
+    participants : Array[(String, String)],
+    occupying : Array[CommandDef],
+  ) -> Unit {
+    for command in commands {
+      let identifier = command.name
+      if identifier != "" {
+        participants.push((identifier, identifier))
+      }
+      if resolved_export_key(command.name, command.export_key) is Some(_) {
+        occupying.push(command)
+        continue
+      }
+      collect_scope_participants(command.body.options, participants)
+      collect_scope_participants(command.body.positionals, participants)
+      collect_command_participants(
+        command.body.commands,
+        participants,
+        occupying,
+      )
     }
   }
+
+  let participants : Array[(String, String)] = []
+  let occupying_commands : Array[CommandDef] = []
+  collect_scope_participants(def.options, participants)
+  collect_scope_participants(def.positionals, participants)
+  collect_command_participants(def.commands, participants, occupying_commands)
   report(participants)
 
-  // command は常に子 lexical scope を作る。trigger name が同じでも各 command body は混ぜない。
-  for command in def.commands {
+  // 結果キー軸を占有する command だけが自分の lexical scope を持つ。trigger name が同じでも
+  // 各 command body は混ぜない。透過 command の body は上で囲みスコープへ畳み込み済みだが、
+  // その内側にある占有 command は自分の scope を持つので、ここで再帰の入口を与える。
+  for command in occupying_commands {
     collect_duplicate_ids(command.body, out)
   }
 }

@@ -938,13 +938,16 @@ test "同名 transparent command も宣言 ordinal で選択枝を resolve す�
   let src =
     #|{"commands":[
     #| {"name":"go","id":"go1","export_key":null,"options":[
-    #|  {"name":"tr","export_key":"tr1","type":"trange","long":true},
-    #|  {"name":"until","type":"string","long":true,"link":"tr.until"}]},
+    #|  {"name":"tr","id":"tr1","export_key":"tr1","type":"trange","long":true},
+    #|  {"name":"until","id":"until1","type":"string","long":true,"link":"tr1.until"}]},
     #| {"name":"go","id":"go2","export_key":null,"options":[
-    #|  {"name":"tr","export_key":"tr2","type":"number","long":true}]}]}
+    #|  {"name":"tr","id":"tr2","export_key":"tr2","type":"number","long":true}]}]}
   assert_eq(
     seat_view(src, ["go", "--until", "5"]),
-    "result={tr1={since=null,until=5}} sources={tr1={since=null,until=link}} effects=tr.until",
+    // DR-025 / DR-033 (TRG-Q4=a): 透過 command は lexical scope を作らないので、2 つの
+    // `go` の子は root の兄弟になる。同名 `tr` を併存させるには id 軸で分ける必要があり、
+    // link の目的語も id 軸で書く (effects の entity path も id 軸で綴られる)。
+    "result={tr1={since=null,until=5}} sources={tr1={since=null,until=link}} effects=tr1.until",
   )
 }
 
