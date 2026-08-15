@@ -1,6 +1,6 @@
 ---
 title: ローカル just ci に mbti drift チェックを追加する
-status: open
+status: resolved
 category: task
 created: 2026-08-16T01:31:04+09:00
 last_read:
@@ -9,10 +9,10 @@ wip_entered:
 blocked_entered:
 pending_entered:
 discarded_entered:
-resolved_entered:
+resolved_entered: 2026-08-16T01:57:49+09:00
 discard_reason:
 pending_reason:
-close_reason:
+close_reason: ["done:kuu.mbt commit f82170c1 (justfile mbti-check recipe — CI と同一の6パッケージで moon info 実行、drift あり→diff表示+exit 1+mbti復元、ci depsに配線。基準線は再生成前の作業コピーvs再生成結果。v0.1.2でCI green)"]
 blocked_by:
 origin: kuu (spec リポ、クロスプロジェクト起票)
 ---
