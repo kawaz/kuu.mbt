@@ -65,3 +65,25 @@ duplicate-name 実装 (DR-054 更新 5) サイクルでの自己申告。統括�
 ## 追記 (2026-08-15 その2): 解決は共通 resolver に一元化する (kawaz 指示)
 
 DR-136 §6 の 2 段ルックアップ (①raw 一致 → ②参照文字列に当該軸の文字写像を掛けて照合、スコープ近接 > 一致方式) は、id 軸を参照する全属性 (`ref` / `link` / `borrow` / `requires` / `conflicts_with` 等の制約属性 / link 固定パス DSL のキー部) が同じ規則を使う。**各呼び出し箇所で個別に実装せず、単一の共通 resolver 関数に一元化すること** (kawaz 2026-08-15: 「各所で実装するとアホなので共通化」)。個別実装は写像適用の有無・段の順序・スコープ辿りが箇所ごとにずれるバグの温床になる。
+
+## 追記 (2026-08-16): 共通 resolver を新設、link 経路まで載せ替え済み
+
+DR-136 実装追随サイクルで以下まで完了 (conformance 417/0 mismatch、全 738 tests green):
+
+- `src/internal/engine/axis_reference.mbt` 新設 — `resolve_axis_reference` /
+  `resolve_id_reference` が DR-136 §6 の 2 段ルックアップ (①raw → ②当該軸の写像後、
+  段は候補列全体で切り替える) の唯一の実装
+- `resolve_link_path` の root 解決と `named_structural_child` (固定パス DSL のキー部) を
+  この resolver 経由へ。照合軸は宣言名から `reference_identifier()` (明示 id or name の
+  id 軸写像後) に移った
+
+### 未着手と、その理由 (spec 裁定待ち)
+
+`requires` / `conflicts_with` / `exclusive_group` / `required_group` / `borrow` / `ref` は
+resolver へ載せていない。**`Constraint::Requires(elem, targets)` の第 1 フィールドが
+「committed 判定の entity キー」と「errors[].element」を兼ねている**ためで、DR-136 裁定 4
+(element = 参照識別子) と現行の entity keying (宣言名) を同時に満たすには、
+`RequiresIf(entity, branch_id, ...)` と同じ形へ 2 軸に割る設計判断が要る。これは本 issue の
+受け入れ条件 2 番目 (entity / binding の keying をどうするか) そのもので、
+実測 3 の「同名 + id 分離へ name 参照すると黙って片方へ潰れる」の扱いと同じ裁定に属する。
+現状 fixture の coverage も無いため、裁定前に実装を進めると発明になる。
