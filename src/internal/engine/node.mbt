@@ -431,7 +431,10 @@ pub(all) enum Node {
   /// entry, 先食い (greedy-only) keeps `--` from being raw-eaten; when it fires the
   /// spine walk switches to "severed" mode (greedy off) for the rest — the sever is
   /// the "greedy internal consumption is 一体" rule, not a dd special case.
-  DdSatisfied(String)
+  /// Fields are `(trigger spelling = element name, reference identifier)`. DR-136 裁定 4: the
+  /// completion `origin` is the reference-identifier axis (explicit `id`, else the name's id-axis
+  /// map), while the trigger and the committed placeholder binding stay on the name axis.
+  DdSatisfied(String, String)
   /// DR-090: the 2-axis generalization of `DdSatisfied` — a SEPARATE variant (not `DdSatisfied`'s own
   /// arity extended) to keep every existing `DdSatisfied("--")` hand-construction (wbtest files,
   /// installer's canonical exact-dd path) untouched; the installer only ever emits THIS
@@ -449,7 +452,7 @@ pub(all) enum Node {
   ///   this is that axis, made concrete). Used ONLY to key the committed-observation binding
   ///   the firing arm produces (mirrors `DdSatisfied`'s own trigger-string-as-name shortcut, which only
   ///   works there because `DdSatisfied` never decouples spelling from name). Never used for matching.
-  DdMatchSatisfied(String, Bool, Bool, String)
+  DdMatchSatisfied(String, Bool, Bool, String, String)
   /// command satellite (DR-018 / DR-041 §4). Fields are `(trigger spelling, name, same-name
   /// declaration ordinal, child scope)`. DR-136 §1/§2 separates the two string axes: the matcher
   /// uses the **trigger spelling** (explicit `trigger_name`, else the name's trigger-axis map),
@@ -528,9 +531,9 @@ pub impl Eq for Node with fn equal(self, other) {
     (NativeMatch(a), NativeMatch(b)) => a == b
     (Ext(a), Ext(b)) => a.equal(b)
     (Ref(a), Ref(b)) => a == b
-    (DdSatisfied(a), DdSatisfied(b)) => a == b
-    (DdMatchSatisfied(as_, ap, ak, an), DdMatchSatisfied(bs, bp, bk, bn)) =>
-      as_ == bs && ap == bp && ak == bk && an == bn
+    (DdSatisfied(a, ao), DdSatisfied(b, bo)) => a == b && ao == bo
+    (DdMatchSatisfied(as_, ap, ak, an, ao), DdMatchSatisfied(bs, bp, bk, bn, bo)
+    ) => as_ == bs && ap == bp && ak == bk && an == bn && ao == bo
     (CommandSatisfied(at, an, ai, ac), CommandSatisfied(bt, bn, bi, bc)) =>
       at == bt && an == bn && ai == bi && ac == bc
     (
@@ -595,14 +598,18 @@ pub impl Debug for Node with fn to_repr(self) {
         (None, Debug::to_repr(extension.encode())),
       ])
     Ref(a) => @debug.Repr::ctor("Ref", [(None, Debug::to_repr(a))])
-    DdSatisfied(a) =>
-      @debug.Repr::ctor("DdSatisfied", [(None, Debug::to_repr(a))])
-    DdMatchSatisfied(a, b, c, d) =>
+    DdSatisfied(a, origin) =>
+      @debug.Repr::ctor("DdSatisfied", [
+        (None, Debug::to_repr(a)),
+        (None, Debug::to_repr(origin)),
+      ])
+    DdMatchSatisfied(a, b, c, d, origin) =>
       @debug.Repr::ctor("DdMatchSatisfied", [
         (None, Debug::to_repr(a)),
         (None, Debug::to_repr(b)),
         (None, Debug::to_repr(c)),
         (None, Debug::to_repr(d)),
+        (None, Debug::to_repr(origin)),
       ])
     CommandSatisfied(trigger, a, ordinal, b) =>
       @debug.Repr::ctor("CommandSatisfied", [

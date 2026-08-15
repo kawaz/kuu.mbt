@@ -481,11 +481,11 @@ test "lowering matcher projection reads encode, not completion candidate policy"
 ///|
 fn proj_greedy(node : @engine.Node, reg : Map[String, @engine.Node]) -> GItem {
   match node {
-    @engine.DdSatisfied(name) => GExact(name)
+    @engine.DdSatisfied(name, _) => GExact(name)
     // DR-090: no golden lowering fixture exercises this yet (spec fixtures for DR-090 are
     // "query":"parse"輪郭, not lowering shape comparisons) — minimal, informative encoding via
     // the existing GMatch shape rather than inventing a new GItem variant for an untested path.
-    @engine.DdMatchSatisfied(spelling, is_pattern, self_keep, _) =>
+    @engine.DdMatchSatisfied(spelling, is_pattern, self_keep, _, _) =>
       GMatch("dd_match:" + (if self_keep { "keep" } else { "drop" }), [
         (spelling, if is_pattern { "pattern" } else { "exact" }),
       ])

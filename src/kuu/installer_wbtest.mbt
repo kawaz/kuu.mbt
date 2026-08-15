@@ -896,10 +896,10 @@ test "dd installer: options[] placement lowers to same @engine.DdSatisfied with 
     options: [el("--", @builtins.string_type(), is_dd=true)],
   }
   let sc = ok_scope(def, all_installers())
-  // @engine.DdSatisfied("--") が greedy に 1 本、entity は 0 個 (dd は値なし)
+  // @engine.DdSatisfied("--", "--") が greedy に 1 本、entity は 0 個 (dd は値なし)
   let mut has_dd = false
   for g in sc.greedy {
-    if g == @engine.DdSatisfied("--") {
+    if g == @engine.DdSatisfied("--", "--") {
       has_dd = true
     }
   }

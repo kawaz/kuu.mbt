@@ -3227,11 +3227,25 @@ fn inst_dd(def : Definition, build : InstallOutput) -> Unit {
   // `dd_match` の pattern を spelling に使う)。
   fn dd_node(e : ElementDef) -> Node {
     if e.dd_match is None && !e.dd_self_keep {
-      DdSatisfied(e.name)
+      DdSatisfied(e.name, e.reference_identifier())
     } else {
       match e.dd_match {
-        Some(pattern) => DdMatchSatisfied(pattern, true, e.dd_self_keep, e.name)
-        None => DdMatchSatisfied(e.name, false, e.dd_self_keep, e.name)
+        Some(pattern) =>
+          DdMatchSatisfied(
+            pattern,
+            true,
+            e.dd_self_keep,
+            e.name,
+            e.reference_identifier(),
+          )
+        None =>
+          DdMatchSatisfied(
+            e.name,
+            false,
+            e.dd_self_keep,
+            e.name,
+            e.reference_identifier(),
+          )
       }
     }
   }
@@ -3594,7 +3608,12 @@ fn inst_constraint(
     if e.required {
       // DR-093 §1/§2: required:true の要素自身を対象にした Required を 1 個登録。候補セル解決は
       // `required_candidates` (RequiredGroup と共有)。
-      add_constraint(build, Required(e.name, required_candidates(e, registry)))
+      // display (= errors[].element) は参照識別子軸 (DR-136 裁定 4)。候補セルの解決は
+      // entity 名軸のままなので `required_candidates` は e.name 由来を保つ。
+      add_constraint(
+        build,
+        Required(e.reference_identifier(), required_candidates(e, registry)),
+      )
     }
     for vr in e.value_requires {
       // DR-055 §1 / DR-052 §値枝 id 直交: 4-tuple = (entity, branch_id, value, targets)。entity は
@@ -4359,11 +4378,11 @@ fn head_progresses(
     RequiredArgument(_)
     | Exact(_)
     | NativeMatch(_)
-    | DdSatisfied(_)
+    | DdSatisfied(_, _)
     | CommandSatisfied(_, _, _, _) => true
     // DR-090: progress depends on `self_keep` — `drop` (false) consumes 1 token like `DdSatisfied`,
     // `keep` (true) is a 0-token Accept (same standing as `Bind`/`effect resident` below).
-    DdMatchSatisfied(_, _, self_keep, _) => !self_keep
+    DdMatchSatisfied(_, _, self_keep, _, _) => !self_keep
     Ext(extension) => !extension.consumes_zero_tokens()
     IndexedRepeat(_, _, _, _) => true // 名前付き indexed repeat は head を消費
     BoundedTail(head, budget, _) =>

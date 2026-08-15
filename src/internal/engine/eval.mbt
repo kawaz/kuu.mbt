@@ -482,7 +482,7 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
         Some(tpl) => eval(tpl, ctx, pos)
         None => []
       }
-    DdSatisfied(trigger) =>
+    DdSatisfied(trigger, origin) =>
       if pos < ctx.toks.length() && ctx.toks[pos] == trigger {
         // DR-093 §2/§7: step_greedy の同アームと同じ committed placeholder binding (off-spine
         // evaluation はこの1本の Branch の bindings を返すだけ — 呼び出し元が outer acc と cat する)。
@@ -492,7 +492,7 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
           ]),
         ]
       } else if pos >= ctx.toks.length() && in_complete(ctx) {
-        [Pending([Candidate::trigger(trigger, trigger, "flag", WordEnd)], [])]
+        [Pending([Candidate::trigger(trigger, origin, "flag", WordEnd)], [])]
       } else {
         []
       }
@@ -500,7 +500,7 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
     // self_keep's 0-token Accept. Off-spine evaluation never threads `severed` (that's the SPINE
     // walk's job, `step_greedy`'s own DdMatchSatisfied arm below) — this arm only answers "does this
     // node accept here", same degenerate scope `DdSatisfied`'s off-spine arm already has.
-    DdMatchSatisfied(spelling, is_pattern, self_keep, elem_name) =>
+    DdMatchSatisfied(spelling, is_pattern, self_keep, elem_name, origin) =>
       if pos < ctx.toks.length() &&
         dd_match_token(spelling, is_pattern, ctx.toks[pos]) {
         // DR-093 §2/§7: same committed placeholder as the DdSatisfied arm above, keyed by `elem_name`.
@@ -515,9 +515,7 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
         // pattern has no single "next token to type" to surface as a candidate).
         // DR-104 §2 origin = 由来要素名: `elem_name` (DR-090 §2, spelling と独立の同一性軸), NOT
         // `spelling` (a `match` trigger's regex-derived literal is not the element's name).
-        [
-          Pending([Candidate::trigger(spelling, elem_name, "flag", WordEnd)], []),
-        ]
+        [Pending([Candidate::trigger(spelling, origin, "flag", WordEnd)], [])]
       } else {
         []
       }
@@ -1644,7 +1642,7 @@ fn eval_greedy_with_downstream(
           Pending([Candidate::trigger(name, name, "flag", WordEnd)], acc),
         )
       }
-    DdSatisfied(trigger) =>
+    DdSatisfied(trigger, origin) =>
       if pos < ctx.toks.length() && ctx.toks[pos] == trigger {
         let acc2 = acc +
           [Binding::new(trigger, Bool(true), Cli, at_pos=Some(pos))]
@@ -1665,10 +1663,10 @@ fn eval_greedy_with_downstream(
         }
       } else if pos >= ctx.toks.length() && in_complete(ctx) {
         out.push(
-          Pending([Candidate::trigger(trigger, trigger, "flag", WordEnd)], acc),
+          Pending([Candidate::trigger(trigger, origin, "flag", WordEnd)], acc),
         )
       }
-    DdMatchSatisfied(spelling, is_pattern, self_keep, elem_name) =>
+    DdMatchSatisfied(spelling, is_pattern, self_keep, elem_name, origin) =>
       if pos < ctx.toks.length() &&
         dd_match_token(spelling, is_pattern, ctx.toks[pos]) {
         let resume_pos = if self_keep { pos } else { pos + 1 }
@@ -1683,10 +1681,7 @@ fn eval_greedy_with_downstream(
         }
       } else if pos >= ctx.toks.length() && in_complete(ctx) && !is_pattern {
         out.push(
-          Pending(
-            [Candidate::trigger(spelling, elem_name, "flag", WordEnd)],
-            acc,
-          ),
+          Pending([Candidate::trigger(spelling, origin, "flag", WordEnd)], acc),
         )
       }
     Or(alternatives) =>
@@ -2612,8 +2607,8 @@ fn greedy_engages(g : Node, ctx : Ctx, pos : Int) -> Bool {
       false
     }
     CommandSatisfied(trigger, _, _, _) => ctx.toks[pos] == trigger
-    DdSatisfied(t) => ctx.toks[pos] == t
-    DdMatchSatisfied(spelling, is_pattern, _, _) =>
+    DdSatisfied(t, _) => ctx.toks[pos] == t
+    DdMatchSatisfied(spelling, is_pattern, _, _, _) =>
       dd_match_token(spelling, is_pattern, ctx.toks[pos])
     LinkTarget(_, _, _, _, _, _, _, _, _, inner) =>
       greedy_engages(inner, ctx, pos)
@@ -2668,8 +2663,8 @@ fn greedy_trigger_matches(g : Node, ctx : Ctx, pos : Int) -> Bool {
       false
     }
     CommandSatisfied(trigger, _, _, _) => ctx.toks[pos] == trigger
-    DdSatisfied(t) => ctx.toks[pos] == t
-    DdMatchSatisfied(spelling, is_pattern, _, _) =>
+    DdSatisfied(t, _) => ctx.toks[pos] == t
+    DdMatchSatisfied(spelling, is_pattern, _, _, _) =>
       dd_match_token(spelling, is_pattern, ctx.toks[pos])
     NativeMatch(m) => run_matcher(m, ctx, pos).length() > 0
     LinkTarget(_, _, _, _, _, _, _, _, _, inner) =>
@@ -3070,7 +3065,7 @@ fn step_greedy(
           Pending([Candidate::trigger(name, name, "flag", WordEnd)], acc),
         )
       }
-    DdSatisfied(trigger) =>
+    DdSatisfied(trigger, origin) =>
       if pos < ctx.toks.length() && ctx.toks[pos] == trigger {
         // DR-093 §2/§7: fire を committed として観測可能にする placeholder binding
         // (`flag_bare_true_variant` と同型の `Set Bool(true)`、`NoneCell`/`none_cells` が
@@ -3084,7 +3079,7 @@ fn step_greedy(
         }
       } else if pos >= ctx.toks.length() && in_complete(ctx) {
         out.push(
-          Pending([Candidate::trigger(trigger, trigger, "flag", WordEnd)], acc),
+          Pending([Candidate::trigger(trigger, origin, "flag", WordEnd)], acc),
         )
       }
     // DR-090 §1/§2: generalized dd. `severed=true` is unconditional here exactly like `DdSatisfied`
@@ -3093,7 +3088,7 @@ fn step_greedy(
     // triggering token (`pos + 1`, same as `DdSatisfied`); `true` (keep) resumes at the SAME `pos` —
     // the triggering token itself is never consumed here, so it flows into the positional face
     // (now severed = raw) starting with itself, matching §2's "自身を含めて以降が positional 域".
-    DdMatchSatisfied(spelling, is_pattern, self_keep, elem_name) =>
+    DdMatchSatisfied(spelling, is_pattern, self_keep, elem_name, origin) =>
       if pos < ctx.toks.length() &&
         dd_match_token(spelling, is_pattern, ctx.toks[pos]) {
         let resume_pos = if self_keep { pos } else { pos + 1 }
@@ -3110,10 +3105,7 @@ fn step_greedy(
         // identical rationale) — a pattern trigger has no single "next token to type".
         // DR-104 §2 origin = 由来要素名: `elem_name`, mirroring the off-spine arm's fix above.
         out.push(
-          Pending(
-            [Candidate::trigger(spelling, elem_name, "flag", WordEnd)],
-            acc,
-          ),
+          Pending([Candidate::trigger(spelling, origin, "flag", WordEnd)], acc),
         )
       }
     Or(alts) =>

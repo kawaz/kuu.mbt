@@ -692,7 +692,7 @@ test "ScopeNode downstream: dd sever propagates into the outer scope" {
   // A dd fired in the inner companion scope raw-ifies the entire continuation. The outer -x spelling
   // must therefore be consumed as positional data rather than re-fired as a greedy flag.
   let child : Scope = {
-    greedy: [DdSatisfied("--")],
+    greedy: [DdSatisfied("--", "--")],
     positional: [],
     entities: [],
     constraints: [],

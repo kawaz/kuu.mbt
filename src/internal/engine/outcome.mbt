@@ -287,10 +287,10 @@ fn tried_triggers_in_greedy(g : Node, out : Array[String]) -> Unit {
           _ => ()
         }
       }
-    DdSatisfied(s) => out.push(s)
+    DdSatisfied(s, _) => out.push(s)
     // DR-090: only an EXACT dd trigger is a "tried spelling" a user could type (same rationale
     // as the eval.mbt Pending arms — a regex pattern has no single literal candidate to surface).
-    DdMatchSatisfied(spelling, is_pattern, _, _) =>
+    DdMatchSatisfied(spelling, is_pattern, _, _, _) =>
       if !is_pattern {
         out.push(spelling)
       }

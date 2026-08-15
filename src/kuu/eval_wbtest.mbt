@@ -216,7 +216,7 @@ test "dd sever: past `--`, a trigger-looking token falls raw into the positional
   let root : @engine.Scope = {
     greedy: [
       @engine.Seq([@engine.Exact("--v"), @engine.Bind("v", @abi.Bool(true))]),
-      @engine.DdSatisfied("--"),
+      @engine.DdSatisfied("--", "--"),
     ],
     positional: [@builtins.string_arg("x", [])],
     entities: [],
@@ -247,7 +247,7 @@ test "dd sever: past `--`, a trigger-looking token falls raw into the positional
 ///|
 test "REGRESSION dd continuation stays raw after returning from a command scope" {
   let child : @engine.Scope = {
-    greedy: [@engine.DdSatisfied("--")],
+    greedy: [@engine.DdSatisfied("--", "--")],
     positional: [
       @builtins.string_arg("definition", []),
       @engine.Many(@builtins.string_arg("args", []), false),
@@ -297,7 +297,9 @@ test "REGRESSION dd continuation stays raw after returning from a command scope"
 ///|
 test "REGRESSION pattern dd self-keep severs its command continuation" {
   let child : @engine.Scope = {
-    greedy: [@engine.DdMatchSatisfied("^run$", true, true, "utility")],
+    greedy: [
+      @engine.DdMatchSatisfied("^run$", true, true, "utility", "utility"),
+    ],
     positional: [
       @builtins.string_arg("definition", []),
       @engine.Many(@builtins.string_arg("args", []), false),
@@ -583,7 +585,7 @@ test "REVIEW-C4 non-scope root: residual of a partial @abi.Accept surfaces even 
 
 ///|
 test "REGRESSION dd sever transparent to positional inline @engine.ScopeNode child (DR-041 dashdash)" {
-  // deep-review R4a: root's @engine.DdSatisfied("--") fires; the positional walk then
+  // deep-review R4a: root's @engine.DdSatisfied("--", "--") fires; the positional walk then
   // enters a @engine.ScopeNode child; without the sever pass-through the child's
   // greedy face resurrects and reads "-x" as the child's -x option
   // (@engine.Success x=true, a="w"). Spec DR-041/042 ⑤: dd's continuation is raw
@@ -599,7 +601,7 @@ test "REGRESSION dd sever transparent to positional inline @engine.ScopeNode chi
     constraints: [],
   }
   let root : @engine.Scope = {
-    greedy: [@engine.DdSatisfied("--")],
+    greedy: [@engine.DdSatisfied("--", "--")],
     positional: [@engine.ScopeNode(child)],
     entities: [],
     constraints: [],
