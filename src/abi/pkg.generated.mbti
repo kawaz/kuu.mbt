@@ -370,6 +370,7 @@ pub(all) enum ValueType {
   Array(ValueType)
   Map(ValueType)
   Record(Array[(String, String)])
+  Tuple(Array[String])
   Union(Array[ValueType])
 } derive(Eq, @debug.Debug)
 pub fn ValueType::declaration_violations(Self) -> Array[String]

@@ -31,9 +31,15 @@ pub fn dispatch_help_query(AtomicAST, path? : Array[String], depth? : HelpDepth,
 
 pub fn env_from_map(Map[String, String]) -> (String) -> String?
 
+pub fn fixture_color_type() -> &@extension.TypeExt
+
 pub fn fixture_int_range_type() -> &@extension.TypeExt
 
 pub fn fixture_json_type() -> &@extension.TypeExt
+
+pub fn fixture_pair_type() -> &@extension.TypeExt
+
+pub fn fixture_shape_type() -> &@extension.TypeExt
 
 pub fn generate_completion_script(String, program_name~ : String, binary~ : String, uuid~ : String) -> Result[String, CompletionScriptError]
 
