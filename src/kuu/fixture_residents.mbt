@@ -165,6 +165,132 @@ pub fn fixture_json_type() -> &@extension.TypeExt {
 }
 
 ///|
+priv struct FixtureColorType {}
+
+///|
+impl @extension.TypeExt for FixtureColorType with fn name(_self) {
+  "fixture/color"
+}
+
+///|
+impl @extension.TypeExt for FixtureColorType with fn has_value_slot(_self) {
+  true
+}
+
+///|
+impl @extension.TypeExt for FixtureColorType with fn output_type(_self) {
+  Some(
+    @abi.ValueType::Union([
+      @abi.ValueType::Tuple(["int", "int", "int"]),
+      @abi.ValueType::String,
+    ]),
+  )
+}
+
+///|
+impl @extension.TypeExt for FixtureColorType with fn parse_token(_self, token) {
+  Ok(@abi.String(token))
+}
+
+///|
+impl @extension.TypeExt for FixtureColorType with fn default_seat_resolver(
+  _self,
+  ctx,
+) {
+  ctx.declared()
+}
+
+///|
+pub fn fixture_color_type() -> &@extension.TypeExt {
+  FixtureColorType::{  } as &@extension.TypeExt
+}
+
+///|
+priv struct FixtureShapeType {}
+
+///|
+impl @extension.TypeExt for FixtureShapeType with fn name(_self) {
+  "fixture/shape"
+}
+
+///|
+impl @extension.TypeExt for FixtureShapeType with fn has_value_slot(_self) {
+  true
+}
+
+///|
+impl @extension.TypeExt for FixtureShapeType with fn output_type(_self) {
+  Some(
+    @abi.ValueType::Union([
+      @abi.ValueType::Record([("a", "int")]),
+      @abi.ValueType::Record([("a", "int"), ("b", "int")]),
+    ]),
+  )
+}
+
+///|
+impl @extension.TypeExt for FixtureShapeType with fn parse_token(_self, token) {
+  Err({
+    disposition: @abi.ValueSpaceMiss,
+    reason: "not_a_shape",
+    message: "value \"\{token}\" is not a shape",
+  })
+}
+
+///|
+impl @extension.TypeExt for FixtureShapeType with fn default_seat_resolver(
+  _self,
+  ctx,
+) {
+  ctx.declared()
+}
+
+///|
+pub fn fixture_shape_type() -> &@extension.TypeExt {
+  FixtureShapeType::{  } as &@extension.TypeExt
+}
+
+///|
+priv struct FixturePairType {}
+
+///|
+impl @extension.TypeExt for FixturePairType with fn name(_self) {
+  "fixture/pair"
+}
+
+///|
+impl @extension.TypeExt for FixturePairType with fn has_value_slot(_self) {
+  true
+}
+
+///|
+impl @extension.TypeExt for FixturePairType with fn output_type(_self) {
+  Some(@abi.ValueType::Tuple(["int", "int"]))
+}
+
+///|
+impl @extension.TypeExt for FixturePairType with fn parse_token(_self, token) {
+  Err({
+    disposition: @abi.ValueSpaceMiss,
+    reason: "not_a_pair",
+    message: "value \"\{token}\" is not a pair",
+  })
+}
+
+///|
+impl @extension.TypeExt for FixturePairType with fn default_seat_resolver(
+  _self,
+  ctx,
+) {
+  ctx.declared()
+}
+
+///|
+pub fn fixture_pair_type() -> &@extension.TypeExt {
+  FixturePairType::{  } as &@extension.TypeExt
+}
+
+///|
 /// Registers the `fixture/*` residents into a registry for a conformance run (DR-132 §1:
 /// the runner contract requires `fixture/*` to resolve in the conformance execution
 /// context only). Call after `install_canonical` when assembling a conformance registry.
@@ -174,5 +300,14 @@ pub fn install_conformance_fixture_residents(registry : @node.Registry) -> Unit 
   }
   guard registry.register_type(fixture_json_type()) else {
     abort("duplicate fixture type resident name: fixture/json")
+  }
+  guard registry.register_type(fixture_color_type()) else {
+    abort("duplicate fixture type resident name: fixture/color")
+  }
+  guard registry.register_type(fixture_shape_type()) else {
+    abort("duplicate fixture type resident name: fixture/shape")
+  }
+  guard registry.register_type(fixture_pair_type()) else {
+    abort("duplicate fixture type resident name: fixture/pair")
   }
 }

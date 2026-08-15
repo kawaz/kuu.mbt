@@ -11,6 +11,7 @@ pub(all) enum ValueType {
   Array(ValueType)
   Map(ValueType)
   Record(Array[(String, String)])
+  Tuple(Array[String])
   Union(Array[ValueType])
 } derive(Eq, Debug)
 
@@ -84,6 +85,28 @@ fn value_type_violations(
           )
         }
       }
+    Tuple(items) => {
+      if items.length() < 2 {
+        out.push(
+          "tuple has " +
+          items.length().to_string() +
+          " item (needs 2+) at " +
+          path,
+        )
+      }
+      for index, reference in items {
+        if !valid_type_reference(reference) {
+          out.push(
+            "tuple item " +
+            index.to_string() +
+            " has invalid type reference '" +
+            reference +
+            "' at " +
+            path,
+          )
+        }
+      }
+    }
     Union(members) => {
       if members.length() < 2 {
         out.push(

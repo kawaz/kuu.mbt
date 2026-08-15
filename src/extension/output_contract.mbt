@@ -39,6 +39,7 @@ fn value_type_name(value_type : @abi.ValueType) -> String {
     Array(_) => "array"
     Map(_) => "map"
     Record(_) => "record"
+    Tuple(_) => "tuple"
     Union(_) => "union"
   }
 }
@@ -158,6 +159,41 @@ fn value_type_breach(
     Record(fields) =>
       match value {
         @abi.Object(entries) => record_breach(entries, fields, path, extensions)
+        _ => mismatch
+      }
+    Tuple(references) =>
+      match value {
+        @abi.Array(items) => {
+          if items.length() != references.length() {
+            return mismatch
+          }
+          for index, item in items {
+            if item is @abi.Null {
+              return mismatch
+            }
+            match extensions.resolve_type_reference(references[index]) {
+              None => ()
+              Some(resident) =>
+                match resident.output_type() {
+                  None => ()
+                  Some(nested) =>
+                    match
+                      value_type_breach(
+                        item,
+                        nested,
+                        path + "[" + index.to_string() + "]",
+                        extensions,
+                      ) {
+                      Some(Shape(where_, detail)) =>
+                        return Some(FieldType(where_, detail))
+                      Some(breach) => return Some(breach)
+                      None => ()
+                    }
+                }
+            }
+          }
+          None
+        }
         _ => mismatch
       }
     Union(members) => {

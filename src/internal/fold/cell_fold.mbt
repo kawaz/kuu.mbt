@@ -336,6 +336,28 @@ fn declared_field_reference(
 }
 
 ///|
+/// 宣言 ValueType の tuple 段から、固定位置の type 参照を引く。
+fn declared_tuple_reference(declared : @abi.ValueType, index : Int) -> String? {
+  match declared {
+    @abi.ValueType::Tuple(references) =>
+      match normalized_index(index, references.length()) {
+        Some(resolved) => Some(references[resolved])
+        None => None
+      }
+    _ => None
+  }
+}
+
+///|
+/// tuple の固定アリティと type 参照を返す。単相 tuple の器生成にだけ使う。
+fn declared_tuple_references(declared : @abi.ValueType?) -> Array[String]? {
+  match declared {
+    Some(@abi.ValueType::Tuple(references)) => Some(references)
+    _ => None
+  }
+}
+
+///|
 /// 宣言 ValueType を値空間残余 segment 列で降りたときの「その段の宣言型」。record フィールドは
 /// type 参照ホップ (DR-126 §1) を挟むので registry を引く。辿れない段があれば `None`
 /// (= 静的検査 (W2-6) を通過した routed パスでは起きない構造だが、防御として握りつぶさず None)。
@@ -354,6 +376,20 @@ fn declared_type_at(
               match registry.resolve_type_reference(reference) {
                 Some(resident) =>
                   declared_type_at(resident.output_type(), rest, registry)
+                None => None
+              }
+            None => None
+          }
+        (@abi.ObservationIndex(index), Some(@abi.ValueType::Tuple(_))) =>
+          match declared {
+            Some(current) =>
+              match declared_tuple_reference(current, index) {
+                Some(reference) =>
+                  match registry.resolve_type_reference(reference) {
+                    Some(resident) =>
+                      declared_type_at(resident.output_type(), rest, registry)
+                    None => None
+                  }
                 None => None
               }
             None => None
@@ -416,6 +452,16 @@ pub fn residual_terminal_structural(
             }
           } else {
             residual_terminal_structural(Some(value_type), rest, registry)
+          }
+        (@abi.ObservationIndex(_), Some(@abi.ValueType::Tuple(_))) =>
+          if rest is [] {
+            None
+          } else {
+            residual_terminal_structural(
+              declared_type_at(declared, path[0:1], registry),
+              rest,
+              registry,
+            )
           }
         (@abi.ObservationIndex(_), Some(@abi.ValueType::Array(item_type))) =>
           if rest is [] {
@@ -597,8 +643,40 @@ fn typed_value_with_at(
         }
         @abi.ObservationIndex(index) =>
           match value {
-            // array の要素は実行時にしか存在しない — 器を vivify しない (DR-127 §2.2)。
-            None => Err(SeatAbsent)
+            None =>
+              match declared_tuple_references(declared) {
+                Some(references) if vivify =>
+                  match normalized_index(index, references.length()) {
+                    None => Err(SeatIndexOutOfRange(index))
+                    Some(resolved) => {
+                      let items = Array::make(
+                        references.length(),
+                        @abi.Value::Null,
+                      )
+                      let element_declared = declared_type_at(
+                        declared,
+                        path[0:1],
+                        registry,
+                      )
+                      match
+                        typed_value_with_at(
+                          Some(items[resolved]),
+                          element_declared,
+                          rest,
+                          replacement,
+                          registry,
+                          vivify,
+                        ) {
+                        Err(fault) => Err(fault)
+                        Ok(updated) => {
+                          items[resolved] = updated
+                          Ok(@abi.Array(items))
+                        }
+                      }
+                    }
+                  }
+                _ => Err(SeatAbsent)
+              }
             Some(@abi.Array(items)) =>
               match normalized_index(index, items.length()) {
                 Some(resolved) => {

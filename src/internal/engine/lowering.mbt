@@ -2377,7 +2377,7 @@ fn value_type_primitive_only(value_type : ValueType) -> Bool {
   match value_type {
     String | Number | Bool | Null => true
     Union(members) => members.iter().all(value_type_primitive_only)
-    Array(_) | Map(_) | Record(_) | Value => false
+    Array(_) | Map(_) | Record(_) | Tuple(_) | Value => false
   }
 }
 
@@ -2439,6 +2439,34 @@ fn classify_value_residual(
           } else {
             classify_value_residual(item_type, path, from + 1, extensions)
           }
+      }
+    Tuple(references) =>
+      match path.segments[from] {
+        Name(_) => AbsentSeat
+        Index(index) => {
+          let resolved = if index < 0 {
+            references.length() + index
+          } else {
+            index
+          }
+          if resolved < 0 || resolved >= references.length() {
+            return AbsentSeat
+          }
+          let spelling = references[resolved]
+          match extensions.resolve_type_reference(spelling) {
+            None => AlreadyDiagnosed
+            Some(resident) =>
+              if from + 1 == path.segments.length() {
+                Terminal(FieldType(resident.name()))
+              } else {
+                match resident.output_type() {
+                  None => OpaqueStructure
+                  Some(nested) =>
+                    classify_value_residual(nested, path, from + 1, extensions)
+                }
+              }
+          }
+        }
       }
     Record(fields) =>
       match path.segments[from] {
@@ -4835,6 +4863,70 @@ fn validate_value_type_references(
                 "' field '" +
                 field +
                 "' references unregistered type '" +
+                spelling +
+                "'",
+                "register the type or fix the reference spelling",
+                out,
+                diagnostic_keys,
+              )
+            Some(resident) => {
+              let canonical = resident.name()
+              let mut cycle = false
+              for stacked in stack {
+                if stacked == canonical {
+                  cycle = true
+                  break
+                }
+              }
+              if cycle {
+                emit(
+                  element,
+                  CircularRef,
+                  "circular-ref",
+                  canonical,
+                  "type dependency cycle: " +
+                  type_reference_cycle_path(stack, canonical),
+                  "break the type dependency cycle",
+                  out,
+                  diagnostic_keys,
+                )
+              } else if visited.get(canonical) is None {
+                match resident.output_type() {
+                  None => visited.set(canonical, true)
+                  Some(nested) => {
+                    stack.push(canonical)
+                    walk(
+                      nested,
+                      resident.name(),
+                      extensions,
+                      element,
+                      out,
+                      diagnostic_keys,
+                      visited,
+                      stack,
+                    )
+                    ignore(stack.pop())
+                    visited.set(canonical, true)
+                  }
+                }
+              }
+            }
+          }
+        }
+      Tuple(references) =>
+        for index, spelling in references {
+          match extensions.resolve_type_reference(spelling) {
+            None =>
+              emit(
+                element,
+                UnknownVocab,
+                "unknown-vocab",
+                spelling,
+                "type '" +
+                owner +
+                "' tuple item " +
+                index.to_string() +
+                " references unregistered type '" +
                 spelling +
                 "'",
                 "register the type or fix the reference spelling",
