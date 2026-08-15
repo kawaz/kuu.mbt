@@ -13,9 +13,11 @@
 // `value_name` additionally upper-cases ASCII letters; `display_name` takes the raw
 // `name` and never passes through here (DR-136 §1/§3).
 //
-// The map is deliberately non-folding — `foo  bar` becomes `foo__bar`, not `foo_bar` —
-// so that the map stays injective on character positions and two distinct names never
-// collapse onto one axis value.
+// The map is deliberately non-folding — `foo  bar` becomes `foo__bar`, not `foo_bar` — so it
+// stays length-preserving and position-wise: every character of the axis value traces back to
+// exactly one character of the name. The map is NOT injective (every replaced symbol shares one
+// replacement, so `a-b` and `a b` both yield `a_b`); folding would collapse names differing in the
+// NUMBER of symbols on top of that, which is the extra merging DR-136 §3 rules out.
 
 ///|
 /// True for the characters every axis keeps verbatim: ASCII alphanumerics and the whole

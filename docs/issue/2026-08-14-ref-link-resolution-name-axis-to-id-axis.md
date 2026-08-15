@@ -120,3 +120,14 @@ resolver へ載せていない。**`Constraint::Requires(elem, targets)` の第 
   スコープ内の要素を指す `ref` を 2 段にする経路は現状の corpus に無い
 - `borrow:` (default_fn) は `default_fn_edges` が name で辺を張るが、境界で name が id 軸に
   なったため実質 id 軸で解決している。専用 fixture での pin は未
+
+### 補足: link の root 候補列に command が入らない (2026-08-16、fable レビュー由来)
+
+`resolve_link_path` (`src/internal/engine/lowering.mbt`) が組む root 候補列は
+`def.options` + `def.positionals` だけで、**`def.commands` を含まない**。したがって
+DR-134 の command 値担体 (`value:` / `default:` を持つ command) を link の root に
+名指しする形は、2 段ルックアップの段に関わらず解決しない (`Missing` → absent-ref)。
+
+共通 resolver へ載せ替えた際の設計判断ではなく、載せ替え前からの候補列の範囲がそのまま
+残っている状態である。command を候補に加えるべきか (= command 値担体への link を
+許すか) は spec 側の規定が要るので、ここでは現状を記録するに留める。
