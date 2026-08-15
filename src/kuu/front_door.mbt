@@ -734,11 +734,19 @@ fn projected_effect(
   // 実行こそが「発火時の 1 回」の実体)。record が無い発火 (fold の保守的スキップ等) は従来
   // どおりこの場で実行する。
   record : @fold.FiringRecord?,
+  // `anonymous_cell_entity` の結果 (匿名 leaf がスコープ自身のセルへ書いた場合の entity 綴り)。
+  // binding 自体は書き換えない — `effect_cell_key` / `CellSeats` の座は fold / resolve と共有
+  // しており、綴りを差し替えると同じセルが別座に割れる。差し替えるのは観測アドレスだけ。
+  anonymous_entity~ : String?,
 ) -> OutputEffect {
   let key = effect_cell_key(binding)
   let (entity, path) = match binding.observation {
     Some(address) => (address.entity, address.path)
-    None => (binding.key, [])
+    None =>
+      match anonymous_entity {
+        Some(name) => (name, [])
+        None => (binding.key, [])
+      }
   }
   let declared = declared_default_seat(defaults, binding)
   // DR-127 §6 統括裁定 3: effects の `path` の index segment は解決済みの非負値を載せる。
@@ -860,6 +868,35 @@ fn projected_effect(
 }
 
 ///|
+
+///|
+/// 匿名 leaf (= 結果キー軸へ自分の綴りを供給しない子) の value binding は `key = ""` で立つ。
+/// この空キーは `is_sentinel` が構造 sentinel (`[]` / `{}`) と一緒に拾う鍵空間なので、effects
+/// 射影の sentinel gate がそのまま落とすと **匿名 leaf がセルへ書いた効果が観測から消える**。
+/// 消えてよいものと消えてはいけないものは scope の形で分かれる:
+///
+/// - `scope=[X]` (末尾が index segment でない) — 匿名 leaf の値は **スコープ X 自身のセル** に
+///   着地する (DESIGN §5.1「or の値 = 選ばれた子の値」/ `ref` の構造継承で inline された匿名
+///   scalar template)。セルへの set が起きている以上、DR-045 の entity 単位 op 列にはその
+///   セルの綴りで現れる。
+/// - `scope=[X, "#0"]` 等 (末尾が index segment) — 値は X の**値の内部**の要素座に着地する
+///   のであってセル X への op ではない (`seq` の匿名子が並ぶ配列、`multiple` の row)。従来
+///   どおり effects には現れない (`fixtures/multiple-parse/nameless-seq-sources.json` /
+///   `fixtures/seq-parse/option-anonymous-children-array.json`)。
+///
+/// 返すのは前者のときの entity 綴り (= scope 末尾の segment。scope segment は既に id 軸の
+/// 綴りへ写像済みなので、`box-width` の匿名 template ref は `box_width` として現れる)。
+fn anonymous_cell_entity(binding : @abi.Binding) -> String? {
+  guard binding.key == "" && binding.observation is None else { return None }
+  guard binding.scope.length() > 0 else { return None }
+  let last = binding.scope[binding.scope.length() - 1]
+  guard !(last.length() >= 1 && last[0:1].to_owned() == "#") else {
+    return None
+  }
+  Some(last)
+}
+
+///|
 fn project_effects(
   ast : AtomicAST,
   binds : Array[@abi.Binding],
@@ -877,7 +914,12 @@ fn project_effects(
   let firing_cursor = @fold.FiringCursor::new()
   for binding in binds {
     let record = firing_cursor.next(firings, binding)
-    if (is_sentinel(binding.key) && binding.observation is None) ||
+    let anonymous_entity = anonymous_cell_entity(binding)
+    if (
+        is_sentinel(binding.key) &&
+        binding.observation is None &&
+        anonymous_entity is None
+      ) ||
       output_internal_cell(binding.scope, binding.key, none_cells) {
       continue
     }
@@ -900,6 +942,7 @@ fn project_effects(
         type_seats,
         ast.extensions,
         record,
+        anonymous_entity~,
       ),
     )
   }
