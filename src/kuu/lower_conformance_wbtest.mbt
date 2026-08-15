@@ -96,8 +96,20 @@ fn render_val(value : @abi.Value) -> String {
         number.to_string()
       }
     }
-    @abi.Array(_) | @abi.Object(_) =>
-      abort("a lowered declaration constant is never a composite value")
+    @abi.Array(items) => {
+      let rendered : Array[String] = []
+      for item in items {
+        rendered.push(render_val(item))
+      }
+      "[" + join_comma(rendered) + "]"
+    }
+    @abi.Object(entries) => {
+      let rendered : Array[String] = []
+      for entry in entries {
+        rendered.push(entry.0 + ":" + render_val(entry.1))
+      }
+      "{" + join_comma(rendered) + "}"
+    }
   }
 }
 

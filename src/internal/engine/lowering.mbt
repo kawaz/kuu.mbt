@@ -676,6 +676,27 @@ fn normalize_option(
         Some(value) => Some([value])
         None => None
       }
+    } else if !e.multiple && e.repeat is None && e.separator is None {
+      // DR-137/138: tuple（および tuple を含む union）の JSON array default は、
+      // scalar セルへの「複合値 1 個」であり accumulator の複数 piece ではない。
+      // wire decode が一様配列へ展開した値を、型が array 値を受理する場合だけ 1 値へ戻す。
+      match e.default_values {
+        Some(values) if values.length() != 1 =>
+          match e.ty.output_type() {
+            Some(declared) => {
+              let composite = @abi.Value::Array(values)
+              if @extension.value_conforms(composite, declared, extensions) ||
+                declared is @abi.ValueType::Union(_) ||
+                declared is @abi.ValueType::Tuple(_) {
+                Some([composite])
+              } else {
+                Some(values)
+              }
+            }
+            None => Some(values)
+          }
+        supplied => supplied
+      }
     } else {
       e.default_values
     }

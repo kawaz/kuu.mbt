@@ -361,13 +361,39 @@ pub fn parse(
       firings=deliveries,
     ) {
     @engine.Success(bindings) =>
-      Success({ raw: bindings, firings: deliveries.ledger_for(bindings) })
+      match cull_union_bindings(ast, bindings, args.length()) {
+        UnionBindings(culled) =>
+          Success({
+            raw: culled,
+            effects_: bindings,
+            firings: deliveries.ledger_for(bindings),
+          })
+        UnionInterpretations(candidates) => {
+          let interpretations : Array[Interpretation] = []
+          for candidate in candidates {
+            interpretations.push({
+              raw: { binds: candidate },
+              effects_: bindings,
+              firings: deliveries.ledger_for(bindings),
+            })
+          }
+          Ambiguous({ interpretations, help_entry: None })
+        }
+        UnionIncomplete(error) =>
+          Failure({
+            errors: [error],
+            fired_action: None,
+            help_entry: None,
+            tried_triggers: [],
+          })
+      }
     @engine.Failure(failure) => Failure(parse_failure(failure))
     @engine.Ambiguous(ambiguity) => {
       let interpretations : Array[Interpretation] = []
       for interpretation in ambiguity.interpretations {
         interpretations.push({
           raw: interpretation,
+          effects_: interpretation.binds,
           firings: deliveries.ledger_for(interpretation.binds),
         })
       }
@@ -398,7 +424,7 @@ pub fn resolve(
     @engine.Success(resolved) =>
       Success({
         raw: resolved,
-        effects_: bindings.raw,
+        effects_: bindings.effects_,
         firings: bindings.firings,
       })
     @engine.Failure(failure) => Failure(parse_failure(failure))
@@ -418,7 +444,11 @@ pub fn resolve_interpretation(
 ) -> ResolvedOutcome {
   resolve(
     ast,
-    { raw: interpretation.raw.binds, firings: interpretation.firings },
+    {
+      raw: interpretation.raw.binds,
+      effects_: interpretation.effects_,
+      firings: interpretation.firings,
+    },
     args,
     sources~,
   )
@@ -1022,7 +1052,7 @@ pub fn ParsedBindings::effects(
   self : ParsedBindings,
   ast : AtomicAST,
 ) -> Array[OutputEffect] {
-  project_effects(ast, self.raw, firings?=self.firings)
+  project_effects(ast, self.effects_, firings?=self.firings)
 }
 
 ///|
@@ -1037,7 +1067,13 @@ pub fn output_of_interpretation(
     complete_static=false,
     firings?=interp.firings,
   )
-  filter_interpretation_result(view.result, view.sources)
+  // DR-138 の同着 tie は確定相が variant ごとの null 補形済み carrier を生成する。
+  // 通常の構文 ambiguity と違い、補形 null を「発火なし」として除外しては枝形が潰れる。
+  if interp.effects_ != interp.raw.binds {
+    view.result
+  } else {
+    filter_interpretation_result(view.result, view.sources)
+  }
 }
 
 ///|

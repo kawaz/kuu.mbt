@@ -4355,18 +4355,37 @@ fn resolve_ladder_below_cli(
   } else {
     match default_scalar(e) {
       Some(v) =>
-        match
-          @builtins.config_to_value(
-            @extension.value_to_configval(v),
-            e.ty,
-            e.piece_filters,
-            extensions.extensions(),
-          ) {
-          Ok(vv) => Ok([@abi.Binding::new(e.name, vv, @abi.Default)])
-          Err({ kind: @abi.Filter, reason, message: msg }) =>
-            Err(filter_err(e.name, at_pos, reason, msg, epath))
-          Err({ reason, message: msg, .. }) =>
-            Err(ladder_err(e.name, at_pos, reason, msg, epath))
+        // DR-137/138: scalar セルの tuple/union 複合 default は array 自体が 1 値である。
+        // config array の「accumulator pieces」解釈へ通さず、宣言型への供給時適合を直接見る。
+        match (v, e.ty.output_type()) {
+          (@abi.Array(_), Some(declared)) =>
+            if @extension.value_conforms(v, declared, extensions.extensions()) {
+              Ok([@abi.Binding::new(e.name, v, @abi.Default)])
+            } else {
+              Err(
+                ladder_err(
+                  e.name,
+                  at_pos,
+                  "default_type_mismatch",
+                  "the declared composite default does not conform to the cell output type",
+                  epath,
+                ),
+              )
+            }
+          _ =>
+            match
+              @builtins.config_to_value(
+                @extension.value_to_configval(v),
+                e.ty,
+                e.piece_filters,
+                extensions.extensions(),
+              ) {
+              Ok(vv) => Ok([@abi.Binding::new(e.name, vv, @abi.Default)])
+              Err({ kind: @abi.Filter, reason, message: msg }) =>
+                Err(filter_err(e.name, at_pos, reason, msg, epath))
+              Err({ reason, message: msg, .. }) =>
+                Err(ladder_err(e.name, at_pos, reason, msg, epath))
+            }
         }
       None => Ok([])
     }
@@ -4670,27 +4689,44 @@ fn resolve_default_fn(
         ),
       )
     Ok(@extension.FnOutput::Value(@abi.Null)) => Ok([])
-    Ok(@extension.FnOutput::Value(value)) =>
-      match
-        @builtins.config_to_value(
-          @extension.value_to_configval(value),
-          entity.ty,
-          entity.piece_filters,
-          extensions.extensions(),
-        ) {
-        Ok(decoded) =>
-          apply_entity_filters(
-            entity,
-            [@abi.Binding::new(entity.name, decoded, @abi.Default)],
-            at_pos,
-            epath,
-            extensions,
-          )
-        Err({ kind: @abi.Filter, reason, message }) =>
-          Err(filter_err(entity.name, at_pos, reason, message, epath))
-        Err({ reason, message, .. }) =>
-          Err(ladder_err(entity.name, at_pos, reason, message, epath))
+    Ok(@extension.FnOutput::Value(value)) => {
+      // DR-137/138: typed set default が返す複合値は既に値空間の値である。
+      let direct = match entity.ty.output_type() {
+        Some(declared) =>
+          @extension.value_conforms(value, declared, extensions.extensions())
+        None => false
       }
+      if direct {
+        apply_entity_filters(
+          entity,
+          [@abi.Binding::new(entity.name, value, @abi.Default)],
+          at_pos,
+          epath,
+          extensions,
+        )
+      } else {
+        match
+          @builtins.config_to_value(
+            @extension.value_to_configval(value),
+            entity.ty,
+            entity.piece_filters,
+            extensions.extensions(),
+          ) {
+          Ok(decoded) =>
+            apply_entity_filters(
+              entity,
+              [@abi.Binding::new(entity.name, decoded, @abi.Default)],
+              at_pos,
+              epath,
+              extensions,
+            )
+          Err({ kind: @abi.Filter, reason, message }) =>
+            Err(filter_err(entity.name, at_pos, reason, message, epath))
+          Err({ reason, message, .. }) =>
+            Err(ladder_err(entity.name, at_pos, reason, message, epath))
+        }
+      }
+    }
   }
 }
 
@@ -5046,4 +5082,165 @@ fn split_on_sep(s : String, sep : String) -> Array[String] {
   }
   out.push(cur.to_string())
   out
+}
+
+///|
+/// DR-138 のセル確定結果。parse 相では `Ambiguous` の interpretation 生成、resolve 相では
+/// 勝ち枝 carrier の構築に同じ裁定を使う。
+priv enum UnionBindingCulling {
+  UnionBindings(Array[@abi.Binding])
+  UnionInterpretations(Array[Array[@abi.Binding]])
+  UnionIncomplete(@abi.ParseError)
+}
+
+///|
+fn union_candidate_shadow(
+  candidate : @fold.UnionCandidate,
+  variant : @abi.ValueType,
+  cell : Array[@abi.Binding],
+  registry : @extension.Registry,
+) -> @abi.ResultValue? {
+  let mut shadow : @abi.ResultValue? = None
+  for binding in cell {
+    if binding.value_residual.length() == 0 {
+      if @extension.value_conforms(binding.value, variant, registry) {
+        shadow = Some(value_source_shadow(candidate.value, binding.source))
+      }
+    } else {
+      // cull_union_cell と同じ variant 固有の降下で、非適合枝への書き込みを除外する。
+      let probe = @fold.CellSeats::new()
+      match
+        probe.set_at_declared(
+          binding.key,
+          binding.value_residual,
+          binding.value,
+          Some(variant),
+          registry,
+          vivify=binding.op is @abi.Set,
+        ) {
+        Ok(_) =>
+          shadow = Some(
+            reshadow_at(
+              candidate.value,
+              shadow,
+              binding.value_residual[:],
+              binding.source,
+            ),
+          )
+        Err(_) => ()
+      }
+    }
+  }
+  shadow
+}
+
+///|
+fn union_winner_bindings(
+  bindings : Array[@abi.Binding],
+  seat : TypeSeat,
+  variants : Array[@abi.ValueType],
+  candidate : @fold.UnionCandidate,
+  registry : @extension.Registry,
+) -> Array[@abi.Binding] {
+  let out : Array[@abi.Binding] = []
+  let cell : Array[@abi.Binding] = []
+  for binding in bindings {
+    if binding.key == seat.name &&
+      path_eq(drop_index_segments(binding.scope), seat.path) {
+      cell.push(binding)
+    } else {
+      out.push(binding)
+    }
+  }
+  if cell.length() == 0 {
+    return bindings
+  }
+  let template_index = if candidate.last_seq >= 0 &&
+    candidate.last_seq < cell.length() {
+    candidate.last_seq
+  } else {
+    cell.length() - 1
+  }
+  let template = cell[template_index]
+  let variant = variants[candidate.variant_index]
+  out.push({
+    ..template,
+    op: @abi.Set,
+    value: candidate.value,
+    value_residual: [],
+    source_shadow: union_candidate_shadow(candidate, variant, cell, registry),
+  })
+  out
+}
+
+///|
+/// 選択済み宣言セルをセル単位で一度だけ裁定する。セルに書き込みが無い場合は bindings を
+/// 変更せず、通常の値源ラダーへ委ねる。
+fn cull_union_bindings(
+  ast : AtomicAST,
+  bindings : Array[@abi.Binding],
+  at_pos : Int,
+) -> UnionBindingCulling {
+  let seats : Array[TypeSeat] = []
+  collect_type_seats(ast.root, [], bindings, seats)
+  let registry = ast.extensions.extensions()
+  let mut alternatives : Array[Array[@abi.Binding]] = [bindings]
+  for seat in seats {
+    let variants : Array[@abi.ValueType]? = match seat.value_type {
+      @abi.ValueType::Union(members) => Some(members)
+      @abi.ValueType::Tuple(references) =>
+        Some([@abi.ValueType::Tuple(references)])
+      _ => None
+    }
+    let variants = match variants {
+      Some(value) => value
+      None => continue
+    }
+    let next : Array[Array[@abi.Binding]] = []
+    for alternative in alternatives {
+      let cell : Array[@abi.Binding] = []
+      for binding in alternative {
+        if binding.key == seat.name &&
+          path_eq(drop_index_segments(binding.scope), seat.path) {
+          cell.push(binding)
+        }
+      }
+      match @fold.cull_union_cell(seat.name, variants, cell, registry) {
+        @fold.NoWrites => next.push(alternative)
+        @fold.Winner(candidate) =>
+          next.push(
+            union_winner_bindings(
+              alternative, seat, variants, candidate, registry,
+            ),
+          )
+        @fold.Tie(candidates) =>
+          for candidate in candidates {
+            next.push(
+              union_winner_bindings(
+                alternative, seat, variants, candidate, registry,
+              ),
+            )
+          }
+        @fold.Incomplete(pos) =>
+          return UnionIncomplete({
+            element: seat.name,
+            args_pos: if pos >= 0 {
+              pos
+            } else {
+              at_pos
+            },
+            kind: @abi.Parse,
+            reason: "incomplete_value",
+            message: "the supplied writes do not complete any declared value variant",
+            path: seat.path,
+          })
+      }
+    }
+    alternatives = next
+  }
+  if alternatives.length() == 1 {
+    UnionBindings(alternatives[0])
+  } else {
+    UnionInterpretations(alternatives)
+  }
 }

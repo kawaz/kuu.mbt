@@ -42,6 +42,8 @@ pub struct Candidate {
 /// outside the bindings' Eq/identity; `effects()`/`resolve()` consume it so a cell fn runs once.
 pub struct ParsedBindings {
   priv raw : Array[@abi.Binding]
+  // DR-138: resolve 用の勝ち枝 carrier と、実際に発生したセル単位の効果列を分離する。
+  priv effects_ : Array[@abi.Binding]
   priv firings : @fold.FiringLedger?
 }
 
@@ -57,6 +59,7 @@ pub struct ResolvedBindings {
 /// One parse interpretation. It may only be combined with the AtomicAST that produced it.
 pub struct Interpretation {
   priv raw : @engine.AmbiguousInterpretation
+  priv effects_ : Array[@abi.Binding]
   priv firings : @fold.FiringLedger?
 }
 
