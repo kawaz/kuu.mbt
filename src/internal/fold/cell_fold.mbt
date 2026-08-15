@@ -361,7 +361,7 @@ fn declared_tuple_references(declared : @abi.ValueType?) -> Array[String]? {
 /// 宣言 ValueType を値空間残余 segment 列で降りたときの「その段の宣言型」。record フィールドは
 /// type 参照ホップ (DR-126 §1) を挟むので registry を引く。辿れない段があれば `None`
 /// (= 静的検査 (W2-6) を通過した routed パスでは起きない構造だが、防御として握りつぶさず None)。
-fn declared_type_at(
+pub fn declared_type_at(
   declared : @abi.ValueType?,
   path : ArrayView[@abi.ObservationSegment],
   registry : @extension.Registry,
@@ -847,5 +847,202 @@ pub fn CellSeats::set_at(
         Err(fault) => Err(fault)
       }
     _ => Err(SeatAbsent)
+  }
+}
+
+///|
+/// DR-138 の union 枝 1 本の確定結果。`last_seq` はこの枝へ最後に着地した効果の
+/// セル内通番であり、枝間の後勝ち判定にだけ使う。
+pub(all) struct UnionCandidate {
+  variant_index : Int
+  value : @abi.Value
+  last_seq : Int
+  last_pos : Int
+}
+
+///|
+/// union セルの確定相結果。書き込みゼロは値源ラダーへ委ね、書き込みがあって生存ゼロなら
+/// `Incomplete`、最終着地同着の異値だけ `Tie` とする。
+pub(all) enum UnionCulling {
+  NoWrites
+  Incomplete(Int)
+  Winner(UnionCandidate)
+  Tie(Array[UnionCandidate])
+}
+
+///|
+/// record variant の観測値を宣言キーで null 補形する。tie の同値比較は parser 内部値でなく
+/// DR-130 射影後の値に対して行うため、確定相でも同じ補形を使う。
+fn union_observed_value(
+  value : @abi.Value,
+  variant : @abi.ValueType,
+) -> @abi.Value {
+  match (variant, value) {
+    (@abi.ValueType::Record(fields), @abi.Object(entries)) => {
+      let out = entries.copy()
+      for field in fields {
+        let mut present = false
+        for entry in entries {
+          if entry.0 == field.0 {
+            present = true
+            break
+          }
+        }
+        if !present {
+          out.push((field.0, @abi.Null))
+        }
+      }
+      @abi.Object(out)
+    }
+    _ => value
+  }
+}
+
+///|
+/// DR-138 §2 の union 枝並行構築。各効果を適合する全 variant の独立 CellSeats へ流し、
+/// 未完成枝を除いて最終着地通番で裁定する。非適合はその枝へ着地しないだけである。
+pub fn cull_union_cell(
+  key : String,
+  members : Array[@abi.ValueType],
+  bindings : Array[@abi.Binding],
+  registry : @extension.Registry,
+) -> UnionCulling {
+  let seats : Array[CellSeats] = []
+  let landed : Array[Bool] = []
+  let last_seq : Array[Int] = []
+  let last_pos : Array[Int] = []
+  for _ in members {
+    seats.push(CellSeats::new())
+    landed.push(false)
+    last_seq.push(-1)
+    last_pos.push(-1)
+  }
+  let mut any_write = false
+  let mut deepest = -1
+  let mut seq = 0
+  for binding in bindings {
+    if binding.key != key || binding.op is (@abi.Remove | @abi.Splice) {
+      continue
+    }
+    any_write = true
+    let pos = match binding.at_pos {
+      Some(p) => p
+      None => 0
+    }
+    if pos > deepest {
+      deepest = pos
+    }
+    for index, variant in members {
+      if binding.value_residual.length() == 0 {
+        let (transition, _) = fold_seat_effect(
+          binding,
+          seats[index].old(key, None),
+          key,
+          registry,
+        )
+        match transition {
+          ToValue(value) =>
+            if @extension.value_conforms(value, variant, registry) {
+              seats[index].put(key, Seated(value))
+              landed[index] = true
+              last_seq[index] = seq
+              last_pos[index] = pos
+            }
+          ToDefault => ()
+          ToEmpty => ()
+          NoChange | FnMissing(_) | FnFailed(_) => ()
+        }
+      } else {
+        let old = match
+          seats[index].value_at_declared(
+            key,
+            binding.value_residual,
+            Some(variant),
+            registry,
+          ) {
+          Ok(value) => Some(value)
+          Err(_) => None
+        }
+        let (transition, _) = fold_seat_effect(binding, old, key, registry)
+        match transition {
+          ToValue(value) =>
+            match
+              seats[index].set_at_declared(
+                key,
+                binding.value_residual,
+                value,
+                Some(variant),
+                registry,
+                vivify=binding.op is @abi.Set,
+              ) {
+              Ok(_) => {
+                landed[index] = true
+                last_seq[index] = seq
+                last_pos[index] = pos
+              }
+              Err(_) => ()
+            }
+          ToDefault | ToEmpty | NoChange | FnMissing(_) | FnFailed(_) => ()
+        }
+      }
+    }
+    seq = seq + 1
+  }
+  if !any_write {
+    return NoWrites
+  }
+  let survivors : Array[UnionCandidate] = []
+  for index, variant in members {
+    if !landed[index] {
+      continue
+    }
+    match seats[index].value_at(key, []) {
+      Ok(value) =>
+        if @extension.value_conforms(value, variant, registry) {
+          survivors.push({
+            variant_index: index,
+            value: union_observed_value(value, variant),
+            last_seq: last_seq[index],
+            last_pos: last_pos[index],
+          })
+        }
+      Err(_) => ()
+    }
+  }
+  if survivors.length() == 0 {
+    return Incomplete(deepest)
+  }
+  let mut newest = -1
+  for candidate in survivors {
+    if candidate.last_seq > newest {
+      newest = candidate.last_seq
+    }
+  }
+  let tied : Array[UnionCandidate] = []
+  for candidate in survivors {
+    if candidate.last_seq == newest {
+      tied.push(candidate)
+    }
+  }
+  if tied.length() == 1 {
+    return Winner(tied[0])
+  }
+  let distinct : Array[UnionCandidate] = []
+  for candidate in tied {
+    let mut seen = false
+    for existing in distinct {
+      if existing.value == candidate.value {
+        seen = true
+        break
+      }
+    }
+    if !seen {
+      distinct.push(candidate)
+    }
+  }
+  if distinct.length() == 1 {
+    Winner(distinct[0])
+  } else {
+    Tie(distinct)
   }
 }

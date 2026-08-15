@@ -288,6 +288,38 @@ fn branch_fold_reject(
       continue
     }
     let declared = decl.entity.ty.output_type()
+    // DR-138: union と単相 tuple は旧「動的に 1 枝を選んで Reject」せず、全枝へ並行着地して
+    // 確定相で未完成を淘汰する。生存ゼロだけ Held 等価へ写す。
+    let variants : Array[@abi.ValueType]? = match declared {
+      Some(@abi.ValueType::Union(members)) => Some(members)
+      Some(@abi.ValueType::Tuple(references)) =>
+        Some([@abi.ValueType::Tuple(references)])
+      _ => None
+    }
+    match variants {
+      Some(members) => {
+        let cell_bindings : Array[Binding] = []
+        for binding in eff {
+          if binding.key == key && scope_matches(binding, scope) {
+            cell_bindings.push(binding)
+          }
+        }
+        match @fold.cull_union_cell(key, members, cell_bindings, extensions) {
+          @fold.Incomplete(pos) =>
+            return Some(
+              branch_fold_failure(
+                cell_bindings[cell_bindings.length() - 1],
+                pos,
+                decl.scope_path,
+                "incomplete_value",
+                "the supplied writes do not complete any declared value variant",
+              ),
+            )
+          _ => return None
+        }
+      }
+      None => ()
+    }
     let declared_default = branch_fold_declared_default(decl.entity)
     let seats = @fold.CellSeats::new()
     for b in eff {
