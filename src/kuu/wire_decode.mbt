@@ -1823,11 +1823,15 @@ fn dec_or_structural(
     Some(x) => x
     None => raise DecodeSkip("or is not an array")
   }
+  // MDR-004 §2: 二形の判別。`seq` / `type` に加えて **入れ子の `or`** も structural の印である
+  // — value-enum の枝は literal 値 (裸文字列 / `{"value": ...}`) しか採らないので、`or` を
+  // 持つ枝は消費文法側にしかない。これが無いと「枝がさらに structural or」という形
+  // (透過段を挟んだ入れ子) が value-enum と誤判定され、name 必須の経路へ落ちる。
   let mut structural = false
   for e in a {
     match e.j_obj() {
       Some(bo) =>
-        if has_key(bo, "seq") || has_key(bo, "type") {
+        if has_key(bo, "seq") || has_key(bo, "type") || has_key(bo, "or") {
           structural = true
         }
       None => ()
@@ -1864,7 +1868,15 @@ fn dec_or_structural(
       // a single-cell branch IS the leaf object itself (no "seq" wrapper, DESIGN §1.2 裸配列 seq 糖衣
       // — wire form already normalizes bare-seq sugar, so here a missing "seq" key on a branch that
       // has "type"/"name" directly is exactly the 1-item case).
-      None => [dec_or_leaf(e, shadows, extensions~)]
+      None =>
+        // 枝の実体がさらに structural carrier (`or` / `positionals`) なら、leaf ではなく
+        // 構造子として読む — `dec_positional` が name / export_key 付きの構造子を扱う唯一の
+        // 経路で、透過段を挟んだ入れ子 (`{name, export_key:null, or:[...]}`) はこの形。
+        if has_key(bo, "or") || has_key(bo, "positionals") {
+          [dec_positional(e, shadows, extensions~)]
+        } else {
+          [dec_or_leaf(e, shadows, extensions~)]
+        }
     }
     branches.push({ id, items })
   }
@@ -2987,8 +2999,12 @@ fn join_us(items : Array[String]) -> String {
 
 ///|
 /// DR-049 §3 auto_env 名導出: `UPPER(env_prefix) "_" UPPER(scope_path を "_" 連結) "_" UPPER(name)`。
-/// `env_prefix` 未設定 (`""`) なら prefix segment を省く (§3 明記)。`name` は wire format の
-/// snake_case (DR-022) なので変換は uppercase のみ (kebab/camel からの変換規則は定義しない、§3)。
+/// `env_prefix` 未設定 (`""`) なら prefix segment を省く (§3 明記)。
+///
+/// name / scope_path segment は **id 軸の写像を通してから大文字化**する (DR-136 §3/§4 の系、
+/// `name_axis_value_name` と同じ UPPER_SNAKE 供給)。素朴な uppercase だと `log-file` が
+/// `LOG-FILE` になり、環境変数名として使えない綴り (英数と `_` 以外) を生んでしまう。
+/// `env_prefix` は書き手が直接書いた literal なので写像を通さない (明示値は無変換、§3)。
 fn auto_env_name(
   env_prefix : String,
   scope_path : Array[String],
@@ -2999,9 +3015,9 @@ fn auto_env_name(
     segs.push(env_prefix.to_upper())
   }
   for s in scope_path {
-    segs.push(s.to_upper())
+    segs.push(@engine.name_axis_value_name(s))
   }
-  segs.push(name.to_upper())
+  segs.push(@engine.name_axis_value_name(name))
   join_us(segs)
 }
 
@@ -3291,10 +3307,15 @@ fn dec_definition(
 ///
 /// - `trigger_name` — 未指定なら name の trigger 軸写像 (CLI 表面の照合綴り)
 /// - `export_key` — 未指定なら name の id 軸写像 (結果キー)
-/// - `display_name` — 未指定なら raw name (写像を通さない人間可読ラベル)
+/// - `value_name` — 未指定なら name の value_name 軸写像 (id 系写像 + ASCII 大文字化)
 /// - `name` 自身 — 参照識別子 (明示 `id`、無ければ name の id 軸写像) へ寄せる。宣言名を内部の
 ///   同一性キー (entity / binding / 参照解決) に使う経路が多数あるため、`name` フィールドを
 ///   id 軸そのものにしておくと「どこか 1 箇所で写像し忘れて同一性が割れる」事故が構造的に起きない
+///
+/// **`display_name` はここで埋めない**。DR-136 §1 の既定は raw name だが、help model は
+/// 「宣言された display_name だけを載せる」形で pin されている (宣言の無い 11 本の help fixture が
+/// キーごと省略する: `fixtures/help/absent-category.json` 等)。ここで既定を materialize すると
+/// 供給値が model に漏れて全 fixture が落ちるため、既定の適用はレンダリング側の関心として残す。
 ///
 /// 明示値には写像を掛けない (§3)。パスは Or / Group の内側と command body まで降りる。
 fn settle_name_axes(def : @engine.Definition) -> @engine.Definition {
@@ -3305,6 +3326,24 @@ fn settle_name_axes(def : @engine.Definition) -> @engine.Definition {
   let positionals : Array[@engine.ElementDef] = []
   for e in def.positionals {
     positionals.push(settle_element_name_axes(e))
+  }
+  // DR-136 §5: alias が持つのは綴り軸だけ。入口綴りの既定 (alias 自身の name、無ければ
+  // canonical 名に §3 の写像) もこの境界で確定させ、desugar は確定値を読むだけにする。
+  let aliases : Array[@abi.AliasDef] = []
+  for a in def.aliases {
+    let alias_name = match a.name {
+      Some(n) => n
+      None => a.target
+    }
+    aliases.push({
+      ..a,
+      trigger_name: Some(
+        match a.trigger_name {
+          Some(t) => t
+          None => @engine.name_axis_trigger(alias_name)
+        },
+      ),
+    })
   }
   let commands : Array[@engine.CommandDef] = []
   for c in def.commands {
@@ -3317,7 +3356,7 @@ fn settle_name_axes(def : @engine.Definition) -> @engine.Definition {
       body: settle_name_axes(c.body),
     })
   }
-  { ..def, options, positionals, commands }
+  { ..def, options, positionals, commands, aliases }
 }
 
 ///|
@@ -3377,8 +3416,27 @@ fn settle_element_name_axes(e : @engine.ElementDef) -> @engine.ElementDef {
   // 綴り軸に載せると列挙した 3 つ (long の基幹綴り / command のトリガ / alias の入口) の
   // どれでもない。exact / values の literal 直値と同じ扱いで写像を通さない。
   let trigger = if e.is_dd { raw_name } else { base.trigger_spelling() }
+  // DR-136 §1/§3: 値プレースホルダ軸のデフォルト供給 (id 系の写像 + ASCII 大文字化)。
+  // 明示 `value_name` は無変換でそのまま。
+  //
+  // help preset (DR-113 §2.3 の `help_category` 等) は値スロットに **preset 固有の canonical**
+  // (`CATEGORY`) を持つ。preset の既定はこの軸より具体的な規定なので、name 由来の供給は
+  // preset 席には掛けない — 掛けると preset canonical を名前由来の綴りで潰してしまう。
+  let help_meta = match e.help_meta.value_name {
+    Some(_) => e.help_meta
+    None =>
+      if e.help_meta.is_help_preset {
+        e.help_meta
+      } else {
+        {
+          ..e.help_meta,
+          value_name: Some(@engine.name_axis_value_name(raw_name)),
+        }
+      }
+  }
   {
     ..base,
+    help_meta,
     trigger_name: Some(trigger),
     export_key: settled_export_key(raw_name, e.export_key),
     name: base.reference_identifier(),

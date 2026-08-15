@@ -534,7 +534,86 @@ fn clone_body(b : ElementBody) -> ElementBody {
 ///   long 綴り合成)。これにより inst_long / eq_entries は flag_type() を特殊扱いする必要がなくなり、bool と
 ///   完全同一の lowering 経路に自然に乗る (flag 固有の lowering 分岐を「型差し替え + resolve_long」の
 ///   2 点だけに縮退させる、DR-076 §2 規則4)。
+/// DR-029 / DR-032 / DR-136 §6: `ref` は lexical 連鎖を先に辿り、末尾で `definitions` を見る。
+/// **スコープの要素**を指す `ref` は id 軸の参照なので共通 resolver (2 段ルックアップ) で引き、
+/// 見つかった要素の**構造の出所**を自分の構造の出所として採る (= 構造継承)。
+/// **`definitions` のキー**は書き手が直接書いた literal なので写像を通さない (段 1 のみ) —
+/// ここで解決しなかった `ref` はそのまま残り、後段の template 照合 (raw 一致) に渡る。
+///
+/// 継承元がさらに `ref` を持つ場合は出所を辿り直す (連鎖)。自己参照と循環は訪問済み集合で
+/// 打ち切り、`collect_circular_ref` / `collect_absent_ref` の診断に委ねる。
+fn resolve_element_refs(def : Definition, extensions : Registry) -> Unit {
+  let scope_elements : Array[ElementDef] = []
+  for e in def.options {
+    if !e.is_alias && e.link_depth == 0 {
+      scope_elements.push(e)
+    }
+  }
+  for e in def.positionals {
+    if !e.is_alias && e.link_depth == 0 {
+      scope_elements.push(e)
+    }
+  }
+  // 継承元が見つかったとき、その要素の**構造の出所**だけを採る:
+  // 出所が template なら `ref_target` を引き継ぎ (自分の `ty` は ref 経路では未使用のまま)、
+  // 出所が具体型なら `ty` を引き継いで `ref` を解く。両方を同時に書き換えると、
+  // template 由来の構造を持つ要素の `ty` (`ref` 要素では未使用の none) まで伝播してしまう。
+  fn resolved_source(element : ElementDef) -> (String?, &TypeExt?)? {
+    let visited : Array[String] = [element.name]
+    let mut target = element.ref_target
+    let mut adopted : (String?, &TypeExt?)? = None
+    while target is Some(reference) {
+      let candidates : Array[ElementDef] = []
+      for candidate in scope_elements {
+        if !str_in(visited, candidate.name) {
+          candidates.push(candidate)
+        }
+      }
+      match resolve_id_reference(candidates, reference, fn(c) { c.name }) {
+        // スコープに居ない = template を指している (または未定義)。写像は掛けずそのまま残す。
+        None => break
+        Some(found) => {
+          visited.push(found.name)
+          adopted = match found.ref_target {
+            Some(_) => Some((found.ref_target, None))
+            None => Some((None, Some(found.ty)))
+          }
+          target = found.ref_target
+        }
+      }
+    }
+    adopted
+  }
+
+  fn adopt(element : ElementDef) -> ElementDef {
+    match resolved_source(element) {
+      None => element
+      Some((ref_target, ty)) =>
+        match ty {
+          None => { ..element, ref_target, }
+          Some(adopted_ty) => { ..element, ref_target, ty: adopted_ty }
+        }
+    }
+  }
+
+  let mut index = 0
+  while index < def.options.length() {
+    def.options[index] = adopt(def.options[index])
+    index = index + 1
+  }
+  index = 0
+  while index < def.positionals.length() {
+    def.positionals[index] = adopt(def.positionals[index])
+    index = index + 1
+  }
+  for command in def.commands {
+    resolve_element_refs(command.body, extensions)
+  }
+}
+
+///|
 fn normalize_surface(def : Definition, extensions : Registry) -> Unit {
+  resolve_element_refs(def, extensions)
   let mut i = 0
   while i < def.options.length() {
     // DR-127 §3.2: 値残余 (FieldType 終端) entry の variant literal はフィールド側 type で
@@ -3892,8 +3971,9 @@ fn desugar_aliases(
       Some(n) => n
       None => a.target // 明示 name 無し → canonical 名を流用 (e.g. short-only alias)
     }
-    // DR-136 §5: alias が持つのは綴り軸だけで、入口綴りは alias 自身の trigger_name
-    // (既定 = alias の name に trigger 軸の文字写像を掛けた値) から立つ。
+    // DR-136 §5: alias が持つのは綴り軸だけで、入口綴りは alias 自身の trigger_name から立つ。
+    // 既定 (alias の name に trigger 軸の写像) は decode 境界の `settle_name_axes` が確定済み。
+    // ここで写像へ落ちるのは宣言層を直組みする経路 (wbtest 等、境界を通らない入力) だけ。
     let alias_trigger = match a.trigger_name {
       Some(t) => t
       None => name_axis_trigger(alias_name)
@@ -7375,7 +7455,9 @@ fn collect_duplicate_ids(def : Definition, out : Array[DefError]) -> Unit {
     occupying : Array[CommandDef],
   ) -> Unit {
     for command in commands {
-      let identifier = command.name
+      // element 側 (`participant_identifier`) と同じく軸を明示して引く — 境界を通った宣言では
+      // `name` と一致するが、片側だけ直読みにすると「どちらが軸でどちらが担体か」が読めなくなる。
+      let identifier = command.reference_identifier()
       if identifier != "" {
         participants.push((identifier, identifier))
       }
