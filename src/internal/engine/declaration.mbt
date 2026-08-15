@@ -367,11 +367,12 @@ pub(all) struct ElementDef {
 } derive(Eq, Debug)
 
 ///|
-/// DR-046 §1/§2: この要素の参照識別子 — 明示 `id` があればその値、無ければ name が供給する。
+/// DR-046 §1/§2 + DR-136 §1/§3: この要素の参照識別子 — 明示 `id` があればその値 (無変換)、
+/// 無ければ name が id 軸の文字写像を通して供給する。
 pub fn ElementDef::reference_identifier(self : ElementDef) -> String {
   match self.id {
     Some(v) => v
-    None => self.name
+    None => name_axis_id(self.name)
   }
 }
 
@@ -448,7 +449,10 @@ pub(all) struct CommandDef {
 
 ///|
 pub fn CommandDef::reference_identifier(self : CommandDef) -> String {
-  self.id.unwrap_or(self.name)
+  match self.id {
+    Some(v) => v
+    None => name_axis_id(self.name)
+  }
 }
 
 ///|
