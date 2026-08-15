@@ -2442,28 +2442,28 @@ fn classify_link_residual(
 }
 
 ///|
+/// link 固定パス DSL のキー部 (DR-127) は id 軸の参照なので、照合は共通 resolver
+/// (DR-136 §6 の 2 段ルックアップ) を通す。1 段目の raw と 2 段目の写像後は「この構造の
+/// 子集合」という 1 スコープの中で完結する。
 fn named_structural_child(
   element : ElementDef,
   name : String,
 ) -> (ElementDef, String?)? {
+  let candidates : Array[(ElementDef, String?)] = []
   match element.body {
     Group(items) =>
       for item in items {
-        if item.name == name {
-          return Some((item, None))
-        }
+        candidates.push((item, None))
       }
     Or(branches) =>
       for branch in branches {
         for item in branch.items {
-          if item.name == name {
-            return Some((item, Some("#branch:" + branch.id)))
-          }
+          candidates.push((item, Some("#branch:" + branch.id)))
         }
       }
     Cell | Enum(_) => ()
   }
-  None
+  resolve_id_reference(candidates, name, fn(c) { c.0.reference_identifier() })
 }
 
 ///|
@@ -2616,21 +2616,19 @@ fn residual_resolution(
 
 ///|
 fn resolve_link_path(def : Definition, path : LinkPath) -> LinkPathResolution {
-  let mut root : ElementDef? = None
+  // link の root も id 軸の参照 (DR-136 §6)。option / positional は同じ 1 スコープの住人なので
+  // 1 本の候補列にまとめてから 2 段ルックアップに掛ける — face ごとに resolver を回すと
+  // 「option の写像一致が positional の raw 一致に勝つ」段の取り違えが起きる。
+  let root_candidates : Array[ElementDef] = []
   for element in def.options {
-    if element.name == path.root {
-      root = Some(element)
-      break
-    }
+    root_candidates.push(element)
   }
-  if root is None {
-    for element in def.positionals {
-      if element.name == path.root {
-        root = Some(element)
-        break
-      }
-    }
+  for element in def.positionals {
+    root_candidates.push(element)
   }
+  let root = resolve_id_reference(root_candidates, path.root, fn(e) {
+    e.reference_identifier()
+  })
   guard root is Some(root_element) else { return Missing }
   let root_depth = root_element.link_depth
   let mut current = root_element
