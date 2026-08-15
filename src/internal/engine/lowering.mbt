@@ -7252,81 +7252,61 @@ fn collect_duplicate_ids(def : Definition, out : Array[DefError]) -> Unit {
     }
   }
 
-  fn structural_scope(elements : Array[ElementDef]) -> Unit {
-    let participants : Array[(String, String)] = []
-    for e in elements {
-      match participant_identifier(e) {
-        Some(identifier) => participants.push((e.name, identifier))
+  // `elements` を同じ lexical scope の参加集合へ射影する。surface name を持つ structural だけが
+  // 子 scope を作る。匿名または id-only structural は子を現在 scope へ透過し、自身に明示 id が
+  // あれば自身も同じ集合へ参加する。
+  fn collect_scope_participants(
+    elements : Array[ElementDef],
+    participants : Array[(String, String)],
+  ) -> Unit {
+    for element in elements {
+      match participant_identifier(element) {
+        Some(identifier) => participants.push((element.name, identifier))
         None => ()
       }
-    }
-    report(participants)
-    // 構造の子は親が作る子スコープの兄弟同士で判定する (`or` の枝をまたぐ子も 1 つの子スコープ)。
-    for e in elements {
-      if participant_identifier(e) is None {
-        continue
-      }
-      match e.body {
+      match element.body {
         Or(branches) => {
           let children : Array[ElementDef] = []
           for branch in branches {
-            for item in branch.items {
-              children.push(item)
+            for child in branch.items {
+              children.push(child)
             }
           }
-          structural_scope(children)
+          if element.name == "" {
+            collect_scope_participants(children, participants)
+          } else {
+            let child_participants : Array[(String, String)] = []
+            collect_scope_participants(children, child_participants)
+            report(child_participants)
+          }
         }
-        Group(items) => structural_scope(items)
+        Group(children) =>
+          if element.name == "" {
+            collect_scope_participants(children, participants)
+          } else {
+            let child_participants : Array[(String, String)] = []
+            collect_scope_participants(children, child_participants)
+            report(child_participants)
+          }
         Cell | Enum(_) => ()
       }
     }
   }
 
-  let siblings : Array[ElementDef] = []
   let participants : Array[(String, String)] = []
-  for e in def.options {
-    siblings.push(e)
-    match participant_identifier(e) {
-      Some(identifier) => participants.push((e.name, identifier))
-      None => ()
-    }
-  }
-  for e in def.positionals {
-    siblings.push(e)
-    match participant_identifier(e) {
-      Some(identifier) => participants.push((e.name, identifier))
-      None => ()
-    }
-  }
-  for c in def.commands {
-    let identifier = c.reference_identifier()
+  collect_scope_participants(def.options, participants)
+  collect_scope_participants(def.positionals, participants)
+  for command in def.commands {
+    let identifier = command.reference_identifier()
     if identifier != "" {
-      participants.push((c.name, identifier))
+      participants.push((command.name, identifier))
     }
   }
   report(participants)
 
-  // option / positional の構造子が作る子スコープと、command が作る子スコープを再帰する。
-  for e in siblings {
-    if participant_identifier(e) is None {
-      continue
-    }
-    match e.body {
-      Or(branches) => {
-        let children : Array[ElementDef] = []
-        for branch in branches {
-          for item in branch.items {
-            children.push(item)
-          }
-        }
-        structural_scope(children)
-      }
-      Group(items) => structural_scope(items)
-      Cell | Enum(_) => ()
-    }
-  }
-  for c in def.commands {
-    collect_duplicate_ids(c.body, out)
+  // command は常に子 lexical scope を作る。trigger name が同じでも各 command body は混ぜない。
+  for command in def.commands {
+    collect_duplicate_ids(command.body, out)
   }
 }
 

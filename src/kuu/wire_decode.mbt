@@ -342,6 +342,7 @@ fn opt(
 fn pos(
   name : String,
   ty : &@extension.TypeExt,
+  id? : String? = None,
   repeat? : @abi.RepeatSpec? = None,
   optional? : Bool = false,
   multiple? : Bool = false,
@@ -396,7 +397,7 @@ fn pos(
 ) -> @engine.ElementDef {
   {
     name,
-    id: None,
+    id,
     ty,
     long: List([]),
     variants: [],
@@ -554,10 +555,10 @@ fn dd_marker(
 /// (dd_marker の `ty: @builtins.string_type()` と違うのは、dd が「捨てるが型タグは要る」旧経路の名残であるのに対し
 /// exact literal は値スロット自体が最初から無いため — DR-089 §2「type 省略 = none の糖衣」と同じ既定
 /// 型)。
-fn exact_marker(spelling : String) -> @engine.ElementDef {
+fn exact_marker(spelling : String, id? : String? = None) -> @engine.ElementDef {
   {
     name: spelling,
-    id: None,
+    id,
     ty: @builtins.none_type(),
     long: List([]),
     variants: [],
@@ -825,24 +826,6 @@ fn has_key(o : Map[String, Json], k : String) -> Bool {
     Some(_) => true
     None => false
   }
-}
-
-///|
-/// codex レビュー Major 3 (issue 2026-07-15-audit-node-nodashstr-deprmark-variants 副次発見):
-/// whether `o` has EXACTLY `k` and no other key. `dec_positional`'s bare `{"exact": "..."}` shape
-/// detector uses this instead of an explicit deny-list of "other keys with no defined meaning here"
-/// (`repeat`/`optional`/`multiple`/`default`/`piece_filters`/... — the old form silently dropped
-/// any key it forgot to list, e.g. `{"exact":"init","repeat":{...}}` decoded successfully with
-/// `repeat` thrown away). Checking against the POSITIVE allow-set of 1 (rather than a growing
-/// negative deny-list) means any key `dec_positional`'s `allowed_keys` call adds in the future is
-/// automatically rejected here too when combined with `exact` — no separate list to keep in sync.
-fn only_key(o : Map[String, Json], k : String) -> Bool {
-  for key, _ in o {
-    if key != k {
-      return false
-    }
-  }
-  true
 }
 
 ///|
@@ -1906,7 +1889,9 @@ fn dec_or_leaf(
   // DR-052 §1: `export_key` は結果キー軸の唯一の指定で、name を持つ要素一般に付く — seq / or の
   // 構造子も例外ではない (`dec_positional` の seq / or 枝は既に受理する)。installer 語彙ではなく
   // 基本属性なので `owned.vocab` には乗らず、ここで明示的に受理列へ入れる。
-  let allowed = ["type", "name", "value_name", "value", "default", "export_key"]
+  let allowed = [
+    "type", "name", "id", "long", "value_name", "value", "default", "export_key",
+  ]
   for key in owned.vocab {
     allowed.push(key)
   }
@@ -1979,27 +1964,31 @@ fn dec_or_leaf(
     Some(d) => Some(json_to_default_values(d))
     None => None
   }
-  pos(
-    name,
-    ty,
-    int_round=int_round_from_shadow,
-    allow_base_prefix=base_prefix_from_shadow,
-    bool_config=bool_config_from_shadow,
-    is_tty=is_tty_from_shadow,
-    tty_stream=tty_stream_from_shadow,
-    repeat=owned.repeat,
-    optional=owned.optional,
-    multiple=owned.multiple,
-    accumulator=owned.accumulator,
-    flatten=owned.flatten,
-    separator=owned.separator,
-    collector=owned.collector,
-    default=default_values,
-    const_=const_values,
-    export_~,
-    default_declared=default_values is Some(_),
-    is_literal=const_values is Some(_),
-  )
+  {
+    ..pos(
+      name,
+      ty,
+      id=dec_reference_id(o, "or branch leaf"),
+      int_round=int_round_from_shadow,
+      allow_base_prefix=base_prefix_from_shadow,
+      bool_config=bool_config_from_shadow,
+      is_tty=is_tty_from_shadow,
+      tty_stream=tty_stream_from_shadow,
+      repeat=owned.repeat,
+      optional=owned.optional,
+      multiple=owned.multiple,
+      accumulator=owned.accumulator,
+      flatten=owned.flatten,
+      separator=owned.separator,
+      collector=owned.collector,
+      default=default_values,
+      const_=const_values,
+      export_~,
+      default_declared=default_values is Some(_),
+      is_literal=const_values is Some(_),
+    ),
+    long: owned.long,
+  }
 }
 
 ///|
@@ -2104,20 +2093,28 @@ fn dec_option(
         "none"
       }
   }
-  let name = match jf_str(o, "name") {
-    Some(s) => s
-    None => raise DecodeSkip("option missing 'name'")
-  }
-  check_reserved_name(name, "option")
-  let element_id = dec_reference_id(o, "option")
-  // MDR-004 §2: "or" is shape-detected FIRST — the DR-055 value-enum form ({"exact":...} branches,
-  // dec_or, parent name = branch-id フォールバック先) and the structural consumption-grammar form
-  // (Or, dec_or_structural) share the same JSON key but are otherwise unrelated (§5.3 values 正規形
-  // vs §1 消費文法の枝)。
+  // MDR-004 §2: `or` は value-enum と structural consumption grammar の二形を持つため、
+  // name 必須判定より先に shape を確定する。匿名 structural (`or` / `seq`) は lexical scope を
+  // 作らない透過 carrier として `name=""` を保持する一方、通常 option と value-enum `or` は
+  // 引き続き name 必須である。
   let structural_or = match o.get("or") {
     Some(orj) => dec_or_structural(orj, shadows, extensions)
     None => None
   }
+  let structural = structural_or is Some(_) || has_key(o, "seq")
+  let name = match jf_str(o, "name") {
+    Some(s) => s
+    None =>
+      if structural {
+        ""
+      } else {
+        raise DecodeSkip("option missing 'name'")
+      }
+  }
+  if name != "" {
+    check_reserved_name(name, "option")
+  }
+  let element_id = dec_reference_id(o, "option")
   // issue values-decode-support (DESIGN §5.3 "values は or のショートハンド" + team-lead 裁定
   // 2026-07-10「values と or (value-enum形式) の消費意味論を分岐させない」): `values` はここで
   // `or` value-enum 相当 (全 exact 値のリスト) へ正規化し、以降 `value_enum`/`value_requires` の
@@ -2518,6 +2515,7 @@ fn dec_positional(
         ..pos(
           name,
           @builtins.string_type(),
+          id=dec_reference_id(o, "positional (seq)"),
           repeat=owned.repeat,
           optional=owned.optional,
           multiple=owned.multiple,
@@ -2532,34 +2530,30 @@ fn dec_positional(
     }
     None => ()
   }
-  // issue 2026-07-15-audit-node-nodashstr-deprmark-variants 副次発見の穴埋め (DR-063 A.1 / DR-018 配置
-  // で役割決定): shape-detect a bare `{"exact": "..."}` leaf BEFORE the "or"/type/name value-cell
-  // dispatch below, same early-return style as "positionals" above. wire.schema.json's node $defs
-  // forbid `exact`+`or` / `exact`+`seq` co-occurrence; this decoder goes further and requires
-  // `exact` to be the ONLY key present (`only_key`, codex レビュー Major 3) — `repeat`/`optional`/
-  // `multiple`/`default`/`piece_filters`/etc. co-occurring with `exact` has no target fixture and
-  // no defined meaning here, so any of them DecodeSkips rather than being silently swallowed
-  // (deliberately absent, not deliberately wrong — same posture as this function's `Enum` note
-  // below; the OLD 4-key deny-list here let `{"exact":"init","repeat":{...}}` decode successfully
-  // with `repeat` thrown away — `only_key` closes that class of gap for every current AND future
-  // `allowed_keys` entry, not just the 4 that were enumerated). Only the bare-string spelling form
-  // is wired (DR-063 §3's bool/number literal-origin `exact` forms are OUT OF SCOPE — no target
-  // fixture exercises them).
+  // A positional exact is nameless unless an explicit `id` occupies the reference axis. Other
+  // attributes have no exact-marker meaning and must not be silently discarded. Only the string
+  // spelling form is implemented here.
   match o.get("exact") {
-    Some(ej) =>
-      if !only_key(o, "exact") {
-        raise DecodeSkip(
-          "positional 'exact' combined with any other key is not supported (bare exact-literal leaf only, DR-063 A.1)",
-        )
-      } else {
-        match ej.j_str() {
-          Some(spelling) => return exact_marker(spelling)
-          None =>
-            raise DecodeSkip(
-              "positional 'exact' is not a string (bool/number literal-origin exact forms not supported)",
-            )
+    Some(ej) => {
+      for key, _ in o {
+        if key != "exact" && key != "id" {
+          raise DecodeSkip(
+            "positional 'exact' supports only an optional 'id' attribute",
+          )
         }
       }
+      match ej.j_str() {
+        Some(spelling) =>
+          return exact_marker(
+            spelling,
+            id=dec_reference_id(o, "positional exact"),
+          )
+        None =>
+          raise DecodeSkip(
+            "positional 'exact' is not a string (bool/number literal-origin exact forms not supported)",
+          )
+      }
+    }
     None => ()
   }
   match o.get("or") {
@@ -2585,6 +2579,7 @@ fn dec_positional(
             ..pos(
               or_name,
               @builtins.string_type(),
+              id=dec_reference_id(o, "positional (or)"),
               export_=or_export,
               repeat=owned.repeat,
               optional=owned.optional,
@@ -2829,7 +2824,15 @@ fn dec_positional_group(
   for ij in inner_arr {
     items.push(dec_positional(ij, shadows, extensions~))
   }
-  { ..pos(name, @builtins.string_type(), repeat~), body: Group(items) }
+  {
+    ..pos(
+      name,
+      @builtins.string_type(),
+      id=dec_reference_id(o, "positional (named group)"),
+      repeat~,
+    ),
+    body: Group(items),
+  }
 }
 
 ///|

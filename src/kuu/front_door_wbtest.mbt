@@ -140,6 +140,73 @@ test "front_door.parse_definition: command は id 軸へ参加し明示 id で�
         deferrs_str(errors),
       )
   }
+
+  // 匿名 structural は lexical scope を作らないため、named 子は囲み scope の sibling として
+  // duplicate-id に参加する。wrapper 自身が匿名でも子を走査から落としてはならない。
+  let anonymous_structural =
+    #|{"positionals": [
+    #|  {"name": "a", "type": "string"},
+    #|  {"seq": [{"name": "a", "type": "string"}]}
+    #|]}
+  match parse_definition(@json.parse(anonymous_structural)) {
+    Err(Rejected(errors)) =>
+      assert_eq(
+        deferrs_str(errors),
+        "a/duplicate-id,a/duplicate-id,a/export-key-collision,a/export-key-collision",
+      )
+    Err(Malformed(reason)) =>
+      fail(
+        "anonymous structural duplicate must be rejected, not malformed: " +
+        reason,
+      )
+    Ok(_) =>
+      fail(
+        "anonymous structural children must participate in the enclosing id scope",
+      )
+  }
+
+  // id-only structural は自身が囲み scope の参加者になる一方、name を持たないので子 scope は
+  // 作らず、named 子も同じ囲み scopeへ透過する。親 id と子 name の双方が root sibling と衝突する。
+  let id_only_structural =
+    #|{"positionals": [
+    #|  {"name": "wrapper", "type": "string"},
+    #|  {"name": "leaf", "type": "string"},
+    #|  {"id": "wrapper", "seq": [{"name": "leaf", "type": "string"}]}
+    #|]}
+  match parse_definition(@json.parse(id_only_structural)) {
+    Err(Rejected(errors)) =>
+      assert_eq(
+        deferrs_str(errors),
+        "/duplicate-id,leaf/duplicate-id,leaf/duplicate-id,leaf/export-key-collision,leaf/export-key-collision,wrapper/duplicate-id",
+      )
+    Err(Malformed(reason)) =>
+      fail(
+        "id-only structural duplicate must be rejected, not malformed: " +
+        reason,
+      )
+    Ok(_) =>
+      fail(
+        "id-only structural parent and child must remain in the enclosing id scope",
+      )
+  }
+
+  // 裸 exact は不参加だが、明示 `id` を持つ exact はその id で参加する。同じ id の command と
+  // 衝突すれば両宣言に duplicate-id が立つ。exact の spelling は引き続き id 軸とは独立である。
+  let identified_exact =
+    #|{"commands": [
+    #|  {"type": "command", "name": "run", "id": "shared"}
+    #|], "positionals": [
+    #|  {"exact": "literal", "id": "shared"}
+    #|]}
+  match parse_definition(@json.parse(identified_exact)) {
+    Err(Rejected(errors)) =>
+      assert_eq(deferrs_str(errors), "literal/duplicate-id,run/duplicate-id")
+    Err(Malformed(reason)) =>
+      fail(
+        "identified exact duplicate must be rejected, not malformed: " + reason,
+      )
+    Ok(_) => fail("an exact with explicit id must participate in duplicate-id")
+  }
 }
 
 ///|

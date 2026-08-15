@@ -49,6 +49,11 @@ DR-046 §1 は参照 (ref / link、および observes / borrow 系の参照解�
 - [ ] entity / binding の keying が宣言名のままでよいかの見極めがついている (現状 effects の `entity` は宣言名。id 軸へ寄せるなら射影側の影響範囲が広い — DR-046 / DR-120 §4 の 3 軸 (綴り / 結果キー / id) の分離をどう写すかの設計判断が要る)
 - [ ] 上記実測 3 の「黙って片方へ潰れる」の扱いが決着している (id 軸へ載せ替えた後に正しく分離されるのか、name 参照が曖昧として definition-error になるのか)。spec 側の裁定が必要なら Q を上げる
 
+## 追記 (2026-08-15)
+
+- (a) CMDID-Q1=a により id 軸参加範囲が command まで拡大し、spec fixture 8609393d の command 明示 id 群は carrier/duplicate-id 検査には反映されたが、ref/link 等の解決側は引き続き未対応 (本 issue の対象範囲のまま)
+- (b) command alias copy は canonical command と同じ id を保持するため、解決を id 軸へ移す際は alias-copy を `ElementDef.is_alias` 相当で解決候補から除外しないと canonical と copy が ambiguous 化する。載せ替え作業時の注意点として記録
+
 ## TODO
 
 <!-- wip 時のみ -->
