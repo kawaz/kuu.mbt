@@ -1,6 +1,6 @@
 ---
 title: has_commands 分岐そのものを廃止し sources 射影を flat/tree で統一する
-status: open
+status: resolved
 category: design
 created: 2026-07-26T13:22:20+09:00
 last_read:
@@ -9,10 +9,10 @@ wip_entered:
 blocked_entered:
 pending_entered:
 discarded_entered:
-resolved_entered:
+resolved_entered: 2026-08-16T00:00:00+09:00
 discard_reason:
 pending_reason:
-close_reason:
+close_reason: ["done: shadow tree 化で分岐そのものが消滅 (has_commands/collect_sources_flat/collect_sources_tree/flat_projection は src 全体で 0 ヒット、resolve.mbt の source_shadow に集約済み。2026-08-16 実測確認)"]
 blocked_by:
 origin: 自リポ TODO
 ---
