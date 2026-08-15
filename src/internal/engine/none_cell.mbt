@@ -189,7 +189,7 @@ fn collect_nones_in_node(
           }
         None => ()
       }
-    CommandSatisfied(name, ordinal, child) => {
+    CommandSatisfied(_, name, ordinal, child) => {
       let child_path = append_path(path, name)
       if !selected_only || command_scope_selected(bindings, child_path, ordinal) {
         collect_nones(

@@ -521,11 +521,13 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
       } else {
         []
       }
-    CommandSatisfied(name, ordinal, child) =>
+    CommandSatisfied(trigger, name, ordinal, child) =>
       // off-spine command (a probe or a nested context): child evaluated with
       // KDone; bindings nest under the name + presence marker. The greedy
       // face path (step_greedy) threads the real continuation instead.
-      if pos < ctx.toks.length() && ctx.toks[pos] == name {
+      // DR-136 §2: the token is matched against the trigger axis; every label
+      // below (scope mark / KNest / binding path) stays on the name axis.
+      if pos < ctx.toks.length() && ctx.toks[pos] == trigger {
         mark_scope(
           name,
           ordinal,
@@ -1591,8 +1593,8 @@ fn eval_greedy_with_downstream(
   out : Array[Branch],
 ) -> Unit {
   match node {
-    CommandSatisfied(name, ordinal, child) =>
-      if pos < ctx.toks.length() && ctx.toks[pos] == name {
+    CommandSatisfied(trigger, name, ordinal, child) =>
+      if pos < ctx.toks.length() && ctx.toks[pos] == trigger {
         let start = acc.length()
         for
           branch in eval_scope_with_downstream(
@@ -2609,7 +2611,7 @@ fn greedy_engages(g : Node, ctx : Ctx, pos : Int) -> Bool {
       }
       false
     }
-    CommandSatisfied(name, _, _) => ctx.toks[pos] == name
+    CommandSatisfied(trigger, _, _, _) => ctx.toks[pos] == trigger
     DdSatisfied(t) => ctx.toks[pos] == t
     DdMatchSatisfied(spelling, is_pattern, _, _) =>
       dd_match_token(spelling, is_pattern, ctx.toks[pos])
@@ -2665,7 +2667,7 @@ fn greedy_trigger_matches(g : Node, ctx : Ctx, pos : Int) -> Bool {
       }
       false
     }
-    CommandSatisfied(name, _, _) => ctx.toks[pos] == name
+    CommandSatisfied(trigger, _, _, _) => ctx.toks[pos] == trigger
     DdSatisfied(t) => ctx.toks[pos] == t
     DdMatchSatisfied(spelling, is_pattern, _, _) =>
       dd_match_token(spelling, is_pattern, ctx.toks[pos])
@@ -3028,8 +3030,8 @@ fn step_greedy(
   out : Array[Branch],
 ) -> Unit {
   match g {
-    CommandSatisfied(name, ordinal, child) =>
-      if pos < ctx.toks.length() && ctx.toks[pos] == name {
+    CommandSatisfied(trigger, name, ordinal, child) =>
+      if pos < ctx.toks.length() && ctx.toks[pos] == trigger {
         let kk = KNest(
           name,
           ordinal,
@@ -4855,7 +4857,7 @@ fn collect_greedy_scopes(
   seen_refs : Array[String],
 ) -> Unit {
   match g {
-    CommandSatisfied(name, ordinal, child) => {
+    CommandSatisfied(_, name, ordinal, child) => {
       let p2 = path.copy()
       p2.push(name)
       let ordinals = command_ordinals.copy()

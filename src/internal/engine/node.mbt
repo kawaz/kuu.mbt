@@ -450,12 +450,15 @@ pub(all) enum Node {
   ///   the firing arm produces (mirrors `DdSatisfied`'s own trigger-string-as-name shortcut, which only
   ///   works there because `DdSatisfied` never decouples spelling from name). Never used for matching.
   DdMatchSatisfied(String, Bool, Bool, String)
-  /// command satellite (DR-018 / DR-041 §4). Fields are `(raw name, same-name declaration
-  /// ordinal, child scope)`. The matcher uses the raw name; the ordinal is carried by the `{}`
+  /// command satellite (DR-018 / DR-041 §4). Fields are `(trigger spelling, name, same-name
+  /// declaration ordinal, child scope)`. DR-136 §1/§2 separates the two string axes: the matcher
+  /// uses the **trigger spelling** (explicit `trigger_name`, else the name's trigger-axis map),
+  /// while `name` stays the identity/result-label axis (scope label, result path segment, export
+  /// scope lookup key). The ordinal is carried by the `{}`
   /// sentinel so resolve and result projection select the same declaration when names duplicate.
   /// Firing enters the child scope as a NEW backbone (the parent greedy face does not interject
   /// inside it). 先食い protects the command name from a positional raw-eat.
-  CommandSatisfied(String, Int, Scope)
+  CommandSatisfied(String, String, Int, Scope)
   /// DR-029 / DR-031 / DR-121 §4 value-link route. Evaluates `inner`, then rewrites effects whose
   /// key equals `from` to `target`, tags them Source::Link, and makes them escape
   /// `levels_to_target` lexical levels. This is the single evaluator funnel shared by every
@@ -528,8 +531,8 @@ pub impl Eq for Node with fn equal(self, other) {
     (DdSatisfied(a), DdSatisfied(b)) => a == b
     (DdMatchSatisfied(as_, ap, ak, an), DdMatchSatisfied(bs, bp, bk, bn)) =>
       as_ == bs && ap == bp && ak == bk && an == bn
-    (CommandSatisfied(an, ai, ac), CommandSatisfied(bn, bi, bc)) =>
-      an == bn && ai == bi && ac == bc
+    (CommandSatisfied(at, an, ai, ac), CommandSatisfied(bt, bn, bi, bc)) =>
+      at == bt && an == bn && ai == bi && ac == bc
     (
       LinkTarget(af, at, as_, aa, ax, ao, ar, al, ae, an),
       LinkTarget(bf, bt, bs, ba, bx, bo, br, bl, be, bn),
@@ -601,8 +604,9 @@ pub impl Debug for Node with fn to_repr(self) {
         (None, Debug::to_repr(c)),
         (None, Debug::to_repr(d)),
       ])
-    CommandSatisfied(a, ordinal, b) =>
+    CommandSatisfied(trigger, a, ordinal, b) =>
       @debug.Repr::ctor("CommandSatisfied", [
+        (None, Debug::to_repr(trigger)),
         (None, Debug::to_repr(a)),
         (None, Debug::to_repr(ordinal)),
         (None, Debug::to_repr(b)),

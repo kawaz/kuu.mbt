@@ -633,7 +633,7 @@ fn collect_default_seats(
   }
   for node in scope.greedy {
     match node {
-      @engine.CommandSatisfied(name, ordinal, child) => {
+      @engine.CommandSatisfied(_, name, ordinal, child) => {
         let child_path = output_path_push(path, name)
         if @engine.command_scope_selected(bindings, child_path, ordinal) {
           collect_default_seats(child, child_path, bindings, out)
@@ -690,7 +690,7 @@ fn collect_type_seats(
   }
   for node in scope.greedy {
     match node {
-      @engine.CommandSatisfied(name, ordinal, child) => {
+      @engine.CommandSatisfied(_, name, ordinal, child) => {
         let child_path = output_path_push(path, name)
         if @engine.command_scope_selected(bindings, child_path, ordinal) {
           collect_type_seats(child, child_path, bindings, out)

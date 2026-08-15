@@ -171,6 +171,9 @@ pub fn CollectorDeclaration::configured(
 pub(all) struct AliasDef {
   target : String
   name : String?
+  // DR-136 §1/§5: alias の入口綴り (綴り軸)。明示値は無変換、未指定なら alias 自身の name
+  // (無ければ target) に trigger 軸の文字写像を掛けた値。
+  trigger_name : String?
   short : Array[Char]
   long_override : LongDeclaration?
   deprecated : Bool

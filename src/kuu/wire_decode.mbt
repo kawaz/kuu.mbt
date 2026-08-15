@@ -277,6 +277,7 @@ fn opt(
   {
     name,
     id: None,
+    trigger_name: None,
     ty,
     long,
     variants,
@@ -398,6 +399,7 @@ fn pos(
   {
     name,
     id,
+    trigger_name: None,
     ty,
     long: List([]),
     variants: [],
@@ -480,6 +482,7 @@ fn dd_marker(
   {
     name: "--",
     id: None,
+    trigger_name: None,
     ty: @builtins.string_type(),
     long: List([]),
     variants: [],
@@ -559,6 +562,8 @@ fn exact_marker(spelling : String, id? : String? = None) -> @engine.ElementDef {
   {
     name: spelling,
     id,
+    // 裸 exact の綴りは literal 直値であって name 由来の綴り軸ではない (DR-136 §2)。
+    trigger_name: None,
     ty: @builtins.none_type(),
     long: List([]),
     variants: [],
@@ -795,6 +800,13 @@ fn jf_str(o : Map[String, Json], key : String) -> String? {
 /// DR-046 §1/§2: 明示 `id` を読む。未宣言なら `None` — その要素の参照識別子は name が供給する
 /// (`@engine.ElementDef::reference_identifier`)。予約名前空間の検査は name と同じ (DR-067 §2 は
 /// name/id の両方を縛る)。
+/// DR-136 §1/§2: wire の綴り軸 `trigger_name`。明示値には写像を掛けない (§3) — 未指定なら
+/// `trigger_spelling()` が name から供給する。
+fn dec_trigger_name(o : Map[String, Json]) -> String? {
+  jf_str(o, "trigger_name")
+}
+
+///|
 fn dec_reference_id(
   o : Map[String, Json],
   what : String,
@@ -1890,7 +1902,8 @@ fn dec_or_leaf(
   // 構造子も例外ではない (`dec_positional` の seq / or 枝は既に受理する)。installer 語彙ではなく
   // 基本属性なので `owned.vocab` には乗らず、ここで明示的に受理列へ入れる。
   let allowed = [
-    "type", "name", "id", "long", "value_name", "value", "default", "export_key",
+    "type", "name", "id", "trigger_name", "long", "value_name", "value", "default",
+    "export_key",
   ]
   for key in owned.vocab {
     allowed.push(key)
@@ -2019,7 +2032,9 @@ fn dec_option(
   let owned = decode_installer_owned(j, Option, extensions)
   match owned.alias_decl {
     Some(value) => {
-      let allowed = ["alias", "name", "short", "long", "deprecated", "type"]
+      let allowed = [
+        "alias", "name", "trigger_name", "short", "long", "deprecated", "type",
+      ]
       for key in owned.vocab {
         allowed.push(key)
       }
@@ -2050,8 +2065,8 @@ fn dec_option(
   let allowed = [
     // DESIGN §5.2 / §11.4 (DR-030 実体だけノード、DR-031 CONST-Q1=a): root 位置の `value:` =
     // セル初期化位相の宣言定数 (`dec_const_value`)。`default` と同居できる — root では別位相。
-    "value", "id", "name", "type", "default", "default_fn", "export_key", "deprecated",
-    "hidden", "or", "values", "piece_filters", "value_filters", "final_filters",
+    "value", "id", "name", "trigger_name", "type", "default", "default_fn", "export_key",
+    "deprecated", "hidden", "or", "values", "piece_filters", "value_filters", "final_filters",
     "accum_filters", "ref", "link", "completer", "config",
     // DR-113 §4.1 value_structure 素材: option root の seq / value_name wire キー
     // (help-only fixture 用 — parse 相は seq を活用しないが、help_installer が hint 経由で
@@ -2115,6 +2130,7 @@ fn dec_option(
     check_reserved_name(name, "option")
   }
   let element_id = dec_reference_id(o, "option")
+  let element_trigger = dec_trigger_name(o)
   // issue values-decode-support (DESIGN §5.3 "values は or のショートハンド" + team-lead 裁定
   // 2026-07-10「values と or (value-enum形式) の消費意味論を分岐させない」): `values` はここで
   // `or` value-enum 相当 (全 exact 値のリスト) へ正規化し、以降 `value_enum`/`value_requires` の
@@ -2148,6 +2164,7 @@ fn dec_option(
       ),
       name,
       id: element_id,
+      trigger_name: element_trigger,
     })
   }
   // DR-061 §3: type shadow lookup — user 定義の type 名なら base type resident + parse 相 config を採用、
@@ -2455,6 +2472,7 @@ fn dec_option(
     collector: coll,
     deprecated,
     id: element_id,
+    trigger_name: element_trigger,
   })
 }
 
@@ -2472,9 +2490,9 @@ fn dec_positional(
   let allowed = [
     // DESIGN §5.2 / §11.4: dec_option と対称 — root 位置の `value:` は positional 席でも合法
     // (schema `$defs.node` は同型、DR-018 の配置原理は「値属性は両配置が持てる」側)。
-    "value", "id", "name", "type", "export_key", "default", "default_fn", "positionals",
-    "seq", "or", "piece_filters", "value_filters", "final_filters", "accum_filters",
-    "ref", "link", "config", "completer", "exact",
+    "value", "id", "name", "trigger_name", "type", "export_key", "default", "default_fn",
+    "positionals", "seq", "or", "piece_filters", "value_filters", "final_filters",
+    "accum_filters", "ref", "link", "config", "completer", "exact",
     // DR-117 §2.6: dec_option と対称 — insert_form は positional 席 (`type:
     // "completion_script"`) でも合法 (DR-117 §2.3、positional 配置は全 preset で許可)。非
     // completion_script type 上への宣言は `collect_completion_script_errors` が
@@ -2600,6 +2618,7 @@ fn dec_positional(
   }
   check_reserved_name(name, "positional")
   let element_id = dec_reference_id(o, "positional")
+  let element_trigger = dec_trigger_name(o)
   // DR-061 §3: positional も type shadow を consultation (dec_option と同型)。
   // DR-089 §2: type 省略 = none の糖衣 (旧実装は @builtins.string_type() を勝手にあてる default-typing だった —
   // DR-089 の「採用しなかった案」が明示的に否定するパターン。`ref` 付きの場合はそもそも ty が
@@ -2797,7 +2816,7 @@ fn dec_positional(
     help_meta=help_meta_with_type,
     fail_action~,
   )
-  { ..decoded, id: element_id }
+  { ..decoded, id: element_id, trigger_name: element_trigger }
 }
 
 ///|
@@ -3038,7 +3057,7 @@ fn dec_command(
   let owned = decode_installer_owned(j, Command, extensions)
   match owned.alias_decl {
     Some(value) => {
-      let allowed = ["alias", "name", "deprecated", "type"]
+      let allowed = ["alias", "name", "trigger_name", "deprecated", "type"]
       for key in owned.vocab {
         allowed.push(key)
       }
@@ -3050,8 +3069,8 @@ fn dec_command(
   // DR-134 §1/§7: `value` は node 共通属性で、command node でも合法。値の供給に command 専用の
   // 規則は無い (§5) ので `default` / `default_fn` も同じ担体として受ける。
   let allowed = [
-    "type", "name", "id", "options", "positionals", "commands", "export_key", "config",
-    "value", "default", "default_fn",
+    "type", "name", "id", "trigger_name", "options", "positionals", "commands", "export_key",
+    "config", "value", "default", "default_fn",
   ]
   for key in owned.vocab {
     allowed.push(key)
@@ -3091,6 +3110,7 @@ fn dec_command(
   DCommand({
     name,
     id: dec_reference_id(o, "command"),
+    trigger_name: dec_trigger_name(o),
     body,
     export_key: export_,
     const_values,

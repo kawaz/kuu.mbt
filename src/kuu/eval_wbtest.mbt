@@ -35,7 +35,7 @@ test "MDR-002 §1.5 acceptance: greedy repeat in a child command yields the pare
     constraints: [],
   }
   let root : @engine.Scope = {
-    greedy: [@engine.CommandSatisfied("seq", 0, child)],
+    greedy: [@engine.CommandSatisfied("seq", "seq", 0, child)],
     positional: [@builtins.string_arg("tail", [])],
     entities: [],
     constraints: [],
@@ -95,7 +95,7 @@ test "MDR-002 §1.4 control: without the trailing positional, greedy xs takes ev
     constraints: [],
   }
   let root : @engine.Scope = {
-    greedy: [@engine.CommandSatisfied("seq", 0, child)],
+    greedy: [@engine.CommandSatisfied("seq", "seq", 0, child)],
     positional: [],
     entities: [],
     constraints: [],
@@ -256,7 +256,7 @@ test "REGRESSION dd continuation stays raw after returning from a command scope"
     constraints: [],
   }
   let root : @engine.Scope = {
-    greedy: [@engine.CommandSatisfied("run", 0, child)],
+    greedy: [@engine.CommandSatisfied("run", "run", 0, child)],
     positional: [],
     entities: [],
     constraints: [],
@@ -306,7 +306,7 @@ test "REGRESSION pattern dd self-keep severs its command continuation" {
     constraints: [],
   }
   let root : @engine.Scope = {
-    greedy: [@engine.CommandSatisfied("run", 0, child)],
+    greedy: [@engine.CommandSatisfied("run", "run", 0, child)],
     positional: [],
     entities: [],
     constraints: [],
@@ -892,7 +892,7 @@ test "DR-053 §4: tried_triggers reflects the failure position's OWN scope, not 
     constraints: [],
   }
   let root : @engine.Scope = {
-    greedy: [@engine.CommandSatisfied("sub", 0, child)],
+    greedy: [@engine.CommandSatisfied("sub", "sub", 0, child)],
     positional: [],
     entities: [],
     constraints: [],
@@ -947,7 +947,7 @@ test "DR-053 §4: help_entry reflects the failure position's OWN scope, not root
     constraints: [],
   }
   let root : @engine.Scope = {
-    greedy: [@engine.CommandSatisfied("sub", 0, child)],
+    greedy: [@engine.CommandSatisfied("sub", "sub", 0, child)],
     positional: [],
     entities: [],
     constraints: [],
@@ -982,7 +982,7 @@ test "DR-053 §4: help_entry is None when the failure-position scope has no help
     constraints: [],
   }
   let root : @engine.Scope = {
-    greedy: [@engine.CommandSatisfied("sub", 0, child)],
+    greedy: [@engine.CommandSatisfied("sub", "sub", 0, child)],
     positional: [],
     entities: [],
     constraints: [],
@@ -1064,7 +1064,7 @@ test "REVIEW-D2 制約照合は scope-exact: 子スコープの同名 key は ro
     constraints: [],
   }
   let root : @engine.Scope = {
-    greedy: [@engine.CommandSatisfied("c", 0, child)],
+    greedy: [@engine.CommandSatisfied("c", "c", 0, child)],
     positional: [],
     entities: [],
     constraints: [Requires("x", ["z"])],
@@ -1099,7 +1099,7 @@ test "REVIEW-D3 誤充足も塞ぐ: requires のターゲットは子スコー�
         @engine.Exact("--file"),
         @engine.Bind("file", @abi.Bool(true)),
       ]),
-      @engine.CommandSatisfied("sub", 0, child),
+      @engine.CommandSatisfied("sub", "sub", 0, child),
     ],
     positional: [],
     entities: [],
@@ -1141,7 +1141,7 @@ test "REVIEW-D4 入れ子スコープの constraints も完全経路の成立条
     constraints: [Conflicts("x", ["y"])],
   }
   let root : @engine.Scope = {
-    greedy: [@engine.CommandSatisfied("sub", 0, child)],
+    greedy: [@engine.CommandSatisfied("sub", "sub", 0, child)],
     positional: [],
     entities: [],
     constraints: [],
@@ -1336,7 +1336,7 @@ test "REVIEW-D6 @engine.CommandSatisfied トリガ一致も先食い: 子スコ�
     constraints: [],
   }
   let root : @engine.Scope = {
-    greedy: [@engine.CommandSatisfied("build", 0, child)],
+    greedy: [@engine.CommandSatisfied("build", "build", 0, child)],
     positional: [@builtins.string_arg("f", [])],
     entities: [],
     constraints: [],
@@ -1658,7 +1658,7 @@ test "DR-066 §4: a held Error one command deep carries path: [\"sub\"]" {
     constraints: [],
   }
   let root : @engine.Scope = {
-    greedy: [@engine.CommandSatisfied("sub", 0, child)],
+    greedy: [@engine.CommandSatisfied("sub", "sub", 0, child)],
     positional: [],
     entities: [],
     constraints: [],
@@ -1697,13 +1697,13 @@ test "DR-066 §4: a held Error two commands deep carries path: [\"a\", \"b\"] (r
     constraints: [],
   }
   let child : @engine.Scope = {
-    greedy: [@engine.CommandSatisfied("b", 0, grandchild)],
+    greedy: [@engine.CommandSatisfied("b", "b", 0, grandchild)],
     positional: [],
     entities: [],
     constraints: [],
   }
   let root : @engine.Scope = {
-    greedy: [@engine.CommandSatisfied("a", 0, child)],
+    greedy: [@engine.CommandSatisfied("a", "a", 0, child)],
     positional: [],
     entities: [],
     constraints: [],
@@ -1747,7 +1747,7 @@ test "DR-066 §4: a constraint violation declared in a child scope carries the c
     constraints: [Requires("x", ["y"])],
   }
   let root : @engine.Scope = {
-    greedy: [@engine.CommandSatisfied("sub", 0, child)],
+    greedy: [@engine.CommandSatisfied("sub", "sub", 0, child)],
     positional: [],
     entities: [],
     constraints: [],
@@ -1829,7 +1829,7 @@ test "DR-066 §4: a @abi.Pending-starvation missing_operand Error inside a neste
     constraints: [],
   }
   let root : @engine.Scope = {
-    greedy: [@engine.CommandSatisfied("sub", 0, child)],
+    greedy: [@engine.CommandSatisfied("sub", "sub", 0, child)],
     positional: [],
     entities: [],
     constraints: [],

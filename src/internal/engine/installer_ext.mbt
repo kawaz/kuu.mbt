@@ -94,6 +94,9 @@ pub fn InstallOutput::push_constraint(
 
 ///|
 pub struct InstallChild {
+  // DR-136 §1/§2: 綴り (トリガ) 軸と名前軸は別。`trigger` は CLI 表面の照合綴り
+  // (明示 `trigger_name`、無ければ name の trigger 軸写像)、`name` は結果ラベル軸。
+  priv trigger : String
   priv name : String
   priv ordinal : Int
   priv body : InstallBuilder
@@ -101,11 +104,18 @@ pub struct InstallChild {
 
 ///|
 pub fn InstallChild::new(
+  trigger : String,
   name : String,
   ordinal : Int,
   body : InstallBuilder,
 ) -> InstallChild {
-  { name, ordinal, body }
+  { trigger, name, ordinal, body }
+}
+
+///|
+/// この command の CLI 表面の照合綴り (DR-136 §2)。
+pub fn InstallChild::trigger(self : InstallChild) -> String {
+  self.trigger
 }
 
 ///|
@@ -216,7 +226,12 @@ fn InstallBuilder::materialize(self : InstallBuilder) -> Scope {
   }
   for child in self.children {
     greedy.push(
-      CommandSatisfied(child.name, child.ordinal, child.body.materialize()),
+      CommandSatisfied(
+        child.trigger,
+        child.name,
+        child.ordinal,
+        child.body.materialize(),
+      ),
     )
   }
   {

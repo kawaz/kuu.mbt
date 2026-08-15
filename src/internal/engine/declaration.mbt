@@ -126,6 +126,11 @@ pub(all) struct ElementDef {
   // on this axis alone (`fixtures/dd/duplicate-decl.json`), and `collect_duplicate_ids` judges
   // exactly that axis.
   id : String?
+  // DR-136 §1/§2: 綴り (トリガ) 軸 — CLI 表面の照合綴り。明示値は無変換、未指定なら name に
+  // trigger 軸の文字写像 (ASCII 非英数 → `-`) を掛けた値が供給される (`trigger_spelling`)。
+  // long の基幹綴りと alias の入口綴りがここから出る。positional は入口綴りを持たず、short は
+  // 明示専用なので本軸から導出しない (§2)。
+  trigger_name : String?
   ty : &TypeExt
   // long installer 所有: wire 二形 (DR-071 §1 — bool | array、"wire には二形とも載る、展開は long
   // installer の解釈"）。糖衣展開 (bool→リスト、DR-076 §2 flag 差し替え/補完) と colon DSL 分類
@@ -377,6 +382,16 @@ pub fn ElementDef::reference_identifier(self : ElementDef) -> String {
 }
 
 ///|
+/// DR-136 §1/§2: この要素の綴り (トリガ) 軸 — 明示 `trigger_name` があればその値 (無変換)、
+/// 無ければ name が trigger 軸の文字写像を通して供給する。
+pub fn ElementDef::trigger_spelling(self : ElementDef) -> String {
+  match self.trigger_name {
+    Some(v) => v
+    None => name_axis_trigger(self.name)
+  }
+}
+
+///|
 /// DR-088 §1 の静的 presence。実際の値が供給可能かは探索時に評価せず、値源宣言の有無だけを見る。
 fn ElementDef::has_declared_value_source(self : ElementDef) -> Bool {
   self.default_values is Some(_) ||
@@ -436,6 +451,8 @@ pub(all) struct CommandDef {
   // DR-046 §1/§2: command も参照識別子を持ち、明示 `id` が無ければ name が供給する。
   // 綴り軸・結果キー軸とは独立し、同名 command の両立には id 軸も分離する。
   id : String?
+  // DR-136 §1/§2: command のトリガ照合綴り。明示値は無変換、未指定なら name の trigger 軸写像。
+  trigger_name : String?
   body : Definition
   export_key : ExportKey
   // DR-134 §1: command node の値の担体。command は値かスコープのどちらかを名乗るので、これらが
@@ -446,6 +463,14 @@ pub(all) struct CommandDef {
   default_values : Array[Value]?
   default_fn : DefaultFnCall?
 } derive(Eq, Debug)
+
+///|
+pub fn CommandDef::trigger_spelling(self : CommandDef) -> String {
+  match self.trigger_name {
+    Some(v) => v
+    None => name_axis_trigger(self.name)
+  }
+}
 
 ///|
 pub fn CommandDef::reference_identifier(self : CommandDef) -> String {

@@ -251,6 +251,8 @@ fn resident_alias(json : Json) -> Result[@engine.AliasDef?, String] {
     None => return Err("alias missing target")
   }
   let name = resident_string(object, "name")
+  // DR-136 §1/§5: 綴り軸の明示。未指定なら desugar が alias name から写像で供給する。
+  let trigger_name = resident_string(object, "trigger_name")
   match name {
     Some(value) =>
       if value.contains("#") {
@@ -290,6 +292,7 @@ fn resident_alias(json : Json) -> Result[@engine.AliasDef?, String] {
     Some({
       target,
       name,
+      trigger_name,
       short,
       long_override,
       deprecated,

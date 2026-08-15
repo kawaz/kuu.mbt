@@ -102,7 +102,7 @@ test "DR-060 §1: コマンド名 (@engine.CommandSatisfied) は境界で綴り�
     constraints: [],
   }
   let root : @engine.Scope = {
-    greedy: [@engine.CommandSatisfied("build", 0, child)],
+    greedy: [@engine.CommandSatisfied("build", "build", 0, child)],
     positional: [],
     entities: [],
     constraints: [],

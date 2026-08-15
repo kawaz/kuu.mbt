@@ -370,7 +370,7 @@ fn resolve_scope_config(
 fn command_child(sc : @engine.Scope, name : String) -> @engine.Scope? {
   for g in sc.greedy {
     match g {
-      @engine.CommandSatisfied(n, _, child) =>
+      @engine.CommandSatisfied(_, n, _, child) =>
         if n == name {
           return Some(child)
         }

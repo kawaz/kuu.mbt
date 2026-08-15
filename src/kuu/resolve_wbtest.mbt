@@ -517,7 +517,7 @@ test "accum_cells resolves export_key rename on a command scope label (nested pa
     constraints: [],
   }
   let root : @engine.Scope = {
-    greedy: [@engine.CommandSatisfied("sub", 0, child)],
+    greedy: [@engine.CommandSatisfied("sub", "sub", 0, child)],
     positional: [],
     entities: [],
     constraints: [],
@@ -1064,7 +1064,7 @@ test "command_child fetches a subcommand scope; outer_values_of builds the paren
     constraints: [],
   }
   let root : @engine.Scope = {
-    greedy: [@engine.CommandSatisfied("serve", 0, child)],
+    greedy: [@engine.CommandSatisfied("serve", "serve", 0, child)],
     positional: [],
     entities: [],
     constraints: [],
@@ -2178,8 +2178,8 @@ fn two_command_scope(a_flag : String, c_flag : String) -> @engine.Scope {
   }
   {
     greedy: [
-      @engine.CommandSatisfied("a", 0, a),
-      @engine.CommandSatisfied("c", 0, c),
+      @engine.CommandSatisfied("a", "a", 0, a),
+      @engine.CommandSatisfied("c", "c", 0, c),
     ],
     positional: [],
     entities: [],
@@ -2277,8 +2277,8 @@ test "default_cells: with two transparent commands, only the SELECTED one's flag
   }
   let sc : @engine.Scope = {
     greedy: [
-      @engine.CommandSatisfied("c1", 0, c1),
-      @engine.CommandSatisfied("c2", 0, c2),
+      @engine.CommandSatisfied("c1", "c1", 0, c1),
+      @engine.CommandSatisfied("c2", "c2", 0, c2),
     ],
     positional: [],
     entities: [],
@@ -2299,7 +2299,7 @@ test "default_cells 対極: the root scope is always selected — its flag defau
   let ek = test_export_scopes()
   let sc : @engine.Scope = {
     greedy: [
-      @engine.CommandSatisfied("c", 0, {
+      @engine.CommandSatisfied("c", "c", 0, {
         greedy: [],
         positional: [],
         entities: [
@@ -2350,8 +2350,8 @@ fn command_with_accum_scope() -> @engine.Scope {
   }
   {
     greedy: [
-      @engine.CommandSatisfied("a", 0, a),
-      @engine.CommandSatisfied("c", 0, c),
+      @engine.CommandSatisfied("a", "a", 0, a),
+      @engine.CommandSatisfied("c", "c", 0, c),
     ],
     positional: [],
     entities: [],
@@ -2420,7 +2420,7 @@ test "internal_cells: a config_file cell has no internal seat and its binding su
     constraints: [],
   }
   let sc : @engine.Scope = {
-    greedy: [@engine.CommandSatisfied("c", 0, c)],
+    greedy: [@engine.CommandSatisfied("c", "c", 0, c)],
     positional: [],
     entities: [ent("root_cfg", @builtins.string_type(), is_config_file=true)],
     constraints: [],
@@ -2463,7 +2463,7 @@ test "internal_cells: a transparent command's none-cell seat does not mask a rea
     constraints: [],
   }
   let sc : @engine.Scope = {
-    greedy: [@engine.CommandSatisfied("c", 0, c)],
+    greedy: [@engine.CommandSatisfied("c", "c", 0, c)],
     positional: [],
     entities: [ent("x", @builtins.string_type())], // root の実在する値セル (同名)
     constraints: [],

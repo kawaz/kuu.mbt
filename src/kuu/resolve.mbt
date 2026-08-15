@@ -1445,7 +1445,7 @@ fn collect_accum(
   }
   for g in sc.greedy {
     match g {
-      @engine.CommandSatisfied(name, ordinal, child) => {
+      @engine.CommandSatisfied(_, name, ordinal, child) => {
         // 未選択 (当該実行で未入場) の command scope は降りない — `collect_defaults` と同一の
         // gate (issue unselected-transparent-command-flag-leak)。DR-044 の「反復系は 0 回発火でも
         // `[]`」は **その cell が結果に現れる場合** の形の規定で、未選択 command 配下のセルは
@@ -1630,7 +1630,7 @@ fn collect_defaults(
   }
   for g in sc.greedy {
     match g {
-      @engine.CommandSatisfied(name, ordinal, child) => {
+      @engine.CommandSatisfied(_, name, ordinal, child) => {
         // 未選択 (当該実行で未入場) の command scope は降りない (issue
         // unselected-transparent-command-flag-leak)。上の「flag は絶対 absent にならない」は
         // **選ばれた** scope の中の話 (DR-051 §2) で、選ばれなかった sibling command の配下は
@@ -1665,7 +1665,7 @@ fn projected_command_key_selected(
 ) -> Bool {
   for greedy in sc.greedy {
     match greedy {
-      @engine.CommandSatisfied(name, ordinal, _) =>
+      @engine.CommandSatisfied(_, name, ordinal, _) =>
         if export_map.exposed_command_scope(name, ordinal) == Some(key) &&
           @engine.command_scope_selected(
             binds,
@@ -1725,7 +1725,7 @@ fn command_value_bindings(
 ) -> Unit {
   for greedy in sc.greedy {
     match greedy {
-      @engine.CommandSatisfied(name, ordinal, child) => {
+      @engine.CommandSatisfied(_, name, ordinal, child) => {
         let child_declaration_path = path_push(declaration_path, name)
         if !@engine.command_scope_selected(
             binds, child_declaration_path, ordinal,
@@ -1799,7 +1799,7 @@ fn collect_value_command_paths(
 ) -> Unit {
   for greedy in sc.greedy {
     match greedy {
-      @engine.CommandSatisfied(name, ordinal, child) => {
+      @engine.CommandSatisfied(_, name, ordinal, child) => {
         let child_declaration_path = path_push(declaration_path, name)
         if !@engine.command_scope_selected(
             binds, child_declaration_path, ordinal,
@@ -1828,7 +1828,7 @@ fn command_projection_bindings(
 ) -> Unit {
   for greedy in sc.greedy {
     match greedy {
-      @engine.CommandSatisfied(name, ordinal, child) => {
+      @engine.CommandSatisfied(_, name, ordinal, child) => {
         let child_declaration_path = path_push(declaration_path, name)
         let child_export_map = export_map.command_child(name, ordinal)
         let exposed = export_map.exposed_command_scope(name, ordinal)
@@ -2722,7 +2722,7 @@ fn eval_requires(
 fn is_cmdsat_child(sc : @engine.Scope, name : String) -> Bool {
   for g in sc.greedy {
     match g {
-      @engine.CommandSatisfied(n, _, _) => if n == name { return true }
+      @engine.CommandSatisfied(_, n, _, _) => if n == name { return true }
       _ => ()
     }
   }
@@ -3062,7 +3062,7 @@ fn resolve_scope_tree_with_export_impl(
   }
   for g in sc.greedy {
     match g {
-      @engine.CommandSatisfied(name, ordinal, child) => {
+      @engine.CommandSatisfied(_, name, ordinal, child) => {
         let childpath = path_push(path, name)
         if @engine.command_scope_selected(binds, childpath, ordinal) {
           match
@@ -4398,7 +4398,7 @@ fn parse_fold_ladder(
       let mut child_scope : @engine.Scope? = None
       for node in sc.greedy {
         match node {
-          @engine.CommandSatisfied(name, _, child) if name == segment => {
+          @engine.CommandSatisfied(_, name, _, child) if name == segment => {
             child_scope = Some(child)
             break
           }

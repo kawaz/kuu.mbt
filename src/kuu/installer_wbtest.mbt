@@ -105,6 +105,7 @@ fn el(
   {
     name,
     id: None,
+    trigger_name: None,
     ty,
     long,
     variants: [],
@@ -993,6 +994,7 @@ test "global + long + fixpoint: child scope receives @engine.Rooted satellite (l
       {
         name: "sub",
         id: None,
+        trigger_name: None,
         body: child,
         export_key: @engine.ExportKey::unset(),
         const_values: None,
@@ -1002,11 +1004,11 @@ test "global + long + fixpoint: child scope receives @engine.Rooted satellite (l
     ],
   }
   let sc = ok_scope(def, all_installers())
-  // 子 scope (@engine.CommandSatisfied("sub", 0, child_scope)) を取り出す
+  // 子 scope (@engine.CommandSatisfied("sub", "sub", 0, child_scope)) を取り出す
   let mut child_sc : @engine.Scope? = None
   for g in sc.greedy {
     match g {
-      @engine.CommandSatisfied(n, _, cs) =>
+      @engine.CommandSatisfied(_, n, _, cs) =>
         if n == "sub" {
           child_sc = Some(cs)
         }
@@ -1304,6 +1306,7 @@ test "parse_definition: an alias's long_override update variant on a multiple ca
       {
         target: "tags",
         name: Some("t"),
+        trigger_name: None,
         short: [],
         long_override: Some(List(["bump:incr"])),
         deprecated: false,
@@ -1340,6 +1343,7 @@ test "parse_definition: an alias's long_override update variant on a scalar cano
       {
         target: "verbosity",
         name: Some("v"),
+        trigger_name: None,
         short: [],
         long_override: Some(List(["bump:incr"])),
         deprecated: false,
@@ -1586,6 +1590,7 @@ test "parse_definition: a colon-less alias long_override spelling is a DR-054 un
       {
         target: "verbose",
         name: Some("chatty"),
+        trigger_name: None,
         short: [],
         long_override: Some(List(["chatty"])), // colon-less — 文法エラー
         deprecated: false,
@@ -1628,6 +1633,7 @@ test "desugar_aliases: alias long:true on a flag canonical composes :set:true (b
       {
         target: "verbose",
         name: Some("v"),
+        trigger_name: None,
         short: [],
         long_override: Some(Bool(true)),
         deprecated: false,
@@ -1665,6 +1671,7 @@ test "desugar_aliases: alias long:true on a string canonical stays a value-slot 
       {
         target: "host",
         name: Some("h"),
+        trigger_name: None,
         short: [],
         long_override: Some(Bool(true)),
         deprecated: false,
@@ -1713,6 +1720,7 @@ test "copy_global_into: two same-name different-trigger globals (declared indepe
       {
         name: "mid",
         id: None,
+        trigger_name: None,
         body: {
           ..empty_def(),
           options: [
@@ -1726,6 +1734,7 @@ test "copy_global_into: two same-name different-trigger globals (declared indepe
             {
               name: "sub",
               id: None,
+              trigger_name: None,
               body: empty_def(),
               export_key: @engine.ExportKey::unset(),
               const_values: None,
@@ -1745,7 +1754,10 @@ test "copy_global_into: two same-name different-trigger globals (declared indepe
   let mut mid_sc : @engine.Scope? = None
   for g in sc.greedy {
     match g {
-      @engine.CommandSatisfied(n, _, cs) => if n == "mid" { mid_sc = Some(cs) }
+      @engine.CommandSatisfied(_, n, _, cs) =>
+        if n == "mid" {
+          mid_sc = Some(cs)
+        }
       _ => ()
     }
   }
@@ -1753,7 +1765,10 @@ test "copy_global_into: two same-name different-trigger globals (declared indepe
   let mut sub_sc : @engine.Scope? = None
   for g in mid_sc.greedy {
     match g {
-      @engine.CommandSatisfied(n, _, cs) => if n == "sub" { sub_sc = Some(cs) }
+      @engine.CommandSatisfied(_, n, _, cs) =>
+        if n == "sub" {
+          sub_sc = Some(cs)
+        }
       _ => ()
     }
   }
@@ -2293,6 +2308,7 @@ test "requires targeting a bool filled by a borrow default_fn survives the filte
       {
         name: "sub",
         id: None,
+        trigger_name: None,
         body: child,
         export_key: @engine.ExportKey::unset(),
         const_values: None,
@@ -2345,6 +2361,7 @@ test "a bool filled by a borrow default_fn that resolves false still violates re
       {
         name: "sub",
         id: None,
+        trigger_name: None,
         body: child,
         export_key: @engine.ExportKey::unset(),
         const_values: None,
@@ -4240,6 +4257,7 @@ test "global option value-starve inside a child command: missing_operand converg
       {
         name: "a",
         id: None,
+        trigger_name: None,
         body: empty_def(),
         export_key: @engine.ExportKey::unset(),
         const_values: None,
@@ -4288,6 +4306,7 @@ test "command-local (non-global) option value-starve: missing_operand path=[\"a\
       {
         name: "a",
         id: None,
+        trigger_name: None,
         body: child,
         export_key: @engine.ExportKey::unset(),
         const_values: None,
@@ -4529,6 +4548,7 @@ test "DR-120 §4: a global entry copy in a child scope claims no result key" {
       {
         name: "sub",
         id: None,
+        trigger_name: None,
         body: child,
         export_key: @engine.ExportKey::unset(),
         const_values: None,

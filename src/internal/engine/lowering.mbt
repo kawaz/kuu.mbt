@@ -430,6 +430,7 @@ fn clone_elem(e : ElementDef) -> ElementDef {
   {
     name: e.name,
     id: e.id,
+    trigger_name: e.trigger_name,
     ty: e.ty,
     long: copy_long(e.long),
     variants: copy_variants(e.variants),
@@ -652,6 +653,7 @@ fn clone_def(d : Definition) -> Definition {
     cs.push({
       name: c.name,
       id: c.id,
+      trigger_name: c.trigger_name,
       body: clone_def(c.body),
       export_key: c.export_key,
       const_values: c.const_values,
@@ -1335,7 +1337,9 @@ fn init_sb(
       Some(entity) => child.output().push_entity(entity)
       None => ()
     }
-    children.push(InstallChild::new(c.name, ordinal, child))
+    children.push(
+      InstallChild::new(c.trigger_spelling(), c.name, ordinal, child),
+    )
   }
   InstallBuilder::new(
     def,
@@ -3321,6 +3325,7 @@ fn copy_global_into(
   child.definition().options.push({
     name: copy.name,
     id: copy.id,
+    trigger_name: copy.trigger_name,
     ty: copy.ty,
     long: copy.long,
     variants: copy.variants,
@@ -3760,6 +3765,9 @@ fn alias_entry(
     // 参照識別子も canonical のものへ寄せる (DR-057 §2: alias 入口は実体を持たず canonical へ
     // 解決する) — 明示 id 軸は canonical 側の宣言だけが持つ。
     id: None,
+    // 入口綴りは `long` / `short` に確定形で載っている (呼び出し元が alias の綴り軸で再導出済み)
+    // ので、entry-copy 自身は綴り軸のデフォルト供給を持たない。
+    trigger_name: None,
     ty,
     // 既に導出済み explicit 綴り列 (`:set` は含まない — normalize/resolve_long の対象外、post-normalize
     // 相当の確定形として直接 List で持つ)。alias entry-copies は fixpoint installer (inst_long 等) が
@@ -3848,6 +3856,12 @@ fn desugar_aliases(
       Some(n) => n
       None => a.target // 明示 name 無し → canonical 名を流用 (e.g. short-only alias)
     }
+    // DR-136 §5: alias が持つのは綴り軸だけで、入口綴りは alias 自身の trigger_name
+    // (既定 = alias の name に trigger 軸の文字写像を掛けた値) から立つ。
+    let alias_trigger = match a.trigger_name {
+      Some(t) => t
+      None => name_axis_trigger(alias_name)
+    }
     match find_elem(def, a.target) {
       Some(canon) => {
         let (orig_ty, orig_long) = match find_elem(orig, a.target) {
@@ -3864,9 +3878,10 @@ fn desugar_aliases(
           orig_ty,
           extensions,
         )
+        let canon_trigger = canon.trigger_spelling()
         let long : Array[String] = []
-        if str_in(canon_longs, kebab(canon.name)) {
-          long.push(alias_name)
+        if str_in(canon_longs, canon_trigger) {
+          long.push(alias_trigger)
         }
         // 明示 `long` override (DR-007 差分上書き) は自綴りを add、継承 variants を cut。alias 自身の
         // long も canonical と同じ `resolve_long` (colon DSL 分類 + flag 規則1/2) を alias 名・
@@ -3876,7 +3891,7 @@ fn desugar_aliases(
         match a.long_override {
           Some(decl) => {
             let (longs, vars) = resolve_long(
-              decl, alias_name, orig_ty, extensions,
+              decl, alias_trigger, orig_ty, extensions,
             )
             for n in longs {
               if !str_in(long, n) {
@@ -3892,9 +3907,13 @@ fn desugar_aliases(
             // variant.trigger が canonical.name を部分文字列に含めば name-derived (DR-057 §3);
             // 明示 trigger (e.g. compress の "gzip") は非継承 (明示綴り非継承)。
             for v in canon_vars {
-              if str_has_sub(v.trigger, canon.name) {
+              if str_has_sub(v.trigger, canon_trigger) {
                 variants.push({
-                  trigger: str_replace_first(v.trigger, canon.name, alias_name),
+                  trigger: str_replace_first(
+                    v.trigger,
+                    canon_trigger,
+                    alias_trigger,
+                  ),
                   op: v.op,
                   operand: v.operand,
                 })
@@ -3920,6 +3939,8 @@ fn desugar_aliases(
             def.commands.push({
               name: alias_name,
               id: cmd.id,
+              // DR-136 §5: command alias の入口綴りは alias 自身の綴り軸から立つ。
+              trigger_name: Some(alias_trigger),
               body: clone_def(cmd.body),
               export_key: ExportKey::key(a.target),
               const_values: cmd.const_values,
@@ -4339,7 +4360,7 @@ fn head_progresses(
     | Exact(_)
     | NativeMatch(_)
     | DdSatisfied(_)
-    | CommandSatisfied(_, _, _) => true
+    | CommandSatisfied(_, _, _, _) => true
     // DR-090: progress depends on `self_keep` — `drop` (false) consumes 1 token like `DdSatisfied`,
     // `keep` (true) is a 0-token Accept (same standing as `Bind`/`effect resident` below).
     DdMatchSatisfied(_, _, self_keep, _) => !self_keep
