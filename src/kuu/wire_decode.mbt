@@ -3281,3 +3281,108 @@ fn dec_definition(
   }
   { scope, options, positionals, commands, aliases, help_types: [] }
 }
+
+// ── DR-136 §1: 名前軸の確定 (decode 境界の 1 パス) ───────────────────────────────
+
+///|
+/// `name` は各軸へ値を供給するだけの存在で、それ自体は CLI 表面にも結果にも直接現れない
+/// (DR-136 §1)。供給は decode 境界のこのパスで 1 度だけ済ませ、以降の相 (installer / eval /
+/// resolve) は **確定した軸の値だけ**を見る:
+///
+/// - `trigger_name` — 未指定なら name の trigger 軸写像 (CLI 表面の照合綴り)
+/// - `export_key` — 未指定なら name の id 軸写像 (結果キー)
+/// - `display_name` — 未指定なら raw name (写像を通さない人間可読ラベル)
+/// - `name` 自身 — 参照識別子 (明示 `id`、無ければ name の id 軸写像) へ寄せる。宣言名を内部の
+///   同一性キー (entity / binding / 参照解決) に使う経路が多数あるため、`name` フィールドを
+///   id 軸そのものにしておくと「どこか 1 箇所で写像し忘れて同一性が割れる」事故が構造的に起きない
+///
+/// 明示値には写像を掛けない (§3)。パスは Or / Group の内側と command body まで降りる。
+fn settle_name_axes(def : @engine.Definition) -> @engine.Definition {
+  let options : Array[@engine.ElementDef] = []
+  for e in def.options {
+    options.push(settle_element_name_axes(e))
+  }
+  let positionals : Array[@engine.ElementDef] = []
+  for e in def.positionals {
+    positionals.push(settle_element_name_axes(e))
+  }
+  let commands : Array[@engine.CommandDef] = []
+  for c in def.commands {
+    commands.push({
+      ..c,
+      trigger_name: Some(c.trigger_spelling()),
+      export_key: settled_export_key(c.name, c.export_key),
+      name: c.reference_identifier(),
+      id: None,
+      body: settle_name_axes(c.body),
+    })
+  }
+  { ..def, options, positionals, commands }
+}
+
+///|
+/// 未指定の結果キー軸を name の id 軸写像で埋める (DR-136 §1)。明示指定 (`Key` / `Null`) は
+/// そのまま。空 name は結果キーを持たない層なので `Null` へ倒す (`resolved_export_key` の
+/// 既存の縮退と同じ)。
+fn settled_export_key(
+  name : String,
+  key : @engine.ExportKey,
+) -> @engine.ExportKey {
+  match key {
+    @engine.ExportKey::Unset =>
+      if name == "" {
+        @engine.ExportKey::null()
+      } else {
+        @engine.ExportKey::key(@engine.name_axis_id(name))
+      }
+    other => other
+  }
+}
+
+///|
+fn settle_element_name_axes(e : @engine.ElementDef) -> @engine.ElementDef {
+  // 裸 `{"exact": "..."}` の綴りは literal の直値であって name 由来の軸ではない (DR-136 §2)。
+  // `exact_marker` が内部 `name` にその綴りを運んでいるだけなので、写像も id 軸への寄せもしない
+  // (completion origin が自分の綴りに落ちる規範 — DR-104 §2 note (iii) — もこれで保たれる)。
+  if e.is_exact {
+    return e
+  }
+  // DR-064 §5: dd の name 既定 `--` は軸を確定する前に供給する — 後段で埋めると id 軸が
+  // 空文字のまま確定してしまう。
+  let raw_name = if e.is_dd && e.name == "" { "--" } else { e.name }
+  let base = { ..e, name: raw_name }
+  let body = match e.body {
+    @engine.ElementBody::Group(items) => {
+      let settled : Array[@engine.ElementDef] = []
+      for item in items {
+        settled.push(settle_element_name_axes(item))
+      }
+      @engine.ElementBody::Group(settled)
+    }
+    @engine.ElementBody::Or(branches) => {
+      let settled : Array[@engine.OrBranch] = []
+      for branch in branches {
+        let items : Array[@engine.ElementDef] = []
+        for item in branch.items {
+          items.push(settle_element_name_axes(item))
+        }
+        settled.push({ ..branch, items, })
+      }
+      @engine.ElementBody::Or(settled)
+    }
+    other => other
+  }
+  // dd のトリガ綴りは **raw name の直値** — DR-064 §5 の「name はトリガ綴り軸にのみ効く」
+  // 方言差し替え (`fixtures/dd/dialect-name.json` の `++`) は literal であって、DR-136 §2 が
+  // 綴り軸に載せると列挙した 3 つ (long の基幹綴り / command のトリガ / alias の入口) の
+  // どれでもない。exact / values の literal 直値と同じ扱いで写像を通さない。
+  let trigger = if e.is_dd { raw_name } else { base.trigger_spelling() }
+  {
+    ..base,
+    trigger_name: Some(trigger),
+    export_key: settled_export_key(raw_name, e.export_key),
+    name: base.reference_identifier(),
+    id: None,
+    body,
+  }
+}

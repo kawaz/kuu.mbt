@@ -696,7 +696,13 @@ pub(all) struct RequiredCandidate {
 /// violation makes the path NOT a complete解決経路 (DR-047 §2) — a DR-037 Error of kind:constraint.
 pub(all) enum Constraint {
   /// element committed → each target must have a value (default 込み). requires = 正の依存 (DR-055 §3).
-  Requires(String, Array[String])
+  ///
+  /// 3-tuple = (entity, element, targets)。`entity` は committed 判定の対象 (= 宣言元の entity 名、
+  /// binding のキー軸)、`element` は違反時の `errors[].element` (= 参照識別子軸、DR-136 裁定 4)。
+  /// 通常は同じ文字列に落ちるが、明示 `id` や name の文字写像 (DR-136 §3) で分岐する。2 軸に割る
+  /// のは `RequiresIf` が既に (entity, branch_id) で採っている形と同じ。`targets` は宣言に書かれた
+  /// 参照文字列を共通 resolver (DR-136 §6) が entity 名へ解決した後の列。
+  Requires(String, String, Array[String])
   /// value-dependent requires (DR-055 §1 + DR-052 §値枝 id 直交): 4-tuple = (entity, branch_id,
   /// value, targets). Semantics: `entity` が committed AND その値 == `value` のとき、`targets` の値
   /// 充足を要求する。違反時の error.element は `branch_id` (= or 値枝の匿名要素に付いた id、fixture
@@ -706,7 +712,9 @@ pub(all) enum Constraint {
   RequiresIf(String, String, String, Array[String])
   /// conflicts_with (DR-055 §2, 対称): element committed + any target committed → conflict. Declaring
   /// on one side works both ways (the check is「両方 committed」regardless of who declared it).
-  Conflicts(String, Array[String])
+  ///
+  /// 3-tuple = (entity, element, targets)。軸の割り方は `Requires` と同じ。
+  Conflicts(String, String, Array[String])
   /// exclusive_group: at most one member of the group may be committed (DR-047 指定述語).
   Exclusive(String, Array[String])
   /// required (DR-093 §1/§2): この entity 自身の「解決後の充足」。充足の定義は型 (値空間) への委譲 —

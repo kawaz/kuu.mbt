@@ -896,11 +896,14 @@ test "dd installer: options[] placement lowers to same @engine.DdSatisfied with 
     options: [el("--", @builtins.string_type(), is_dd=true)],
   }
   let sc = ok_scope(def, all_installers())
-  // @engine.DdSatisfied("--", "__") が greedy に 1 本 (trigger は name 軸、origin は id 軸
-  // — DR-136 §3 で `--` の id 綴りは `__`)、entity は 0 個 (dd は値なし)
+  // @engine.DdSatisfied("--", "--") が greedy に 1 本、entity は 0 個 (dd は値なし)。
+  // ここは ElementDef を直組みする経路なので name 軸は decode 境界の `settle_name_axes`
+  // (DR-136 §1) を通っておらず、trigger 軸と参照識別子軸が両方 raw name のまま一致する。
+  // 境界を通した実入力で id 軸が `__` に落ちることは
+  // `fixtures/dd/required-fire.json` (element=`__`) が pin する。
   let mut has_dd = false
   for g in sc.greedy {
-    if g == @engine.DdSatisfied("--", "__") {
+    if g == @engine.DdSatisfied("--", "--") {
       has_dd = true
     }
   }
@@ -2985,8 +2988,8 @@ test "DR-093: a required:true dd element (@engine.DdSatisfied) is satisfied by f
     @engine.Failure(d) => {
       let mut found = false
       for e in d.errors {
-        // DR-136 裁定 4: errors[].element は参照識別子軸 (`--` の id 綴りは `__`)。
-        if e.element == "__" && e.reason == "required_violated" {
+        // 直組み ElementDef なので軸は raw name のまま (上の dd installer test と同じ理由)。
+        if e.element == "--" && e.reason == "required_violated" {
           found = true
         }
       }

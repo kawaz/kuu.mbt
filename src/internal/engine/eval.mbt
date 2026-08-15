@@ -488,7 +488,7 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
         // evaluation はこの1本の Branch の bindings を返すだけ — 呼び出し元が outer acc と cat する)。
         [
           Accept(pos + 1, [
-            Binding::new(trigger, Bool(true), Cli, at_pos=Some(pos)),
+            Binding::new(origin, Bool(true), Cli, at_pos=Some(pos)),
           ]),
         ]
       } else if pos >= ctx.toks.length() && in_complete(ctx) {
@@ -535,7 +535,7 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
           ),
         )
       } else if pos >= ctx.toks.length() && in_complete(ctx) {
-        [Pending([Candidate::trigger(name, name, "flag", WordEnd)], [])]
+        [Pending([Candidate::trigger(trigger, name, "flag", WordEnd)], [])]
       } else {
         []
       }
@@ -1639,13 +1639,13 @@ fn eval_greedy_with_downstream(
         }
       } else if pos >= ctx.toks.length() && in_complete(ctx) {
         out.push(
-          Pending([Candidate::trigger(name, name, "flag", WordEnd)], acc),
+          Pending([Candidate::trigger(trigger, name, "flag", WordEnd)], acc),
         )
       }
     DdSatisfied(trigger, origin) =>
       if pos < ctx.toks.length() && ctx.toks[pos] == trigger {
         let acc2 = acc +
-          [Binding::new(trigger, Bool(true), Cli, at_pos=Some(pos))]
+          [Binding::new(origin, Bool(true), Cli, at_pos=Some(pos))]
         for
           branch in eval_scope_with_downstream(
             sc,
@@ -3062,7 +3062,7 @@ fn step_greedy(
         // before resuming the parent, so an empty child backbone cannot expose
         // its consumed trigger again; another same-name ordinal remains eligible.
         out.push(
-          Pending([Candidate::trigger(name, name, "flag", WordEnd)], acc),
+          Pending([Candidate::trigger(trigger, name, "flag", WordEnd)], acc),
         )
       }
     DdSatisfied(trigger, origin) =>
@@ -3073,7 +3073,7 @@ fn step_greedy(
         // trigger 文字列は要素名そのもの (dd_match 未使用の唯一のケースでのみ installer が
         // `DdSatisfied(e.name)` を作る) なのでそのまま key に使える。
         let acc2 = acc +
-          [Binding::new(trigger, Bool(true), Cli, at_pos=Some(pos))]
+          [Binding::new(origin, Bool(true), Cli, at_pos=Some(pos))]
         for r in scope_step(sc, ctx, pos + 1, pidx, acc2, true, sever_cont(k)) {
           out.push(r)
         }
@@ -4564,16 +4564,17 @@ fn eval_constraints(
   let path = sc.path
   for c in sc.constraints {
     match c {
-      Requires(elem, targets) =>
-        if is_committed(bindings, path, elem) &&
-          !has_pending_invoke(bindings, path, elem) {
+      // DR-136 裁定 4: committed 判定は entity 名軸、errors[].element は参照識別子軸。
+      Requires(entity, element, targets) =>
+        if is_committed(bindings, path, entity) &&
+          !has_pending_invoke(bindings, path, entity) {
           for t in targets {
             if !value_declared(t, bindings, path, sc.entities) {
               out.push(
                 ParseError::constraint(
-                  elem,
+                  element,
                   "requires_violated",
-                  "'\{elem}' requires '\{t}'",
+                  "'\{element}' requires '\{t}'",
                   pos,
                 ),
               )
@@ -4606,17 +4607,17 @@ fn eval_constraints(
           }
         }
       }
-      Conflicts(elem, targets) =>
-        if is_committed(bindings, path, elem) &&
-          !has_pending_invoke(bindings, path, elem) {
+      Conflicts(entity, element, targets) =>
+        if is_committed(bindings, path, entity) &&
+          !has_pending_invoke(bindings, path, entity) {
           for t in targets {
             if is_committed(bindings, path, t) &&
               !has_pending_invoke(bindings, path, t) {
               out.push(
                 ParseError::constraint(
-                  elem,
+                  element,
                   "conflicts_with_violated",
-                  "'\{elem}' conflicts with '\{t}'",
+                  "'\{element}' conflicts with '\{t}'",
                   pos,
                 ),
               )

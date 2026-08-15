@@ -203,10 +203,24 @@ fn lcon_str(c : @engine.Constraint) -> String {
   }
 
   match c {
-    Requires(el, ts) =>
-      "requires{element=" + el + ",targets=[" + sorted(ts) + "]}"
-    Conflicts(el, ts) =>
-      "conflicts_with{element=" + el + ",targets=[" + sorted(ts) + "]}"
+    // DR-136 裁定 4: entity (committed 判定対象) と element (違反時 emit) を両方 emit する
+    // — RequiresIf の断面と同じ形 (両者が分岐したときにその非対称が読める)。
+    Requires(entity, el, ts) =>
+      "requires{entity=" +
+      entity +
+      ",element=" +
+      el +
+      ",targets=[" +
+      sorted(ts) +
+      "]}"
+    Conflicts(entity, el, ts) =>
+      "conflicts_with{entity=" +
+      entity +
+      ",element=" +
+      el +
+      ",targets=[" +
+      sorted(ts) +
+      "]}"
     RequiresIf(entity, branch_id, v, ts) =>
       // DR-055 §1 + DR-052 §値枝 id 直交: entity は committed 判定対象、branch_id は違反時 element。
       // 断面には両方 emit する (entity と branch_id が別ならその非対称が読める; id なしの parent 直属
@@ -1278,16 +1292,31 @@ fn dec_lcon(j : Json) -> @engine.Constraint raise DecodeSkip {
   }
   match req_field(o, "kind") {
     "requires" => {
-      allowed_keys(o, ["kind", "element", "targets"], "requires constraint")
-      Requires(req_field(o, "element"), dec_strs(o.get("targets")))
+      // `entity` 省略時は `element` にフォールバック (RequiresIf と同じ受け方)。
+      allowed_keys(
+        o,
+        ["kind", "entity", "element", "targets"],
+        "requires constraint",
+      )
+      let element = req_field(o, "element")
+      Requires(
+        jf_str(o, "entity").unwrap_or(element),
+        element,
+        dec_strs(o.get("targets")),
+      )
     }
     "conflicts_with" => {
       allowed_keys(
         o,
-        ["kind", "element", "targets"],
+        ["kind", "entity", "element", "targets"],
         "conflicts_with constraint",
       )
-      Conflicts(req_field(o, "element"), dec_strs(o.get("targets")))
+      let element = req_field(o, "element")
+      Conflicts(
+        jf_str(o, "entity").unwrap_or(element),
+        element,
+        dec_strs(o.get("targets")),
+      )
     }
     "requires_if" => {
       // DR-055 §1 + DR-052 §値枝 id 直交: fixture 側が constraints[] を直宣言する場面での decoder。

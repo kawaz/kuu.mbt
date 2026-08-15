@@ -177,7 +177,9 @@ test "front_door.parse_definition: command は id 軸へ参加し明示 id で�
     Err(Rejected(errors)) =>
       assert_eq(
         deferrs_str(errors),
-        "/duplicate-id,leaf/duplicate-id,leaf/duplicate-id,leaf/export-key-collision,leaf/export-key-collision,wrapper/duplicate-id",
+        // DR-136 裁定 4: id-only structural の element も参照識別子軸で綴られる
+        // (明示 `id: "wrapper"` がそのまま出る — 以前の空文字 element は name 軸の残滓)。
+        "leaf/duplicate-id,leaf/duplicate-id,leaf/export-key-collision,leaf/export-key-collision,wrapper/duplicate-id,wrapper/duplicate-id",
       )
     Err(Malformed(reason)) =>
       fail(
@@ -200,7 +202,10 @@ test "front_door.parse_definition: command は id 軸へ参加し明示 id で�
     #|]}
   match parse_definition(@json.parse(identified_exact)) {
     Err(Rejected(errors)) =>
-      assert_eq(deferrs_str(errors), "literal/duplicate-id,run/duplicate-id")
+      // DR-136 裁定 4: element は参照識別子軸。両宣言とも id `shared` で参加しているので
+      // (それがこの衝突の正体)、2 件とも `shared` で attribution される。exact の綴り
+      // (`literal`) は綴り軸に残り、id 軸とは独立のまま。
+      assert_eq(deferrs_str(errors), "shared/duplicate-id,shared/duplicate-id")
     Err(Malformed(reason)) =>
       fail(
         "identified exact duplicate must be rejected, not malformed: " + reason,

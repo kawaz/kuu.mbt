@@ -2572,15 +2572,16 @@ fn eval_requires(
   }
   for c in sc.constraints {
     match c {
-      Requires(elem, targets) =>
-        if committed(elem) {
+      // DR-136 裁定 4: committed 判定は entity 名軸、errors[].element は参照識別子軸。
+      Requires(entity, element, targets) =>
+        if committed(entity) {
           for t in targets {
             if !satisfied(t) {
               out.push({
                 ..@abi.ParseError::constraint(
-                  elem,
+                  element,
                   "requires_violated",
-                  "'\{elem}' requires '\{t}'",
+                  "'\{element}' requires '\{t}'",
                   pos,
                 ),
                 path,
@@ -2610,19 +2611,19 @@ fn eval_requires(
           }
         }
       }
-      Conflicts(elem, targets) =>
-        if committed(elem) {
+      Conflicts(entity, element, targets) =>
+        if committed(entity) {
           for target in targets {
             if (
-                constraint_has_pending_invoke(bindings, path, elem) ||
+                constraint_has_pending_invoke(bindings, path, entity) ||
                 constraint_has_pending_invoke(bindings, path, target)
               ) &&
               committed(target) {
               out.push({
                 ..@abi.ParseError::constraint(
-                  elem,
+                  element,
                   "conflicts_with_violated",
-                  "'\{elem}' conflicts with '\{target}'",
+                  "'\{element}' conflicts with '\{target}'",
                   pos,
                 ),
                 path,

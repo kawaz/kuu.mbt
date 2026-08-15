@@ -157,7 +157,9 @@ pub fn parse_definition(
     // DR-113 §4.2: root Definition に共有 type map (help_types) を stamp — 子孫 Definition は
     // 常に空 (dec_definition の default)。help_installer が root の help_types を読んで types
     // 集約射影を行う。
-    let def = { ..def_raw, help_types, }
+    // DR-136 §1: name からの各軸供給は decode 境界でここ 1 度だけ行い、以降の相は確定した
+    // 軸の値だけを見る (`settle_name_axes` の doc comment 参照)。
+    let def = settle_name_axes({ ..def_raw, help_types, })
     match
       @node.lower_definition_snapshot(
         def,

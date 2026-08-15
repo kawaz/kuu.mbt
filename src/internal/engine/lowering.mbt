@@ -157,10 +157,13 @@ pub fn classify_long_spelling(
 
 ///|
 /// DR-076 §2: the `:set:true` variant (bare-trigger fire → literal `true`) a flag's long展開
-/// composes in — `classify_long_spelling(":set:true", kebab(name), flag_type())` would build the SAME
+/// composes in — `classify_long_spelling(":set:true", trigger, flag_type())` would build the SAME
 /// value (colon-DSL round-trip), this just skips the string-splitting for the one fixed shape.
-fn flag_bare_true_variant(name : String) -> Variant {
-  { trigger: kebab(name), op: Set, operand: Some(Bool(true)) }
+///
+/// DR-136 §2: 引数は既に綴り (トリガ) 軸の値 — 基幹綴りの正本は trigger_name 軸であり、
+/// ここで name から写像し直さない。
+fn flag_bare_true_variant(trigger : String) -> Variant {
+  { trigger, op: Set, operand: Some(Bool(true)) }
 }
 
 ///|
@@ -168,12 +171,8 @@ fn flag_bare_true_variant(name : String) -> Variant {
 /// to the linked cell's old value) a count's long展開 composes in — mirrors `flag_bare_true_variant`
 /// exactly, just with `Update("increment", [])` in place of `Set`/`true` (count has no operand to
 /// carry; the fired value depends on the cell's running state, computed by resolve.mbt's fold).
-fn count_increment_variant(name : String) -> Variant {
-  {
-    trigger: kebab(name),
-    op: Invoke({ name: "incr", args: [] }),
-    operand: None,
-  }
+fn count_increment_variant(trigger : String) -> Variant {
+  { trigger, op: Invoke({ name: "incr", args: [] }), operand: None }
 }
 
 ///|
@@ -191,9 +190,11 @@ fn count_increment_variant(name : String) -> Variant {
 /// skipped here — the caller (`normalize_option`) only reaches this AFTER
 /// `collect_invalid_long_dsl` has already surfaced them as definition-errors and `parse_definition`
 /// has returned early on any error, so none should be live at this point in practice.
+/// `name` ではなく **綴り (トリガ) 軸の値**を受け取る (DR-136 §2: 基幹綴りの正本は trigger_name
+/// 軸で、DSL は affix と cell fn しか語らない)。呼び出し側が `trigger_spelling()` を渡す。
 fn resolve_long(
   decl : LongDeclaration,
-  name : String,
+  trigger : String,
   ty : &TypeExt,
   extensions : Registry,
   // DR-127 §3.2: 値残余 entry の `:set:VALUE` variant literal はフィールド側 type の
@@ -204,31 +205,31 @@ fn resolve_long(
     Bool(false) => ([], [])
     Bool(true) =>
       if ty.name() == "flag" {
-        ([], [flag_bare_true_variant(name)])
+        ([], [flag_bare_true_variant(trigger)])
       } else if ty.name() == "count" {
-        ([], [count_increment_variant(name)])
+        ([], [count_increment_variant(trigger)])
       } else if ty.name() == "none" {
         // DR-089 §2 の「消費 0 の純トリガ」canonical 例 (`{"name": "sep", "long": true}`) —
         // flag_type()/count_type() と同じ「main entry を持たず bare-true variant だけ」の 3 例目。none には
         // 運ぶ値が無いので `flag_bare_true_variant` のプレースホルダ (`Set Bool(true)`) をそのまま
         // 再利用してよい — この Binding は `build_result` 側で `NoneCell` により結果から除外される
         // (`resolve.mbt` 参照)、committed 参加 (conflicts/exclusive/requires トリガ側) だけが生きる。
-        ([], [flag_bare_true_variant(name)])
+        ([], [flag_bare_true_variant(trigger)])
       } else {
-        ([kebab(name)], [])
+        ([trigger], [])
       }
     List(strs) => {
       let longs : Array[String] = []
       let vars : Array[Variant] = []
       for l in strs {
-        match classify_long_spelling(l, kebab(name), operand_ty, extensions) {
+        match classify_long_spelling(l, trigger, operand_ty, extensions) {
           Main(n) => longs.push(n)
           Variant(v) => vars.push(v)
           Invalid(_, _) => ()
         }
       }
       if ty.name() == "flag" && (longs.length() > 0 || vars.length() > 0) {
-        let bare_true = flag_bare_true_variant(name)
+        let bare_true = flag_bare_true_variant(trigger)
         let mut already = false
         for v in vars {
           if v == bare_true {
@@ -245,14 +246,14 @@ fn resolve_long(
       let longs : Array[String] = []
       let vars : Array[Variant] = []
       for form in forms {
-        match classify_long_form(form, kebab(name), ty, extensions) {
+        match classify_long_form(form, trigger, ty, extensions) {
           Main(n) => longs.push(n)
           Variant(v) => vars.push(v)
           Invalid(_, _) => ()
         }
       }
       if ty.name() == "flag" && (longs.length() > 0 || vars.length() > 0) {
-        let bare_true = flag_bare_true_variant(name)
+        let bare_true = flag_bare_true_variant(trigger)
         let mut already = false
         for v in vars {
           if v == bare_true {
@@ -377,7 +378,7 @@ fn copy_filter_spellings(a : Array[FnInvocation]) -> Array[FnInvocation] {
 }
 
 ///|
-/// 有効 long 綴り一覧 (post-normalize; `:set` は既に kebab(name) に展開済み、`normalize_option` が
+/// 有効 long 綴り一覧 (post-normalize; `:set` は既に trigger 軸の綴りへ展開済み、`normalize_option` が
 /// `LongDeclaration` を `List([<kebab main entries>])` に確定させた後の形)。[] = main-entry なし (DR-071)。
 /// pre-normalize な `Bool` はここに来ない前提 (呼び出しは全て normalize 後)。
 fn long_of(e : ElementDef) -> Array[String] {
@@ -523,13 +524,6 @@ fn clone_body(b : ElementBody) -> ElementBody {
 }
 
 ///|
-/// `name` → 綴り (トリガ) 軸 (DR-136 §1/§3、DR-022 の綴り慣習を軸として一級化したもの)。
-/// ASCII 英数と非 ASCII は保持、それ以外の ASCII (記号・空白) を `-` へ 1:1 写像する。
-fn kebab(name : String) -> String {
-  name_axis_trigger(name)
-}
-
-///|
 /// 純構文 pre-pass (LOWERING §A / §C.4)。static check と installer fixpoint の前に走る:
 ///   Fix 2 (§B.1 / DR-071 / DR-076 §2, kawaz 裁定 2026-07-08): `resolve_long` が `LongDeclaration` (wire 二形)
 ///   を解釈し、main entry (kebab 展開済み) と variants に確定させる。糖衣展開・flag 差し替え/補完・
@@ -588,7 +582,7 @@ fn normalize_option(
   } else {
     let (longs, vars) = resolve_long(
       e.long,
-      e.name,
+      e.trigger_spelling(),
       e.ty,
       extensions,
       operand_ty=operand_ty.unwrap_or(e.ty),
@@ -2463,7 +2457,7 @@ fn named_structural_child(
       }
     Cell | Enum(_) => ()
   }
-  resolve_id_reference(candidates, name, fn(c) { c.0.reference_identifier() })
+  resolve_id_reference(candidates, name, fn(c) { c.0.name })
 }
 
 ///|
@@ -2626,9 +2620,7 @@ fn resolve_link_path(def : Definition, path : LinkPath) -> LinkPathResolution {
   for element in def.positionals {
     root_candidates.push(element)
   }
-  let root = resolve_id_reference(root_candidates, path.root, fn(e) {
-    e.reference_identifier()
-  })
+  let root = resolve_id_reference(root_candidates, path.root, fn(e) { e.name })
   guard root is Some(root_element) else { return Missing }
   let root_depth = root_element.link_depth
   let mut current = root_element
@@ -3225,24 +3217,18 @@ fn inst_dd(def : Definition, build : InstallOutput) -> Unit {
   // `dd_match` の pattern を spelling に使う)。
   fn dd_node(e : ElementDef) -> Node {
     if e.dd_match is None && !e.dd_self_keep {
-      DdSatisfied(e.name, e.reference_identifier())
+      DdSatisfied(e.trigger_spelling(), e.name)
     } else {
       match e.dd_match {
         Some(pattern) =>
-          DdMatchSatisfied(
-            pattern,
-            true,
-            e.dd_self_keep,
-            e.name,
-            e.reference_identifier(),
-          )
+          DdMatchSatisfied(pattern, true, e.dd_self_keep, e.name, e.name)
         None =>
           DdMatchSatisfied(
-            e.name,
+            e.trigger_spelling(),
             false,
             e.dd_self_keep,
             e.name,
-            e.reference_identifier(),
+            e.name,
           )
       }
     }
@@ -3596,27 +3582,60 @@ fn inst_constraint(
   for e in def.positionals {
     all.push(e)
   }
+  // 制約属性が並べる要素名は id 軸の参照 (DR-136 §6)。共通 resolver で宣言を引き当ててから、
+  // 述語が読む entity 名軸へ落とす — 述語側 (committed / 値充足) は binding のキー軸で動くので、
+  // 解決の軸と評価の軸をこの 1 箇所で繋ぐ。
+  let constraint_candidates : Array[ElementDef] = []
+  for e in all {
+    // alias entry-copy は canonical と同じ name を名乗る入口の写しなので、参照の候補には入れない
+    // (canonical と copy の 2 件が同じ entity へ解決して曖昧に見える形を作らない)。
+    if !e.is_alias {
+      constraint_candidates.push(e)
+    }
+  }
+  fn resolve_targets(targets : Array[String]) -> Array[String] {
+    let out : Array[String] = []
+    for target in targets {
+      match
+        resolve_id_reference(constraint_candidates, target, fn(candidate) {
+          candidate.name
+        }) {
+        // このスコープに居ない参照は書かれたまま渡す — lexical 連鎖の外側は
+        // global copy として降りてくるか、absent-ref 検査が別途拾う。
+        None => out.push(target)
+        Some(declaration) => out.push(declaration.name)
+      }
+    }
+    out
+  }
+
   for e in all {
     if e.requires.length() > 0 {
-      add_constraint(build, Requires(e.name, copy_strs(e.requires)))
+      add_constraint(
+        build,
+        Requires(e.name, e.name, resolve_targets(e.requires)),
+      )
     }
     if e.conflicts_with.length() > 0 {
-      add_constraint(build, Conflicts(e.name, copy_strs(e.conflicts_with)))
+      add_constraint(
+        build,
+        Conflicts(e.name, e.name, resolve_targets(e.conflicts_with)),
+      )
     }
     if e.required {
       // DR-093 §1/§2: required:true の要素自身を対象にした Required を 1 個登録。候補セル解決は
       // `required_candidates` (RequiredGroup と共有)。
       // display (= errors[].element) は参照識別子軸 (DR-136 裁定 4)。候補セルの解決は
       // entity 名軸のままなので `required_candidates` は e.name 由来を保つ。
-      add_constraint(
-        build,
-        Required(e.reference_identifier(), required_candidates(e, registry)),
-      )
+      add_constraint(build, Required(e.name, required_candidates(e, registry)))
     }
     for vr in e.value_requires {
       // DR-055 §1 / DR-052 §値枝 id 直交: 4-tuple = (entity, branch_id, value, targets)。entity は
       // committed 判定 / 値照合の対象 (親 name)、branch_id は違反時の error.element (枝の id)。
-      add_constraint(build, RequiresIf(e.name, vr.0, vr.1, copy_strs(vr.2)))
+      add_constraint(
+        build,
+        RequiresIf(e.name, vr.0, vr.1, resolve_targets(vr.2)),
+      )
     }
   }
   // exclusive_group: label per scope でメンバを集約 → 1 Exclusive per label
@@ -3889,13 +3908,10 @@ fn desugar_aliases(
         // (name-derived 主入口の有無) と、継承すべき NAME-DERIVED variants の両方をここから導く。
         // resolve_long を通すことで、canonical が flag なら規則1/2 (:set:true 差し替え/補完) を
         // 反映した形で `canon_vars` が手に入る。
-        let (canon_longs, canon_vars) = resolve_long(
-          orig_long,
-          canon.name,
-          orig_ty,
-          extensions,
-        )
         let canon_trigger = canon.trigger_spelling()
+        let (canon_longs, canon_vars) = resolve_long(
+          orig_long, canon_trigger, orig_ty, extensions,
+        )
         let long : Array[String] = []
         if str_in(canon_longs, canon_trigger) {
           long.push(alias_trigger)
@@ -4067,7 +4083,7 @@ priv struct DefaultFnSite {
 fn element_default_fn_site(element : ElementDef) -> DefaultFnSite {
   {
     cell: element.name,
-    attribution: element.reference_identifier(),
+    attribution: element.name,
     default_fn: element.default_fn,
     default_declared: element.default_declared,
   }
@@ -4087,7 +4103,7 @@ fn command_default_fn_site(command : CommandDef) -> DefaultFnSite? {
   }
   Some({
     cell: command_value_cell(),
-    attribution: command.reference_identifier(),
+    attribution: command.name,
     default_fn: command.default_fn,
     // command の wire には `default_declared` に当たる別フィールドが無い。`dec_command` が
     // `"default"` キーの有無をそのまま `default_values` の Some/None に写すので、これが
@@ -4226,11 +4242,12 @@ fn push_invalid_long(
     Bool(_) => () // bool 糖衣は常に妥当 (DR-071 §1 / DR-076 §2)
     List(strs) =>
       for l in strs {
-        match classify_long_spelling(l, kebab(e.name), e.ty, extensions) {
+        match
+          classify_long_spelling(l, e.trigger_spelling(), e.ty, extensions) {
           Invalid(s, kind) =>
             out.push(
               def_err(
-                e.reference_identifier(),
+                e.name,
                 kind,
                 "long spelling '\{s}' is not a valid cell-fn invocation",
                 "use a registered cell_fns name with arguments matching its descriptor",
@@ -4241,11 +4258,11 @@ fn push_invalid_long(
       }
     Forms(forms) =>
       for form in forms {
-        match classify_long_form(form, kebab(e.name), e.ty, extensions) {
+        match classify_long_form(form, e.trigger_spelling(), e.ty, extensions) {
           Invalid(s, kind) =>
             out.push(
               def_err(
-                e.reference_identifier(),
+                e.name,
                 kind,
                 "long spelling '\{s}' is not a valid cell-fn invocation",
                 "use a registered cell_fns name with arguments matching its descriptor",
@@ -4344,7 +4361,7 @@ fn collect_tty_stream_missing(def : Definition, out : Array[DefError]) -> Unit {
     if e.is_tty && e.tty_stream is None {
       out.push(
         def_err(
-          e.reference_identifier(),
+          e.name,
           InvalidRange,
           "'\{e.name}' selects the builtin/tty preset but its factory config is missing 'tty_stream' — bare type:\"tty\"/\"builtin/tty\" has no channel to supply it (DR-099 §3)",
           "declare a definitions.types entry with config.tty_stream set to \"stdin\"|\"stdout\"|\"stderr\", and reference that name from 'type'",
@@ -4526,7 +4543,7 @@ fn collect_element_zero_progress(
         !head_node_cycles(head, registry) {
         out.push(
           def_err(
-            e.reference_identifier(),
+            e.name,
             ZeroProgress,
             "repeat element '\{e.name}' has a zero-progress head",
             "give the repeat head a token-consuming element",
@@ -4628,7 +4645,7 @@ fn check_elem_absent_ref(
         None =>
           out.push(
             def_err(
-              e.reference_identifier(),
+              e.name,
               AbsentRef,
               "ref target '\{r}' is not defined in scope or definitions",
               "define '\{r}' as a template (definitions) or in the scope",
@@ -4829,7 +4846,7 @@ fn collect_type_reference_errors(
     let attribution = if fixed_attribution || element.name == "" {
       inherited_element
     } else {
-      element.reference_identifier()
+      element.name
     }
     match element.ref_target {
       Some(target) => {
@@ -5111,7 +5128,7 @@ fn collect_link_path_errors(
       Some(Invalid(raw)) =>
         out.push(
           def_err(
-            element.reference_identifier(),
+            element.name,
             InvalidArgument,
             "link path '\{raw}' is not valid fixed-path syntax",
             "use name followed only by .name or [integer] segments",
@@ -5123,7 +5140,7 @@ fn collect_link_path_errors(
           path.segments.length() > 0 {
           out.push(
             def_err(
-              element.reference_identifier(),
+              element.name,
               Unsupported,
               "global link paths are not supported by this implementation",
               "use a bare global link until copied fixed-path routing is implemented",
@@ -5132,7 +5149,7 @@ fn collect_link_path_errors(
         } else if link_path_crosses_multiple(def, path) {
           out.push(
             def_err(
-              element.reference_identifier(),
+              element.name,
               Unsupported,
               "link paths through multiple structural wrappers are not supported",
               "use a non-multiple structural target until row-addressed routing is implemented",
@@ -5144,7 +5161,7 @@ fn collect_link_path_errors(
               if element_is_accumulator_cell(leaf) {
                 out.push(
                   def_err(
-                    element.reference_identifier(),
+                    element.name,
                     Unsupported,
                     "this link path addresses the inside of an accumulator cell's collected value",
                     "target the accumulator cell itself with a bare link",
@@ -5155,7 +5172,7 @@ fn collect_link_path_errors(
                   OpaqueStructure =>
                     out.push(
                       def_err(
-                        element.reference_identifier(),
+                        element.name,
                         Unsupported,
                         "this link path reaches an opaque value structure",
                         "declare a structural output shape before linking into the value",
@@ -5164,7 +5181,7 @@ fn collect_link_path_errors(
                   UnionMismatch =>
                     out.push(
                       def_err(
-                        element.reference_identifier(),
+                        element.name,
                         InvalidRange,
                         "this link path's operand parse type differs between union variants",
                         "declare the same field type in every union variant that contains the path",
@@ -5216,7 +5233,7 @@ fn collect_unsupported_link_shape(
       if unsupported {
         out.push(
           def_err(
-            element.reference_identifier(),
+            element.name,
             Unsupported,
             "link with ref/or/seq is not supported by this implementation",
             "use a direct cell entry for link until structured link routing is implemented",
@@ -5279,7 +5296,7 @@ fn check_element_absent_link(
       if absent {
         out.push(
           def_err(
-            element.reference_identifier(),
+            element.name,
             AbsentRef,
             "link path from '\{path.root}' does not resolve to a declared value seat",
             "target a declared child cell or a value type that exposes structure",
@@ -5302,7 +5319,7 @@ fn collect_invalid_range(def : Definition, out : Array[DefError]) -> Unit {
             if spec.min > mx {
               out.push(
                 def_err(
-                  e.reference_identifier(),
+                  e.name,
                   InvalidRange,
                   "repeat min \{spec.min} > max \{mx}",
                   "set the repeat max >= min",
@@ -5340,7 +5357,7 @@ fn collect_unsupported_option_ref_repeat(
           if spec.min > 1 {
             out.push(
               def_err(
-                e.reference_identifier(),
+                e.name,
                 Unsupported,
                 "option repeat min \{spec.min} > 1 is not supported for a `ref` element (GreedyRepeat wires a single spine slot only)",
                 "use repeat: {\"min\": 0} or {\"min\": 1} on this option, or move the mandatory reps to a positional",
@@ -5390,7 +5407,7 @@ fn collect_unsupported_accum_update(
           Invoke(invocation) if invocation.name != "unset" =>
             out.push(
               def_err(
-                e.reference_identifier(),
+                e.name,
                 InvalidRange,
                 "update variant '\{v.trigger}' targets a multiple (accum) element — every filters-registry transform is T=>T (scalar) but this cell's current value is an accumulated array (T[]), a structural type mismatch with no legal transform today",
                 "remove the update variant from this element, or move the transform to a non-multiple (scalar) element",
@@ -5408,7 +5425,7 @@ fn collect_unsupported_accum_update(
           Invoke(invocation) if invocation.name != "unset" =>
             out.push(
               def_err(
-                e.reference_identifier(),
+                e.name,
                 InvalidRange,
                 "update variant '\{v.trigger}' targets a multiple (accum) element — every filters-registry transform is T=>T (scalar) but this cell's current value is an accumulated array (T[]), a structural type mismatch with no legal transform today",
                 "remove the update variant from this element, or move the transform to a non-multiple (scalar) element",
@@ -5449,7 +5466,7 @@ fn collect_unsupported_accum_update(
                       Invoke(invocation) if invocation.name != "unset" =>
                         out.push(
                           def_err(
-                            canon.reference_identifier(),
+                            canon.name,
                             InvalidRange,
                             "alias long_override update variant '\{v.trigger}' targets '\{canon.name}', a multiple (accum) element — every filters-registry transform is T=>T (scalar) but this cell's current value is an accumulated array (T[]), a structural type mismatch with no legal transform today",
                             "remove the update variant from this alias's long_override, or move the transform to a non-multiple (scalar) element",
@@ -5479,7 +5496,7 @@ fn collect_unsupported_accum_update(
                       Invoke(invocation) if invocation.name != "unset" =>
                         out.push(
                           def_err(
-                            canon.reference_identifier(),
+                            canon.name,
                             InvalidRange,
                             "alias long_override cell-fn variant '\{v.trigger}' targets an accumulated element whose structured Value aggregation is not implemented",
                             "use a direct set operation or target a scalar element",
@@ -5525,7 +5542,7 @@ fn collect_unsupported_count_multiple(
     if e.ty.name() == "count" && e.multiple {
       out.push(
         def_err(
-          e.reference_identifier(),
+          e.name,
           InvalidRange,
           "a `count` element cannot declare `multiple` — count's type contract IS an update(increment) effect (DR-077 §3), and every filters-registry transform is T=>T (scalar) while a multiple (accum) cell's current value is an accumulated array (T[]), a structural type mismatch with no legal transform today",
           "remove `multiple` from this count element, or use a plain `number` element with an explicit `:update:<transform>` variant on a non-multiple cell",
@@ -5537,7 +5554,7 @@ fn collect_unsupported_count_multiple(
     if e.ty.name() == "count" && e.multiple {
       out.push(
         def_err(
-          e.reference_identifier(),
+          e.name,
           InvalidRange,
           "a `count` element cannot declare `multiple` — count's type contract IS an update(increment) effect (DR-077 §3), and every filters-registry transform is T=>T (scalar) while a multiple (accum) cell's current value is an accumulated array (T[]), a structural type mismatch with no legal transform today",
           "remove `multiple` from this count element, or use a plain `number` element with an explicit `:update:<transform>` variant on a non-multiple cell",
@@ -5579,7 +5596,7 @@ fn collect_scalar_array_default(
           if vs.length() != 1 {
             out.push(
               def_err(
-                e.reference_identifier(),
+                e.name,
                 InvalidRange,
                 "a non-multiple (scalar) element's declared default must be exactly ONE piece, got \{vs.length()} — an array-shaped default is only legal for a multiple/repeat/separator (accum) element (DR-083 §1/§5)",
                 "wrap this element's default in `multiple`/`repeat` if it should accumulate, or write a single scalar default value",
@@ -5595,7 +5612,7 @@ fn collect_scalar_array_default(
           if vs.length() != 1 {
             out.push(
               def_err(
-                e.reference_identifier(),
+                e.name,
                 InvalidRange,
                 "a non-multiple (scalar) element's declared `value` must be exactly ONE piece, got \{vs.length()} — an array-shaped literal is only legal for a multiple/repeat/separator (accum) element (DR-083 §1/§5)",
                 "wrap this element in `multiple`/`repeat` if it should accumulate, or write a single scalar value",
@@ -5651,7 +5668,7 @@ fn collect_command_array_carrier(
         if vs.length() != 1 {
           out.push(
             def_err(
-              c.reference_identifier(),
+              c.name,
               InvalidRange,
               "a value-carrying command's `value` must be exactly ONE scalar piece, got \{vs.length()} — the carrier of a command node is a scalar literal, never an array (DR-134 §1)",
               "write a single scalar `value`, or drop the carrier and let this command name a scope holding a `multiple` element instead",
@@ -5665,7 +5682,7 @@ fn collect_command_array_carrier(
         if vs.length() != 1 {
           out.push(
             def_err(
-              c.reference_identifier(),
+              c.name,
               InvalidRange,
               "a value-carrying command's `default` must be exactly ONE scalar piece, got \{vs.length()} — the carrier of a command node is a scalar literal, never an array (DR-134 §1)",
               "write a single scalar `default`, or drop the carrier and let this command name a scope holding a `multiple` element instead",
@@ -5697,7 +5714,7 @@ fn collect_const_on_valueless_wrapper(
         Or(_) | Group(_) =>
           out.push(
             def_err(
-              e.reference_identifier(),
+              e.name,
               InvalidRange,
               "'\{e.name}' declares `value` on a structural wrapper (`or`/`seq`), which owns a result scope but no value cell of its own (DESIGN §2.3) — the declaration constant has nowhere to sit",
               "move `value` onto a leaf inside the `or`/`seq`, or drop the `or`/`seq` if this element should own a value cell",
@@ -5736,7 +5753,7 @@ fn collect_none_value_source_decl(
       if e.env.length() > 0 {
         out.push(
           def_err(
-            e.reference_identifier(),
+            e.name,
             InvalidRange,
             "'\{e.name}' is type none (no value space) but declares env — a none element cannot have a value source (DR-089 §4)",
             "remove 'env' from '\{e.name}', or give it a real value type",
@@ -5746,7 +5763,7 @@ fn collect_none_value_source_decl(
       if e.config_key is Some(_) {
         out.push(
           def_err(
-            e.reference_identifier(),
+            e.name,
             InvalidRange,
             "'\{e.name}' is type none (no value space) but declares config_key — a none element cannot have a value source (DR-089 §4)",
             "remove 'config_key' from '\{e.name}', or give it a real value type",
@@ -5800,7 +5817,7 @@ fn collect_invalid_filter_attribute_mismatch(
       if none_ty {
         out.push(
           def_err(
-            e.reference_identifier(),
+            e.name,
             InvalidRange,
             "a type:\"none\" element has no value space (DR-089) — final_filters (T→T, DR-102 §1) requires a T to operate over, which does not exist here",
             "remove final_filters from this element, or give it a real value type",
@@ -5809,7 +5826,7 @@ fn collect_invalid_filter_attribute_mismatch(
       } else if accum {
         out.push(
           def_err(
-            e.reference_identifier(),
+            e.name,
             InvalidRange,
             "an accum (multiple/repeat/separator) element cannot declare final_filters (T→T, non-accum-only final-value gate, DR-102 §1) — this element's final gate is accum_filters (Acc→Acc, over the whole accumulated array)",
             "move this chain to accum_filters, or remove multiple/repeat/separator from this element",
@@ -5821,7 +5838,7 @@ fn collect_invalid_filter_attribute_mismatch(
       if !accum {
         out.push(
           def_err(
-            e.reference_identifier(),
+            e.name,
             InvalidRange,
             "a non-accum (scalar) element cannot declare accum_filters (Acc→Acc, accum-only whole-array gate, DR-102 §1) — this element's final gate is final_filters (T→T, over the single resolved value)",
             "move this chain to final_filters, or declare multiple/repeat/separator on this element",
@@ -5830,7 +5847,7 @@ fn collect_invalid_filter_attribute_mismatch(
       } else if none_ty {
         out.push(
           def_err(
-            e.reference_identifier(),
+            e.name,
             InvalidRange,
             "a type:\"none\" element has no value space (DR-089) — accum_filters (Acc→Acc, DR-102 §1) requires a T domain to operate over, which does not exist here",
             "remove accum_filters from this element, or give it a real value type",
@@ -5973,7 +5990,7 @@ fn collect_invalid_dd_pattern(def : Definition, out : Array[DefError]) -> Unit {
         if compile_regex(pattern) is None {
           out.push(
             def_err(
-              e.reference_identifier(),
+              e.name,
               InvalidArgument,
               "dd match pattern '" + pattern + "' failed to compile",
               "fix the pattern syntax for this host's regex dialect (DR-085 §2 / DR-090 §2)",
@@ -6069,7 +6086,7 @@ fn collect_ref_merge_accum(def : Definition, out : Array[DefError]) -> Unit {
     if e.ref_target is Some(_) && e.accumulator is Some("merge") {
       out.push(
         def_err(
-          e.reference_identifier(),
+          e.name,
           InvalidRange,
           "a `ref` element cannot use the merge accumulator — merge's marker vocabulary (DR-080 §2) requires a separator-split string piece list, but a ref element's firing value is a row (DR-078 §1), which has no piece list to match markers against",
           "use `multiple: \"append\"` (or omit `accumulator`, which defaults to append) instead of `accumulator: \"merge\"` on this ref element",
@@ -6103,7 +6120,7 @@ fn collect_flatten_non_append(def : Definition, out : Array[DefError]) -> Unit {
     if e.multiple && e.flatten is Some(_) && e.accumulator is Some(_) {
       out.push(
         def_err(
-          e.reference_identifier(),
+          e.name,
           InvalidRange,
           "'\{e.name}' declares multiple.flatten but its accumulator is not \"append\" (DR-105 §2) — flatten is an append-only dial, and this element's accumulator is \"" +
           e.accumulator.unwrap() +
@@ -6150,7 +6167,7 @@ fn collect_unknown_accumulation_resident(
         if extensions.lookup_accumulator(name) is None {
           out.push(
             def_err(
-              e.reference_identifier(),
+              e.name,
               UnknownVocab,
               "'\{e.name}' requires accumulator '" +
               name +
@@ -6164,7 +6181,7 @@ fn collect_unknown_accumulation_resident(
             if collector.name == "from_entries" && collector.args is None {
               out.push(
                 def_err(
-                  e.reference_identifier(),
+                  e.name,
                   InvalidArgument,
                   "collector 'from_entries' requires its canonical argument form",
                   "use {\"from_entries\":\"entries\"}, {\"from_entries\":[\"key\",\"value\"]}, or {\"from_entries\":\"key\"}",
@@ -6173,7 +6190,7 @@ fn collect_unknown_accumulation_resident(
             } else if extensions.lookup_collector(collector.name) is None {
               out.push(
                 def_err(
-                  e.reference_identifier(),
+                  e.name,
                   UnknownVocab,
                   "'\{e.name}' requires collector '" +
                   collector.name +
@@ -6376,7 +6393,7 @@ fn collect_config_cycle(def : Definition, out : Array[DefError]) -> Unit {
     if e.is_config_file && e.config_key is Some(_) {
       out.push(
         def_err(
-          e.reference_identifier(),
+          e.name,
           ConfigCycle,
           "config_file element '\{e.name}' cannot have a config_key (循環禁止)",
           "remove config_key from the config_file element",
@@ -6388,7 +6405,7 @@ fn collect_config_cycle(def : Definition, out : Array[DefError]) -> Unit {
     if e.is_config_file && e.config_key is Some(_) {
       out.push(
         def_err(
-          e.reference_identifier(),
+          e.name,
           ConfigCycle,
           "config_file element '\{e.name}' cannot have a config_key (循環禁止)",
           "remove config_key from the config_file element",
@@ -6710,7 +6727,7 @@ fn collect_completion_script_errors_element(
         // 「completion_script type 以外への宣言も同 kind」に対応する invalid-range。
         out.push(
           def_err(
-            element.reference_identifier(),
+            element.name,
             InvalidRange,
             "'insert_form' is only valid on `type: completion_script` entries (DR-117 §2.6)",
             "remove 'insert_form' or change the element's type to 'completion_script'",
@@ -6720,7 +6737,7 @@ fn collect_completion_script_errors_element(
         // enum 逸脱 (DR-117 §2.6)。canonical 語彙は "space" / "eq" のみ。
         out.push(
           def_err(
-            element.reference_identifier(),
+            element.name,
             InvalidRange,
             "'insert_form' value '" +
             v +
@@ -6731,7 +6748,7 @@ fn collect_completion_script_errors_element(
       } else {
         // valid な明示値 — 食い違い判定用に集める (定義全体で reconcile された値との
         // 突合は上位の walker で行う)。
-        explicit.push((element.reference_identifier(), v))
+        explicit.push((element.name, v))
       }
   }
   // Group / Or 内側の leaf を追いかける (element_has_completion_script と同じ辿り方)。
@@ -6867,6 +6884,10 @@ fn export_value_space(e : ElementDef) -> String {
 /// 確定させる通常の値セルなので、同一結果スコープの別セルと同じ露出キーを名乗れば
 /// `export-key-collision` になる (`fixtures/export-key/collision-config-file-option.json`)。
 /// 結果に出したくない config_file は `export_key: null` で透過にすれば非占有側へ移る (DR-135 §5)。
+/// NOTE (DR-136 §1): decode 境界の `settle_name_axes` を通った宣言では `name` が参照識別子軸
+/// そのもの (明示 `id`、無ければ name の id 軸写像) になっている。したがって installer 相は
+/// `name` を唯一の同一性キーとして扱ってよく、軸の取り違えは境界の 1 パスに閉じている。
+///
 /// DR-025 / DR-033 (TRG-Q4=a): スコープ (結果スコープ = lexical スコープ、同一単位) を作るのは
 /// **解決後の結果キー軸を占有するノード**であって name の presence ではない。
 /// `{name, export_key: null}` は透過 (子は外側の兄弟)、`{id, export_key}` (name 無し) は
@@ -6984,11 +7005,7 @@ fn gather_export_seats(
       Some(key) => {
         node.occupy_scope(c.name)
         node.project_scope(c.name)
-        seats.push({
-          element: c.reference_identifier(),
-          key,
-          space: scope_value_space(),
-        })
+        seats.push({ element: c.name, key, space: scope_value_space() })
         let inner : Array[ExportSeat] = []
         gather_export_seats(c.body, child, inner, out, template_declarations)
         report_export_key_collisions(inner, out)
@@ -7046,11 +7063,7 @@ fn gather_element_seats(
         }
         match resolved_export_key(e.name, e.export_key) {
           Some(key) =>
-            seats.push({
-              element: e.reference_identifier(),
-              key,
-              space: export_value_space(e),
-            })
+            seats.push({ element: e.name, key, space: export_value_space(e) })
           None => ()
         }
       }
@@ -7107,11 +7120,7 @@ fn gather_element_seats(
           if project {
             node.project_cell(e.name)
           }
-          seats.push({
-            element: e.reference_identifier(),
-            key,
-            space: group_value_space(),
-          })
+          seats.push({ element: e.name, key, space: group_value_space() })
           let inner : Array[ExportSeat] = []
           for br in branches {
             for it in br.items {
@@ -7146,11 +7155,7 @@ fn gather_element_seats(
           if project {
             node.project_cell(e.name)
           }
-          seats.push({
-            element: e.reference_identifier(),
-            key,
-            space: group_value_space(),
-          })
+          seats.push({ element: e.name, key, space: group_value_space() })
           let inner : Array[ExportSeat] = []
           for it in items {
             gather_element_seats(
@@ -7240,7 +7245,7 @@ fn report_command_value_occupancy(
   }
   out.push(
     def_err(
-      c.reference_identifier(),
+      c.name,
       InvalidRange,
       "command '" +
       c.name +
@@ -7270,6 +7275,9 @@ fn collect_duplicate_ids(def : Definition, out : Array[DefError]) -> Unit {
       (element.is_exact && element.id is None) {
       None
     } else {
+      // 綴りの担体として `name` を raw のまま持つ宣言 (exact、DR-136 §2) が明示 `id` で
+      // 参加する場合があるので、ここは軸を明示して引く (境界を通った通常の宣言では
+      // `name` と一致する)。
       match element.reference_identifier() {
         "" => None
         identifier => Some(identifier)
@@ -7318,7 +7326,9 @@ fn collect_duplicate_ids(def : Definition, out : Array[DefError]) -> Unit {
   ) -> Unit {
     for element in elements {
       match participant_identifier(element) {
-        Some(identifier) => participants.push((element.name, identifier))
+        // DR-136 裁定 4: element 欄も参照識別子軸。裸 exact のように `name` が綴りの担体で
+        // ある宣言 (DR-136 §2 の literal 直値) でも、id 軸で参加する以上は id で attribution する。
+        Some(identifier) => participants.push((identifier, identifier))
         None => ()
       }
       match element.body {
@@ -7354,9 +7364,9 @@ fn collect_duplicate_ids(def : Definition, out : Array[DefError]) -> Unit {
   collect_scope_participants(def.options, participants)
   collect_scope_participants(def.positionals, participants)
   for command in def.commands {
-    let identifier = command.reference_identifier()
+    let identifier = command.name
     if identifier != "" {
-      participants.push((command.name, identifier))
+      participants.push((identifier, identifier))
     }
   }
   report(participants)
@@ -7867,7 +7877,7 @@ fn collect_help_render_element_errors(
   match element.help_meta.render_declared {
     Some(_) =>
       errors.push({
-        element: element.reference_identifier(),
+        element: element.name,
         kind: InvalidRange,
         message: "help_render is not allowed on option/positional elements (scope-level seat only)",
         hint: "DR-115 §1.1: declare help_render on the root definition or a command scope; use help_value_structure_style for entry-level style overrides",
@@ -7878,7 +7888,7 @@ fn collect_help_render_element_errors(
     Some(v) =>
       if !help_render_vss_ok(v) {
         errors.push({
-          element: element.reference_identifier(),
+          element: element.name,
           kind: InvalidRange,
           message: "help_value_structure_style '" +
           v +
@@ -7907,7 +7917,7 @@ fn collect_help_meta_errors(def : Definition, errors : Array[DefError]) -> Unit 
     // (fail_action override) は M3c 以降で HelpMetaInstaller.apply へ移送する。
     if meta.help_on_failure is Some(_) && !meta.is_help_preset {
       errors.push({
-        element: e.reference_identifier(),
+        element: e.name,
         kind: InvalidRange,
         message: "help_on_failure requires a help preset type",
         hint: "declare help_on_failure only on help / help_all_category / help_category / help_show_hidden / help_tree",
@@ -7943,7 +7953,7 @@ fn collect_help_meta_errors(def : Definition, errors : Array[DefError]) -> Unit 
       }
     } else if meta.help_group_order is Some(_) {
       errors.push({
-        element: e.reference_identifier(),
+        element: e.name,
         kind: InvalidRange,
         message: "normal help entry cannot use help_group_order",
         hint: "use help_order for a normal entry",
@@ -7952,7 +7962,7 @@ fn collect_help_meta_errors(def : Definition, errors : Array[DefError]) -> Unit 
     if meta.help_after is Some(_) &&
       (meta.help_order is Some(_) || meta.help_group_order is Some(_)) {
       errors.push({
-        element: e.reference_identifier(),
+        element: e.name,
         kind: InvalidRange,
         message: "help order and help_after cannot be declared together",
         hint: "choose either absolute order or relative help_after placement",
@@ -7964,7 +7974,7 @@ fn collect_help_meta_errors(def : Definition, errors : Array[DefError]) -> Unit 
       e.help_meta.help_after is Some(_) &&
       help_after_returns_to(def, e.name) {
       errors.push({
-        element: e.reference_identifier(),
+        element: e.name,
         kind: CircularRef,
         message: "help_after placement for '" + e.name + "' is circular",
         hint: "break the help_after cycle",

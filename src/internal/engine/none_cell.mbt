@@ -176,7 +176,7 @@ fn collect_nones_in_node(
         None => ()
       }
     }
-    DdSatisfied(trigger, _) => push_none_cell(out, path, trigger)
+    DdSatisfied(_, origin) => push_none_cell(out, path, origin)
     DdMatchSatisfied(_, _, _, element, _) => push_none_cell(out, path, element)
     Ext(resident) =>
       match resident.element_name() {

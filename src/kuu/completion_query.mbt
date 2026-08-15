@@ -198,8 +198,10 @@ fn candidate_face(
       // options → positionals) を照合順にも使い、両面が同じ綴りを宣言する退化構成
       // (long_prefix 空の option と同名 command) では先の面を採る。
       for command in scope.commands {
+        // DR-136 §1/§2: origin は参照識別子軸 (= 宣言の `name`)、spelling は綴り軸。
+        // 2 軸が分岐する宣言 (明示 `id` / `trigger_name`) でも面が決まるよう別々に照合する。
         if command.name == candidate.origin &&
-          candidate.spelling == command.name {
+          candidate.spelling == command.trigger_spelling() {
           return CommandFace
         }
       }

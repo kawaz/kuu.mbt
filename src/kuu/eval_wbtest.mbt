@@ -1023,7 +1023,7 @@ test "REVIEW-D1 取り分選好オラクルは制約違反の全消費を「完�
       ent("xs", @builtins.string_type(), accum=Some("append"), flatten=true),
       ent("y", @builtins.string_type(), accum=Some("append"), flatten=true),
     ],
-    constraints: [Requires("xs", ["y"])],
+    constraints: [Requires("xs", "xs", ["y"])],
   }
   let root_node = @engine.ScopeNode(root)
   let o = apply_requires_filter(
@@ -1069,7 +1069,7 @@ test "REVIEW-D2 制約照合は scope-exact: 子スコープの同名 key は ro
     greedy: [@engine.CommandSatisfied("c", "c", 0, child)],
     positional: [],
     entities: [],
-    constraints: [Requires("x", ["z"])],
+    constraints: [Requires("x", "x", ["z"])],
   }
   let o = @engine.parse_tree(@engine.ScopeNode(root), ["c", "v"], defs=Map([]))
   match o {
@@ -1105,7 +1105,7 @@ test "REVIEW-D3 誤充足も塞ぐ: requires のターゲットは子スコー�
     ],
     positional: [],
     entities: [],
-    constraints: [Requires("file", ["out"])],
+    constraints: [Requires("file", "file", ["out"])],
   }
   let root_node = @engine.ScopeNode(root)
   let o = apply_requires_filter(
@@ -1140,7 +1140,7 @@ test "REVIEW-D4 入れ子スコープの constraints も完全経路の成立条
     ],
     positional: [],
     entities: [],
-    constraints: [Conflicts("x", ["y"])],
+    constraints: [Conflicts("x", "x", ["y"])],
   }
   let root : @engine.Scope = {
     greedy: [@engine.CommandSatisfied("sub", "sub", 0, child)],
@@ -1297,7 +1297,7 @@ test "DR-097 述語 pin: requires (遅延述語) 未充足は先食い判定に�
       ent("height", @builtins.number_type()),
       ent("weight", @builtins.string_type()),
     ],
-    constraints: [Requires("height", ["weight"])],
+    constraints: [Requires("height", "height", ["weight"])],
   }
   let root_node = @engine.ScopeNode(root)
   let toks = ["--height", "168.5"]
@@ -1746,7 +1746,7 @@ test "DR-066 §4: a constraint violation declared in a child scope carries the c
     ],
     positional: [],
     entities: [],
-    constraints: [Requires("x", ["y"])],
+    constraints: [Requires("x", "x", ["y"])],
   }
   let root : @engine.Scope = {
     greedy: [@engine.CommandSatisfied("sub", "sub", 0, child)],
@@ -2045,7 +2045,7 @@ test "DR-047 §2: a constraint filters one of two complete paths (@engine.Or-bra
     greedy: [],
     positional: paths,
     entities: [],
-    constraints: [Conflicts("foo", ["bar"])],
+    constraints: [Conflicts("foo", "foo", ["bar"])],
   }
   match @engine.parse_tree(@engine.ScopeNode(sc), ["x"], defs=Map([])) {
     @engine.Success(bs) => {
@@ -2088,7 +2088,7 @@ test "DR-047 §2: a constraint filters one of two complete paths (sibling greedy
     ],
     positional: [],
     entities: [ent("c", @builtins.string_type())],
-    constraints: [Requires("a", ["c"])],
+    constraints: [Requires("a", "a", ["c"])],
   }
   let root_node = @engine.ScopeNode(sc)
   match
