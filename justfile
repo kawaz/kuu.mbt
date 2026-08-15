@@ -9,6 +9,11 @@ set script-interpreter := ["bash", "-euo", "pipefail"]
 
 set positional-arguments
 
+# `moon info` の対象パッケージ / その生成物。CI の「Check public interface drift」job と
+# 同一の集合を保つ (片方だけ増やすと drift 検査に穴が空く)。
+mbti_packages := "src/abi src/extension src/internal/engine src/kuu-node src/builtins src/kuu"
+mbti_files := "src/abi/pkg.generated.mbti src/extension/pkg.generated.mbti src/internal/engine/pkg.generated.mbti src/kuu-node/pkg.generated.mbti src/builtins/pkg.generated.mbti src/kuu/pkg.generated.mbti"
+
 # default: lint + test
 default: lint test
 
@@ -35,7 +40,47 @@ check:
 
 # regenerate committed public API interfaces
 mbti:
-    moon info src/abi src/extension src/internal/engine src/kuu-node src/builtins src/kuu
+    moon info {{mbti_packages}}
+
+# 公開 API interface (pkg.generated.mbti) が現在のソースと同期しているか
+#
+# CI の「Check public interface drift」job (.github/workflows/ci.yml) のローカル版で、
+# `moon info` の対象パッケージと diff 対象の 6 ファイルは CI と同一 (mbti_packages /
+# mbti_files を両者が共有すべき集合として持つ)。v0.1.0 push で「mbti 再生成を一部忘れた
+# まま `just ci` が green」だった穴を push 前に塞ぐ。
+#
+# 比較の基準線だけ CI と異なる: CI は fresh checkout なので「コミット済み mbti vs 再生成
+# 結果」を見るが、ローカルで同じことをすると **公開 API を触った作業途中 (src も mbti も
+# 未コミット) が常に fail** になり、開発中ずっと `just ci` が赤くなる。そこで基準線は
+# 「再生成前の作業コピー vs 再生成結果」= 「mbti が今のソースと同期しているか」にする。
+# 報告された事故 (再生成し忘れ = 作業コピーの mbti が古い) はこれで捕まる。
+#
+# 検査自体が作業コピーを汚さないよう、不一致なら 6 ファイルとも復元してから落とす
+# (`check-templates` と同じ作法 — gate は `just mbti` を自分で実行するまで赤のままにする)。
+
+# public API interface (pkg.generated.mbti) の drift 検査
+[script]
+mbti-check:
+    tmp="$(mktemp -d)"
+    trap 'rm -rf "$tmp"' EXIT
+    for f in {{mbti_files}}; do
+        mkdir -p "$tmp/$(dirname "$f")"
+        cp "$f" "$tmp/$f"
+    done
+    moon info {{mbti_packages}}
+    drift=0
+    for f in {{mbti_files}}; do
+        if ! diff -u "$tmp/$f" "$f" --label "$f (working copy)" --label "$f (regenerated)"; then
+            drift=1
+        fi
+    done
+    if [ "$drift" -ne 0 ]; then
+        for f in {{mbti_files}}; do cp "$tmp/$f" "$f"; done
+        printf >&2 "\n\033[31mpublic interface drift: pkg.generated.mbti が現在のソースと同期していません\033[0m\n"
+        printf >&2 "  'just mbti' を実行して結果を commit してください。\n"
+        exit 1
+    fi
+    echo "OK: pkg.generated.mbti は現在のソースと同期しています"
 
 # ---------- completion templates (M2 — DR-117 §2.5 + findings §2 UXL-Q2=a) ----------
 
@@ -106,7 +151,7 @@ coverage-html: coverage
 # ---------- CI ----------
 
 # full local CI pipeline
-ci: lint test
+ci: lint mbti-check test
 
 # ---------- push / release flow (bump-semver canonical 模倣) ----------
 
