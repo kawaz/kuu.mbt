@@ -1,6 +1,6 @@
 ---
 title: command node の value: — carrier 不在 + 意味論未規定でスコープ外に切った分
-status: open
+status: resolved
 category: bug
 created: 2026-07-27T02:03:28+09:00
 last_read:
@@ -9,10 +9,10 @@ wip_entered:
 blocked_entered:
 pending_entered:
 discarded_entered:
-resolved_entered:
+resolved_entered: 2026-08-16T07:23:38+09:00
 discard_reason:
 pending_reason:
-close_reason:
+close_reason: ["dr/DR-134","implemented","carrier=dec_command allowed_keys に value/default/default_fn 追加済み","残論点(配列 value / 透過 value command)は 2026-08-12-command-definition-error-parity-review-followup に引き継ぎ"]
 blocked_by:
 origin: 自リポ TODO
 ---

@@ -12,7 +12,6 @@
 | 2026-07-26 | design | wip | [dec-or-leaf-remaining-node-keys](./2026-07-26-dec-or-leaf-remaining-node-keys.md) | dec_or_leaf の残余キー同型化の棚卸し (repeat/multiple/optional が最優先、DR-067 §2 直接規定) |
 | 2026-07-27 | design | open | [link-fixed-path-dsl-unimplemented](./2026-07-27-link-fixed-path-dsl-unimplemented.md) | link target の固定パス DSL (.field / [idx]) が未実装 (bare name のみ対応) |
 | 2026-07-27 | design | open | [ref-link-structural-body-gate](./2026-07-27-ref-link-structural-body-gate.md) | ref+link / structural body (or/seq/Group) + link が invalid-range で塞がれている (spec 上は合法、解除条件付き) |
-| 2026-07-27 | bug | open | [command-node-value-unimplemented](./2026-07-27-command-node-value-unimplemented.md) | command node の value: — carrier 不在 + 意味論未規定でスコープ外に切った分 |
 | 2026-07-27 | bug | open | [option-structural-or-group-outer-repeat-not-wired](./2026-07-27-option-structural-or-group-outer-repeat-not-wired.md) | option structural Or/Group の outer repeat が受理されるが消費構造へ配線されない (missing_operand 位相化の実装監査) |
 | 2026-07-27 | design | open | [array-filter-provenance-contract-gap](./2026-07-27-array-filter-provenance-contract-gap.md) | array filter の公開契約に provenance が無く、同値 duplicate 並べ替え・値合成で source 復元が破綻する |
 | 2026-08-02 | bug | open | [dup-raw-command-ordinal-marker-occurrence-gap](./2026-08-02-dup-raw-command-ordinal-marker-occurrence-gap.md) | duplicate raw command の複数入場 (go1/go2) で ordinal marker が occurrence を区別できず binding が一方の枝へ寄る |
