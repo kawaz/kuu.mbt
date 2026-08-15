@@ -136,7 +136,7 @@ pub(all) enum DefErrorKind {
   ConfigCycle
   InvalidArgument
   ExportKeyCollision
-  DuplicateName
+  DuplicateId
   Unsupported
 } derive(Eq, @debug.Debug)
 

@@ -7196,8 +7196,8 @@ fn report_command_value_occupancy(
 
 ///|
 /// DR-054 更新5: 同一 lexical スコープ (DR-025 / DR-033) に同じ参照識別子 (DR-046 §1/§2 — 明示 `id`、
-/// 無ければ name) を持つ宣言要素が 2 つ以上あれば definition-error kind=`duplicate-name`。ref / link
-/// の解決先が曖昧になる形そのものであり (DR-006 が name 重複を禁じた根拠のうち、結果キー衝突の側は
+/// 無ければ name が供給) を持つ宣言要素が 2 つ以上あれば definition-error kind=`duplicate-id`。ref / link
+/// の解決先が曖昧になる形そのものであり (DR-006 が id 重複を禁じた根拠のうち、結果キー衝突の側は
 /// DR-120 が `export-key-collision` として引き取っている)、露出キー軸とは独立に破れる — 両軸が同時に
 /// 破れる定義では要素ごとに 2 kind が立つ (DR-054 §4 の全列挙、抑制規則は置かない)。
 ///
@@ -7213,7 +7213,7 @@ fn report_command_value_occupancy(
 ///   lexical な宣言ではない (DR-042 の copy、`collect_config_file_siblings` と同じ除外)
 /// - **無名要素** (`name == ""` かつ id 無し、= help group 宣言 DR-113 §8.1) — 参照識別子を
 ///   持たないので衝突しようがない
-fn collect_duplicate_names(def : Definition, out : Array[DefError]) -> Unit {
+fn collect_duplicate_ids(def : Definition, out : Array[DefError]) -> Unit {
   fn scope(elements : Array[ElementDef]) -> Unit {
     let participants : Array[ElementDef] = []
     for e in elements {
@@ -7248,7 +7248,7 @@ fn collect_duplicate_names(def : Definition, out : Array[DefError]) -> Unit {
       let hint = "rename one of them, or give them different `id` values to separate them on the reference axis"
       for participant in participants {
         if participant.reference_identifier() == identifier {
-          out.push(def_err(participant.name, DuplicateName, message, hint))
+          out.push(def_err(participant.name, DuplicateId, message, hint))
         }
       }
     }
@@ -7279,7 +7279,7 @@ fn collect_duplicate_names(def : Definition, out : Array[DefError]) -> Unit {
   }
   scope(siblings)
   for c in def.commands {
-    collect_duplicate_names(c.body, out)
+    collect_duplicate_ids(c.body, out)
   }
 }
 
@@ -7387,8 +7387,8 @@ fn lower_definition_snapshot_impl(
   // DR-054 更新5: 参照識別子の重複は alias desugar / global copy が始まる前の lexical な宣言面で
   // 数える。積むのは `export-key-collision` と同じ post-fixpoint の窓 (下の Ok / Err 枝) — 2 軸は
   // 独立に破れるので、片方が立っても他方の検査まで到達させる必要がある (DR-054 §4 の全列挙)。
-  let duplicate_names : Array[DefError] = []
-  collect_duplicate_names(def, duplicate_names)
+  let duplicate_ids : Array[DefError] = []
+  collect_duplicate_ids(def, duplicate_ids)
   if errs.length() > 0 {
     return Err(errs) // ALL definition-error 列挙
   }
@@ -7414,7 +7414,7 @@ fn lower_definition_snapshot_impl(
     // 同じ面で衝突を数えて 1 つの list に足す。
     Ok(scope) => {
       let validation_errors : Array[DefError] = []
-      for error in duplicate_names {
+      for error in duplicate_ids {
         validation_errors.push(error)
       }
       collect_absent_link(def, extensions, validation_errors)
@@ -7433,7 +7433,7 @@ fn lower_definition_snapshot_impl(
       }
     }
     Err(errors) => {
-      for error in duplicate_names {
+      for error in duplicate_ids {
         errors.push(error)
       }
       collect_absent_link(def, extensions, errors)

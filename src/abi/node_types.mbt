@@ -28,7 +28,7 @@ pub(all) enum DefErrorKind {
   // commands (name = 綴り軸, DR-120 §7) and alias entries (入口のみ, DR-057 §2/§3) do not. Distinct
   // from ExportKeyCollision, which judges the result-key axis: both break independently and a
   // definition that breaks both collects one error of each kind per element (DR-054 §4 全列挙).
-  DuplicateName
+  DuplicateId
   // The definition is legal in the specification, but this implementation cannot lower it yet.
   Unsupported
 } derive(Eq, Debug)

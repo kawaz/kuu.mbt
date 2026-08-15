@@ -123,7 +123,7 @@ pub(all) struct ElementDef {
   // `None` means the axis is unsupplied and `name` supplies it (§2), which is why the two are read
   // through `reference_identifier()` rather than separately. Orthogonal to the name's other two
   // axes (綴り / 結果キー, DR-120 §4): giving two same-named siblings distinct `id`s separates them
-  // on this axis alone (`fixtures/dd/duplicate-decl.json`), and `collect_duplicate_names` judges
+  // on this axis alone (`fixtures/dd/duplicate-decl.json`), and `collect_duplicate_ids` judges
   // exactly that axis.
   id : String?
   ty : &TypeExt
