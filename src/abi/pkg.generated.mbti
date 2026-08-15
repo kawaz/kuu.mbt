@@ -30,6 +30,7 @@ pub fn value_to_configval(Value) -> ConfigVal
 pub(all) struct AliasDef {
   target : String
   name : String?
+  trigger_name : String?
   short : Array[Char]
   long_override : LongDeclaration?
   deprecated : Bool

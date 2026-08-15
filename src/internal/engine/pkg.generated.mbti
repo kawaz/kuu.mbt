@@ -131,6 +131,12 @@ pub fn lower_definition_snapshot(Definition, InstallerPlan, @extension.Registry,
 
 pub fn merge_accumulator() -> &@extension.AccumulatorExt
 
+pub fn name_axis_id(String) -> String
+
+pub fn name_axis_trigger(String) -> String
+
+pub fn name_axis_value_name(String) -> String
+
 pub fn node_resident_name(Node) -> String?
 
 pub fn none_cells(Scope, Map[String, Node]) -> Array[NoneCell]
@@ -160,6 +166,10 @@ pub fn parse_int_value(String, @abi.RoundMode, allow_base_prefix? : Bool) -> Res
 pub fn parse_number(String, allow_base_prefix? : Bool) -> Double?
 
 pub fn parse_tree(Node, Array[String], defs? : Map[String, Node], faildef? : FailDef, extensions? : @extension.Registry, ladder? : (Entity, Array[String], Array[@abi.Binding]) -> @abi.Value?, firings? : @fold.FiringDeliveries) -> Outcome
+
+pub fn[T] resolve_axis_reference(Array[T], String, (T) -> String, (String) -> String) -> T?
+
+pub fn[T] resolve_id_reference(Array[T], String, (T) -> String) -> T?
 
 pub fn round_mode_of(String) -> @abi.RoundMode?
 
@@ -220,6 +230,7 @@ pub(all) struct AmbiguousInterpretation {
 pub(all) struct CommandDef {
   name : String
   id : String?
+  trigger_name : String?
   body : Definition
   export_key : ExportKey
   const_values : Array[@abi.Value]?
@@ -227,11 +238,12 @@ pub(all) struct CommandDef {
   default_fn : @abi.DefaultFnCall?
 } derive(Eq, @debug.Debug)
 pub fn CommandDef::reference_identifier(Self) -> String
+pub fn CommandDef::trigger_spelling(Self) -> String
 
 pub(all) enum Constraint {
-  Requires(String, Array[String])
+  Requires(String, String, Array[String])
   RequiresIf(String, String, String, Array[String])
-  Conflicts(String, Array[String])
+  Conflicts(String, String, Array[String])
   Exclusive(String, Array[String])
   Required(String, Array[RequiredCandidate])
   RequiredGroup(String, Array[RequiredCandidate])
@@ -272,6 +284,7 @@ pub(all) enum ElementBody {
 pub(all) struct ElementDef {
   name : String
   id : String?
+  trigger_name : String?
   ty : &@extension.TypeExt
   long : @abi.LongDeclaration
   variants : Array[Variant]
@@ -332,6 +345,7 @@ pub(all) struct ElementDef {
   body : ElementBody
 } derive(Eq, @debug.Debug)
 pub fn ElementDef::reference_identifier(Self) -> String
+pub fn ElementDef::trigger_spelling(Self) -> String
 
 pub(all) struct Entity {
   name : String
@@ -415,7 +429,8 @@ pub struct InstallChild {
 }
 pub fn InstallChild::body(Self) -> InstallBuilder
 pub fn InstallChild::name(Self) -> String
-pub fn InstallChild::new(String, Int, InstallBuilder) -> Self
+pub fn InstallChild::new(String, String, Int, InstallBuilder) -> Self
+pub fn InstallChild::trigger(Self) -> String
 
 pub struct InstallOutput {
   // private fields
@@ -475,9 +490,9 @@ pub(all) enum Node {
   NativeMatch(&@extension.MatcherExt)
   Ext(&@extension.NodeExt)
   Ref(String)
-  DdSatisfied(String)
-  DdMatchSatisfied(String, Bool, Bool, String)
-  CommandSatisfied(String, Int, Scope)
+  DdSatisfied(String, String)
+  DdMatchSatisfied(String, Bool, Bool, String, String)
+  CommandSatisfied(String, String, Int, Scope)
   LinkTarget(String, String, Array[String], Array[Int], Array[@abi.LinkSelection], @abi.ObservationAddress?, Array[@abi.ObservationSegment], Int, &@extension.EntityExt, Node)
   Rooted(Node, Int)
   BoundedTail(Node, Int, Bool)
