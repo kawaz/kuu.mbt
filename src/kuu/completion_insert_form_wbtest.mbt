@@ -182,7 +182,8 @@ test "DR-117 §2.6: 未知 insert_form 値 (\"dash\") → invalid-range" {
   match parse_definition(json) {
     Err(Rejected(errors)) => {
       let kinds = def_error_kinds(errors)
-      assert_eq(kinds.get("completions-bad-form"), Some(@abi.InvalidRange))
+      // DR-136 裁定 4: definition-error の element は参照識別子軸 (name の id 写像後)。
+      assert_eq(kinds.get("completions_bad_form"), Some(@abi.InvalidRange))
     }
     _ =>
       fail(
@@ -212,8 +213,8 @@ test "DR-117 §2.6: 複数 completion_script 入口間の insert_form 明示食�
   match parse_definition(json) {
     Err(Rejected(errors)) => {
       let kinds = def_error_kinds(errors)
-      assert_eq(kinds.get("completions-long"), Some(@abi.InvalidRange))
-      assert_eq(kinds.get("completions-sub"), Some(@abi.InvalidRange))
+      assert_eq(kinds.get("completions_long"), Some(@abi.InvalidRange))
+      assert_eq(kinds.get("completions_sub"), Some(@abi.InvalidRange))
     }
     _ =>
       fail(

@@ -896,10 +896,11 @@ test "dd installer: options[] placement lowers to same @engine.DdSatisfied with 
     options: [el("--", @builtins.string_type(), is_dd=true)],
   }
   let sc = ok_scope(def, all_installers())
-  // @engine.DdSatisfied("--", "--") が greedy に 1 本、entity は 0 個 (dd は値なし)
+  // @engine.DdSatisfied("--", "__") が greedy に 1 本 (trigger は name 軸、origin は id 軸
+  // — DR-136 §3 で `--` の id 綴りは `__`)、entity は 0 個 (dd は値なし)
   let mut has_dd = false
   for g in sc.greedy {
-    if g == @engine.DdSatisfied("--", "--") {
+    if g == @engine.DdSatisfied("--", "__") {
       has_dd = true
     }
   }
@@ -2984,7 +2985,8 @@ test "DR-093: a required:true dd element (@engine.DdSatisfied) is satisfied by f
     @engine.Failure(d) => {
       let mut found = false
       for e in d.errors {
-        if e.element == "--" && e.reason == "required_violated" {
+        // DR-136 裁定 4: errors[].element は参照識別子軸 (`--` の id 綴りは `__`)。
+        if e.element == "__" && e.reason == "required_violated" {
           found = true
         }
       }

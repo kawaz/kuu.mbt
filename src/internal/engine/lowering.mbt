@@ -6869,6 +6869,15 @@ fn export_value_space(e : ElementDef) -> String {
 /// 確定させる通常の値セルなので、同一結果スコープの別セルと同じ露出キーを名乗れば
 /// `export-key-collision` になる (`fixtures/export-key/collision-config-file-option.json`)。
 /// 結果に出したくない config_file は `export_key: null` で透過にすれば非占有側へ移る (DR-135 §5)。
+/// DR-025 / DR-033 (TRG-Q4=a): スコープ (結果スコープ = lexical スコープ、同一単位) を作るのは
+/// **解決後の結果キー軸を占有するノード**であって name の presence ではない。
+/// `{name, export_key: null}` は透過 (子は外側の兄弟)、`{id, export_key}` (name 無し) は
+/// スコープを作る。
+fn element_occupies_export_key(e : ElementDef) -> Bool {
+  resolved_export_key(e.name, e.export_key) is Some(_)
+}
+
+///|
 fn element_occupies_seat(e : ElementDef) -> Bool {
   if e.link_path is Some(_) ||
     e.is_alias ||
@@ -7075,9 +7084,9 @@ fn gather_element_seats(
       }
     }
     Or(branches) => {
-      // 匿名 or (positional の `{"or":[...]}`, held-errors 2 fixture) は lowering 側でも `Scoped`
-      // を挟まないので、枝の leaf はそのまま親の結果スコープに属する。
-      if e.name == "" {
+      // 結果キー軸を占有しない or (匿名 or / `export_key: null`) は lowering 側でも `Scoped` を
+      // 挟まないので、枝の leaf はそのまま親の結果スコープに属する (DR-025 / DR-033)。
+      if !element_occupies_export_key(e) {
         for br in branches {
           for it in br.items {
             gather_element_seats(
@@ -7301,9 +7310,10 @@ fn collect_duplicate_ids(def : Definition, out : Array[DefError]) -> Unit {
     }
   }
 
-  // `elements` を同じ lexical scope の参加集合へ射影する。surface name を持つ structural だけが
-  // 子 scope を作る。匿名または id-only structural は子を現在 scope へ透過し、自身に明示 id が
-  // あれば自身も同じ集合へ参加する。
+  // `elements` を同じ lexical scope の参加集合へ射影する。DR-025 / DR-033 (TRG-Q4=a):
+  // **解決後の結果キー軸を占有する** structural だけが子 scope を作る (lexical スコープと結果
+  // スコープは同一単位)。占有しない段 (`export_key: null` / 匿名) は子を現在 scope へ透過し、
+  // 自身に明示 id があれば自身も同じ集合へ参加する。
   fn collect_scope_participants(
     elements : Array[ElementDef],
     participants : Array[(String, String)],
@@ -7321,7 +7331,7 @@ fn collect_duplicate_ids(def : Definition, out : Array[DefError]) -> Unit {
               children.push(child)
             }
           }
-          if element.name == "" {
+          if !element_occupies_export_key(element) {
             collect_scope_participants(children, participants)
           } else {
             let child_participants : Array[(String, String)] = []
@@ -7330,7 +7340,7 @@ fn collect_duplicate_ids(def : Definition, out : Array[DefError]) -> Unit {
           }
         }
         Group(children) =>
-          if element.name == "" {
+          if !element_occupies_export_key(element) {
             collect_scope_participants(children, participants)
           } else {
             let child_participants : Array[(String, String)] = []
