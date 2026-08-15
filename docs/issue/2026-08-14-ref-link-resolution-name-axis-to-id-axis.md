@@ -77,7 +77,7 @@ DR-136 実装追随サイクルで以下まで完了 (conformance 417/0 mismatch
   この resolver 経由へ。照合軸は宣言名から `reference_identifier()` (明示 id or name の
   id 軸写像後) に移った
 
-### 未着手と、その理由 (spec 裁定待ち)
+### 未着手と、その理由 (spec 裁定待ち) — **2026-08-16 に統括裁定で解消済み、下記追記を参照**
 
 `requires` / `conflicts_with` / `exclusive_group` / `required_group` / `borrow` / `ref` は
 resolver へ載せていない。**`Constraint::Requires(elem, targets)` の第 1 フィールドが
@@ -87,3 +87,36 @@ resolver へ載せていない。**`Constraint::Requires(elem, targets)` の第 
 受け入れ条件 2 番目 (entity / binding の keying をどうするか) そのもので、
 実測 3 の「同名 + id 分離へ name 参照すると黙って片方へ潰れる」の扱いと同じ裁定に属する。
 現状 fixture の coverage も無いため、裁定前に実装を進めると発明になる。
+
+## 追記 (2026-08-16 その2): 統括裁定を受けて制約属性まで載せ替え完了
+
+統括判定 (2026-08-16): 下の「裁定待ち」2 点はいずれも既裁定からの導出で新裁定不要。
+(1) 制約属性・borrow・ref も共通 resolver へ載せる — DR-136 §6 が対象属性に制約属性を
+明記しており、`Requires` の 2 軸分離は裁定 4 の帰結 (RequiresIf の既存形と同じ)。
+「同名 + id 分離へ name 参照で潰れる」懸念は 2 段 resolver 自体が解く (段 1 の raw 一致が
+先で、同一スコープの raw 重複は duplicate-id が弾くので一意)。
+(2) `definitions` のキーは明示 literal なので段 2 なし (raw 一致のみ) — 「明示値は無変換」
+(§3) と同じ原則。
+
+実装 (conformance 418 fixtures / 942 cases mismatch 0、全 738 tests green):
+
+- **内部同一性を id 軸へ確定** — decode 境界の `settle_name_axes` (`src/kuu/wire_decode.mbt`)
+  が trigger_name / export_key を name から供給し、`name` 自身を参照識別子へ寄せる。
+  installer 相以降は `name` が唯一の同一性キーになり、受け入れ条件 2 番目 (entity / binding の
+  keying) はこの形で決着した。綴りの担体として name を raw で持つ宣言 (exact の literal 直値、
+  dd のトリガ) だけが除外される
+- **制約属性の目的語を 2 段ルックアップで解決** — `inst_constraint` が requires /
+  conflicts_with / value_requires の目的語を共通 resolver で引き当て、述語が読む entity 名軸へ
+  落とす。alias entry-copy は候補から除外 (上記追記 (b) の注意点)
+- **`Constraint::Requires` / `Conflicts` を (entity, element, targets) の 3 軸へ分割** —
+  committed 判定は entity 名軸、`errors[].element` は参照識別子軸
+- 実測 3 の「同名 + id 分離へ name 参照すると黙って片方へ潰れる」は、
+  `fixtures/constraints-parse/requires-id-axis-lookup.json` が段 1 の厳密一致で指し分かれることを
+  pin し、解消を確認した
+
+### 残り
+
+- `ref` (`definitions.templates` のキー) は raw 一致のみで既に要件どおり (裁定 (2))。
+  スコープ内の要素を指す `ref` を 2 段にする経路は現状の corpus に無い
+- `borrow:` (default_fn) は `default_fn_edges` が name で辺を張るが、境界で name が id 軸に
+  なったため実質 id 軸で解決している。専用 fixture での pin は未
