@@ -992,6 +992,7 @@ test "global + long + fixpoint: child scope receives @engine.Rooted satellite (l
     commands: [
       {
         name: "sub",
+        id: None,
         body: child,
         export_key: @engine.ExportKey::unset(),
         const_values: None,
@@ -1711,6 +1712,7 @@ test "copy_global_into: two same-name different-trigger globals (declared indepe
     commands: [
       {
         name: "mid",
+        id: None,
         body: {
           ..empty_def(),
           options: [
@@ -1723,6 +1725,7 @@ test "copy_global_into: two same-name different-trigger globals (declared indepe
           commands: [
             {
               name: "sub",
+              id: None,
               body: empty_def(),
               export_key: @engine.ExportKey::unset(),
               const_values: None,
@@ -2289,6 +2292,7 @@ test "requires targeting a bool filled by a borrow default_fn survives the filte
     commands: [
       {
         name: "sub",
+        id: None,
         body: child,
         export_key: @engine.ExportKey::unset(),
         const_values: None,
@@ -2340,6 +2344,7 @@ test "a bool filled by a borrow default_fn that resolves false still violates re
     commands: [
       {
         name: "sub",
+        id: None,
         body: child,
         export_key: @engine.ExportKey::unset(),
         const_values: None,
@@ -4234,6 +4239,7 @@ test "global option value-starve inside a child command: missing_operand converg
     commands: [
       {
         name: "a",
+        id: None,
         body: empty_def(),
         export_key: @engine.ExportKey::unset(),
         const_values: None,
@@ -4281,6 +4287,7 @@ test "command-local (non-global) option value-starve: missing_operand path=[\"a\
     commands: [
       {
         name: "a",
+        id: None,
         body: child,
         export_key: @engine.ExportKey::unset(),
         const_values: None,
@@ -4521,6 +4528,7 @@ test "DR-120 §4: a global entry copy in a child scope claims no result key" {
     commands: [
       {
         name: "sub",
+        id: None,
         body: child,
         export_key: @engine.ExportKey::unset(),
         const_values: None,

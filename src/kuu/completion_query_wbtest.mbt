@@ -642,13 +642,13 @@ test "DR-116 §2/§4: option を挟んでも child scope の順序と説明に�
 /// command が居ると名前照合だけでは entry を取り違える。面を突き合わせキーに含めて、それぞれが
 /// 自分の面の説明を得ることを固定する (DR-116 §4 の「origin が指す定義要素から引き直す」)。
 ///
-/// 同名 2 面は既定では export_key 衝突 (fixtures/export-key/collision-option-command.json) なので、
-/// option 側を export_key でリネームして合法な同名構成にする。
+/// 同名 2 面は id 軸と結果キー軸の双方を分離して合法化する。option / command の name は同じ
+/// trigger spelling のままなので、ここで保証する面修飾による説明選択は変わらない。
 test "DR-116 §4: 同名の option と command は各々の面の説明を得る" {
   let ast = ast_or_fail(
-    "{\"options\":[{\"name\":\"build\",\"type\":\"flag\",\"long\":true," +
+    "{\"options\":[{\"name\":\"build\",\"id\":\"build_option\",\"type\":\"flag\",\"long\":true," +
     "\"export_key\":\"build_flag\",\"help\":\"option side\"}]," +
-    "\"commands\":[{\"type\":\"command\",\"name\":\"build\",\"help\":\"command side\"," +
+    "\"commands\":[{\"type\":\"command\",\"name\":\"build\",\"id\":\"build_command\",\"help\":\"command side\"," +
     "\"positionals\":[{\"name\":\"target\",\"type\":\"string\"}]}]}",
   )
   let response = completion_query(ast, ["app"])

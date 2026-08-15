@@ -82,6 +82,67 @@ test "front_door.parse_definition: 露出キー衝突は definition-error (DR-12
 }
 
 ///|
+/// command は option / positional と同じ参照識別子軸に参加する。明示 `id` が無ければ name が
+/// 参照識別子を供給するため、同一 lexical scope の同名 command 2 本は、結果キーを分けても
+/// `duplicate-id` が各 command に 1 件ずつ立つ。トリガ綴りと結果キーは独立軸なので、同じ綴りを
+/// 保ったまま明示 `id` を分ければ definition は合法になる (DR-054 更新5 / CMDID-Q1=a)。
+test "front_door.parse_definition: command は id 軸へ参加し明示 id で分離できる" {
+  let duplicate =
+    #|{"commands": [
+    #|  {"type": "command", "name": "run", "export_key": "run_first"},
+    #|  {"type": "command", "name": "run", "export_key": "run_second"}
+    #|]}
+  match parse_definition(@json.parse(duplicate)) {
+    Err(Rejected(errors)) => {
+      let items : Array[String] = []
+      for error in errors {
+        items.push("\{error.element}/\{test_render_def_kind(error.kind)}")
+      }
+      test_sort_items(items)
+      assert_eq(items, ["run/duplicate-id", "run/duplicate-id"])
+    }
+    Err(Malformed(reason)) =>
+      fail("duplicate command ids must be rejected, not malformed: " + reason)
+    Ok(_) => fail("duplicate command ids must be rejected")
+  }
+
+  let separated =
+    #|{"commands": [
+    #|  {"type": "command", "name": "run", "id": "run_first", "export_key": "run_first"},
+    #|  {"type": "command", "name": "run", "id": "run_second", "export_key": "run_second"}
+    #|]}
+  match parse_definition(@json.parse(separated)) {
+    Ok(_) => ()
+    Err(Malformed(reason)) =>
+      fail("distinct command ids must be legal, malformed: " + reason)
+    Err(Rejected(errors)) =>
+      fail("distinct command ids must be legal: " + deferrs_str(errors))
+  }
+
+  // 裸 exact は surface で name/id を宣言せず、同じ spelling の named command と id 軸を共有しない。
+  // 内部 carrier の `name` に spelling が入っていても、それは trigger と completion origin のためで
+  // あって id のデフォルト供給ではない。したがって両者の同居は合法である。
+  let named_and_anonymous_exact =
+    #|{"commands": [
+    #|  {"type": "command", "name": "init"}
+    #|], "positionals": [
+    #|  {"exact": "init"}
+    #|]}
+  match parse_definition(@json.parse(named_and_anonymous_exact)) {
+    Ok(_) => ()
+    Err(Malformed(reason)) =>
+      fail(
+        "named command and anonymous exact must be legal, malformed: " + reason,
+      )
+    Err(Rejected(errors)) =>
+      fail(
+        "named command and anonymous exact must be legal: " +
+        deferrs_str(errors),
+      )
+  }
+}
+
+///|
 /// 保証 (MDR-005 §1 / DR-125 §3 / DR-047 §4): front_door.resolve は値源ラダー
 /// (env/config/default) を子 scope まで再帰的に充填する。子 scope entity の default 席が
 /// `default_fn: "borrow:<source>"` を持つとき、外側スコープの解決値を **`@abi.Default` source**
@@ -1112,8 +1173,9 @@ test "single-value option remains scalar after option seq support" {
 ///    平坦写像では宣言順で後に来る command の軸 (未指定 = identity) が option の軸を上書きし、
 ///    `--x` の結果キーが `ox` でなく `x` になる (= `export_key` が実行時に黙って無視される)。
 ///    静的検査は露出キー `ox` と `x` を別物と正しく判定するので `validate` は ok を返し、
-///    食い違いだけが残る。同名 option / command の同居自体は合法 (DR-120 §7: 綴り軸と結果キー軸
-///    は別、`fixtures/export-key/collision-option-command.json` が衝突する側を pin)
+///    食い違いだけが残る。同名 option / command は明示 `id` で参照識別子軸を分離し、綴り軸と
+///    結果キー軸の同名性だけを残す (`fixtures/export-key/collision-option-command.json` が結果キー
+///    衝突側を pin、CMDID-Q1=a)。
 /// 2. **別スコープの同名** — root の `p` (identity) と子 command の `p` (`export_key: "sp"`)
 ///    のように、スコープが違えば衝突しない (DR-021「スコープ階層が違えば対象外」) 同名要素が
 ///    平坦写像では 1 エントリを取り合い、root の `--p` の結果キーが子の `export_key` になる
@@ -1140,8 +1202,8 @@ test "front_door.output: 露出キーの解決は結果スコープ・軸ごと 
 
   // 1. option `x` (export_key: "ox") と command `x` の同居。`--x` は option の結果キー `ox`。
   let option_and_command =
-    #|{"options":[{"name":"x","type":"flag","long":true,"export_key":"ox"}],
-    #| "commands":[{"name":"x","type":"command","options":[{"name":"inner","type":"flag","long":true}]}]}
+    #|{"options":[{"name":"x","id":"option_x","type":"flag","long":true,"export_key":"ox"}],
+    #| "commands":[{"name":"x","id":"command_x","type":"command","options":[{"name":"inner","type":"flag","long":true}]}]}
   assert_eq(result_of(option_and_command, ["--x"]), "{ox=true,x=null}")
   // 同じ定義で command 側を選ぶと scope label は identity の `x` (option の export_key に
   // 引きずられない)。`inner` は未発火の flag なので preset default が入る。

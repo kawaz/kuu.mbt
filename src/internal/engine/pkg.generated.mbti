@@ -219,12 +219,14 @@ pub(all) struct AmbiguousInterpretation {
 
 pub(all) struct CommandDef {
   name : String
+  id : String?
   body : Definition
   export_key : ExportKey
   const_values : Array[@abi.Value]?
   default_values : Array[@abi.Value]?
   default_fn : @abi.DefaultFnCall?
 } derive(Eq, @debug.Debug)
+pub fn CommandDef::reference_identifier(Self) -> String
 
 pub(all) enum Constraint {
   Requires(String, Array[String])

@@ -24,8 +24,9 @@ pub(all) enum DefErrorKind {
   // two or more declaration elements in the SAME lexical scope carry the SAME reference identifier
   // (DR-054 更新5 / DR-006 / DR-003). The axis is the DR-046 §1 id axis — an explicit `id`, or the
   // name that supplies one in its absence (DR-046 §2) — so same-named elements with distinct `id`s
-  // are legal. Structural `or` / `seq` children take part as siblings of their parent's scope;
-  // commands (name = 綴り軸, DR-120 §7) and alias entries (入口のみ, DR-057 §2/§3) do not. Distinct
+  // are legal. Structural `or` / `seq` children and commands take part in their lexical scope;
+  // alias entries (入口のみ, DR-057 §2/§3) do not. A command's trigger spelling remains a separate
+  // axis: same-named commands are legal only when explicit `id`s separate the reference axis. Distinct
   // from ExportKeyCollision, which judges the result-key axis: both break independently and a
   // definition that breaks both collects one error of each kind per element (DR-054 §4 全列挙).
   DuplicateId

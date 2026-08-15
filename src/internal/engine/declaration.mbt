@@ -432,6 +432,9 @@ pub(all) struct Variant {
 /// subcommand (DR-041 §4)。`export_key`: null = scope key drop, 子は親 scope へ promote (DR-052)。
 pub(all) struct CommandDef {
   name : String
+  // DR-046 §1/§2: command も参照識別子を持ち、明示 `id` が無ければ name が供給する。
+  // 綴り軸・結果キー軸とは独立し、同名 command の両立には id 軸も分離する。
+  id : String?
   body : Definition
   export_key : ExportKey
   // DR-134 §1: command node の値の担体。command は値かスコープのどちらかを名乗るので、これらが
@@ -442,6 +445,11 @@ pub(all) struct CommandDef {
   default_values : Array[Value]?
   default_fn : DefaultFnCall?
 } derive(Eq, Debug)
+
+///|
+pub fn CommandDef::reference_identifier(self : CommandDef) -> String {
+  self.id.unwrap_or(self.name)
+}
 
 ///|
 /// ルートまたは command のスコープ自身に属する宣言層メタデータ。

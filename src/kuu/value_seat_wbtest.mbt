@@ -910,8 +910,8 @@ test "DR-131 §1.1: FnFailed 枝は落ち、Value(null) 枝は成立する" {
 }
 
 ///|
-/// 監査 M3: duplicate raw command path (同名 command 2 本、export_key で結果キーは分離 —
-/// DR-120 合法) で同名 target `tr` が別宣言 (record と number) を持っても、選択された command
+/// 監査 M3: duplicate raw command path (同名 command 2 本、明示 id と export_key で参照識別子・
+/// 結果キーを分離) で同名 target `tr` が別宣言 (record と number) を持っても、選択された command
 /// 枝の identity で resolve 対象と結果キー射影を区別する。`--until` は go1 にしか無いため、
 /// go1 の record 宣言を使って `tr.until` を vivify し、go2 の number 宣言と `required` 述語へは
 /// 到達しない。parse 相の宣言 index は枝 identity を持たないため保守的スキップを維持し、resolve 相が
@@ -919,10 +919,10 @@ test "DR-131 §1.1: FnFailed 枝は落ち、Value(null) 枝は成立する" {
 test "監査 M3: 同名 command 2 本の別宣言 target は保守的スキップ (誤枝刈りしない)" {
   let src =
     #|{"commands":[
-    #| {"name":"go","export_key":"go1","options":[
+    #| {"name":"go","id":"go1","export_key":"go1","options":[
     #|  {"name":"tr","type":"trange","long":true},
     #|  {"name":"until","type":"string","long":true,"link":"tr.until"}]},
-    #| {"name":"go","export_key":"go2","options":[
+    #| {"name":"go","id":"go2","export_key":"go2","options":[
     #|  {"name":"tr","type":"number","long":true,"required":true}]}]}
   assert_eq(
     seat_view(src, ["go", "--until", "5"]),
@@ -937,10 +937,10 @@ test "監査 M3: 同名 command 2 本の別宣言 target は保守的スキッ�
 test "同名 transparent command も宣言 ordinal で選択枝を resolve する" {
   let src =
     #|{"commands":[
-    #| {"name":"go","export_key":null,"options":[
+    #| {"name":"go","id":"go1","export_key":null,"options":[
     #|  {"name":"tr","export_key":"tr1","type":"trange","long":true},
     #|  {"name":"until","type":"string","long":true,"link":"tr.until"}]},
-    #| {"name":"go","export_key":null,"options":[
+    #| {"name":"go","id":"go2","export_key":null,"options":[
     #|  {"name":"tr","export_key":"tr2","type":"number","long":true}]}]}
   assert_eq(
     seat_view(src, ["go", "--until", "5"]),
@@ -954,9 +954,9 @@ test "同名 transparent command も宣言 ordinal で選択枝を resolve す�
 test "同名 command の後続宣言を選んでも選択枝の型席で null 補形する" {
   let src =
     #|{"commands":[
-    #| {"name":"go","export_key":"go2","options":[
+    #| {"name":"go","id":"go2","export_key":"go2","options":[
     #|  {"name":"tr","type":"number","long":true,"required":true}]},
-    #| {"name":"go","export_key":"go1","options":[
+    #| {"name":"go","id":"go1","export_key":"go1","options":[
     #|  {"name":"tr","type":"trange","long":true},
     #|  {"name":"until","type":"string","long":true,"link":"tr.until"}]}]}
   assert_eq(
@@ -971,9 +971,9 @@ test "同名 command の後続宣言を選んでも選択枝の型席で null �
 test "未選択の同名 command の none セルは選択枝の同名値を隠さない" {
   let src =
     #|{"commands":[
-    #| {"name":"go","export_key":"go1","options":[
+    #| {"name":"go","id":"go1","export_key":"go1","options":[
     #|  {"name":"x","export_key":"x1","type":"string","long":true}]},
-    #| {"name":"go","export_key":"go2","options":[
+    #| {"name":"go","id":"go2","export_key":"go2","options":[
     #|  {"name":"x","export_key":"x2","type":"none","long":true}]}]}
   assert_eq(
     seat_view(src, ["go", "--x", "hello"]),

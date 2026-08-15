@@ -3845,9 +3845,9 @@ test "DR-060 §4: positional の値位置候補にも completer が配線され�
 /// merge 規則: 6 フィールド一致・completer 一致 (2 つの独立 command 定義が同名 positional
 /// `target` を持ち、両方とも同じ completer を宣言する) — dedup 後も completer=files が
 /// 保持されることの pin (positive case)。
-/// 同名兄弟 command には相異なる `export_key` を割る — 結果キー軸で同じキーを名乗ると DR-120 §1
-/// (1 露出キー・1 値セル) の definition-error になり、綴り軸の重複だけを残せない (name はトリガ
-/// 綴りを保つ、DR-052 §2)。
+/// 同名兄弟 command には相異なる `id` と `export_key` を割る。name はトリガ綴りを保つ一方、
+/// id 軸と結果キー軸は独立して分離するため、ここで保証する候補 merge の入力は合法になる
+/// (CMDID-Q1=a / DR-120 §1)。
 test "DR-104 §3 明確化: 6 フィールド一致 dedup で completer が一致する場合は保持される" {
   let src =
     #|{
@@ -3855,8 +3855,8 @@ test "DR-104 §3 明確化: 6 フィールド一致 dedup で completer が一�
     #|  "query": "complete",
     #|  "definition": {
     #|    "commands": [
-    #|      {"type": "command", "name": "build", "export_key": "build_a", "positionals": [{"name": "target", "type": "string", "completer": "files"}]},
-    #|      {"type": "command", "name": "build", "export_key": "build_b", "positionals": [{"name": "target", "type": "string", "completer": "files"}]}
+    #|      {"type": "command", "name": "build", "id": "build_a", "export_key": "build_a", "positionals": [{"name": "target", "type": "string", "completer": "files"}]},
+    #|      {"type": "command", "name": "build", "id": "build_b", "export_key": "build_b", "positionals": [{"name": "target", "type": "string", "completer": "files"}]}
     #|    ]
     #|  },
     #|  "cases": [
@@ -3923,9 +3923,9 @@ test "DR-060 §4: global option の値スロット candidate は @engine.Rooted 
 /// (省略と同値、CONFORMANCE §3) を明示することで発火させる — before=["build"] の時点では
 /// `--verbose` 自体のトリガはまだ消費されておらず (exact 候補、completer は元々常に無意味) その
 /// 値スロットは同居しないため、他の候補と同居させる正の一致確認は別 test (positive case) の役目。
-/// 同名兄弟 command には相異なる `export_key` を割る — 結果キー軸で同じキーを名乗ると DR-120 §1
-/// (1 露出キー・1 値セル) の definition-error になり、綴り軸の重複だけを残せない (name はトリガ
-/// 綴りを保つ、DR-052 §2)。
+/// 同名兄弟 command には相異なる `id` と `export_key` を割る。name はトリガ綴りを保つ一方、
+/// id 軸と結果キー軸は独立して分離するため、ここで保証する候補 merge の入力は合法になる
+/// (CMDID-Q1=a / DR-120 §1)。
 test "DR-104 §3 明確化: 6 フィールド一致 dedup で completer が食い違う場合は completer なしへ畳まれる" {
   let src =
     #|{
@@ -3933,8 +3933,8 @@ test "DR-104 §3 明確化: 6 フィールド一致 dedup で completer が食�
     #|  "query": "complete",
     #|  "definition": {
     #|    "commands": [
-    #|      {"type": "command", "name": "build", "export_key": "build_files", "positionals": [{"name": "target", "type": "string", "completer": "files"}]},
-    #|      {"type": "command", "name": "build", "export_key": "build_urls", "positionals": [{"name": "target", "type": "string", "completer": "urls"}]}
+    #|      {"type": "command", "name": "build", "id": "build_files", "export_key": "build_files", "positionals": [{"name": "target", "type": "string", "completer": "files"}]},
+    #|      {"type": "command", "name": "build", "id": "build_urls", "export_key": "build_urls", "positionals": [{"name": "target", "type": "string", "completer": "urls"}]}
     #|    ]
     #|  },
     #|  "cases": [

@@ -658,6 +658,7 @@ fn clone_def(d : Definition) -> Definition {
   for c in d.commands {
     cs.push({
       name: c.name,
+      id: c.id,
       body: clone_def(c.body),
       export_key: c.export_key,
       const_values: c.const_values,
@@ -3925,6 +3926,7 @@ fn desugar_aliases(
           Some(cmd) =>
             def.commands.push({
               name: alias_name,
+              id: cmd.id,
               body: clone_def(cmd.body),
               export_key: ExportKey::key(a.target),
               const_values: cmd.const_values,
@@ -7195,51 +7197,47 @@ fn report_command_value_occupancy(
 }
 
 ///|
-/// DR-054 更新5: 同一 lexical スコープ (DR-025 / DR-033) に同じ参照識別子 (DR-046 §1/§2 — 明示 `id`、
-/// 無ければ name が供給) を持つ宣言要素が 2 つ以上あれば definition-error kind=`duplicate-id`。ref / link
-/// の解決先が曖昧になる形そのものであり (DR-006 が id 重複を禁じた根拠のうち、結果キー衝突の側は
-/// DR-120 が `export-key-collision` として引き取っている)、露出キー軸とは独立に破れる — 両軸が同時に
-/// 破れる定義では要素ごとに 2 kind が立つ (DR-054 §4 の全列挙、抑制規則は置かない)。
+/// DR-054 更新5 / CMDID-Q1=a: 同一 lexical スコープ (DR-025 / DR-033) に同じ参照識別子
+/// (DR-046 §1/§2 — 明示 `id`、無ければ name が供給) を持つ宣言要素が 2 つ以上あれば
+/// definition-error kind=`duplicate-id`。option / positional / command は同じ id 軸に参加し、
+/// command の綴り軸と結果キー軸は独立に判定される。
 ///
-/// 参加するのは参照識別子を持つ宣言要素で、値セルの有無や露出キーの占有 (DR-120 §4) は条件でない —
-/// 透過 `config_file` のような非占有要素も参照識別子は持つ。`or` / `seq` の子は親が作る子スコープの
-/// 兄弟として同じ規則で参加する。参加しないもの:
-///
-/// - **command** — name は綴り軸を保ち、相異なる `export_key` を割った同名 command は両立する
-///   (DR-120 §7)。`def.commands` を識別子集合に混ぜず、子スコープとして再帰するだけなのがそれ
-/// - **alias 由来の entry-copy** (`is_alias`) — 入口だけの存在で実体を持たず、canonical の識別子へ
-///   解決する (DR-057 §2/§3)。`AliasDef` の宣言そのものは `def.aliases` に居て options に現れない
-/// - **global の copy** (`link_depth > 0`) — 祖先スコープの宣言の衛星であって、このスコープの
-///   lexical な宣言ではない (DR-042 の copy、`collect_config_file_siblings` と同じ除外)
-/// - **無名要素** (`name == ""` かつ id 無し、= help group 宣言 DR-113 §8.1) — 参照識別子を
-///   持たないので衝突しようがない
+/// 参加集合は surface で name または明示 `id` を持つ実体の lexical 宣言から作る。裸 exact の
+/// spelling は trigger / completion origin の内部 carrier であり、name による id 供給ではない。
+/// 検査は alias desugar / global copy より前に行うため、入口 copy や衛星 copy は集合へ入らない。
 fn collect_duplicate_ids(def : Definition, out : Array[DefError]) -> Unit {
-  fn scope(elements : Array[ElementDef]) -> Unit {
-    let participants : Array[ElementDef] = []
-    for e in elements {
-      if e.is_alias || e.link_depth > 0 || e.reference_identifier() == "" {
-        continue
+  fn participant_identifier(element : ElementDef) -> String? {
+    // 裸 `{"exact":"..."}` は surface で name/id を宣言しない。`exact_marker` が trigger 綴りと
+    // completion origin のために内部 `name` へ spelling を運ぶが、これは id のデフォルト供給ではない。
+    if element.is_alias ||
+      element.link_depth > 0 ||
+      (element.is_exact && element.id is None) {
+      None
+    } else {
+      match element.reference_identifier() {
+        "" => None
+        identifier => Some(identifier)
       }
-      participants.push(e)
     }
+  }
+
+  fn report(participants : Array[(String, String)]) -> Unit {
     let reported : Array[String] = []
-    for e in participants {
-      let identifier = e.reference_identifier()
+    for participant in participants {
+      let identifier = participant.1
       if str_in(reported, identifier) {
         continue
       }
       reported.push(identifier)
       let mut count = 0
-      for other in participants {
-        if other.reference_identifier() == identifier {
+      for other_participant in participants {
+        if other_participant.1 == identifier {
           count = count + 1
         }
       }
       if count < 2 {
         continue
       }
-      // 粒度は DR-054 更新5: 重複に関与する要素ごとに 1 件 (`element` = 当該要素の宣言名)。比較単位が
-      // `(element, kind)` の集合である以上 (DR-082 §1)、代表 1 件にすると相手が expect から読めない。
       let message = "'" +
         identifier +
         "' is declared as the reference identifier of " +
@@ -7247,13 +7245,27 @@ fn collect_duplicate_ids(def : Definition, out : Array[DefError]) -> Unit {
         " elements in the same scope"
       let hint = "rename one of them, or give them different `id` values to separate them on the reference axis"
       for participant in participants {
-        if participant.reference_identifier() == identifier {
-          out.push(def_err(participant.name, DuplicateId, message, hint))
+        if participant.1 == identifier {
+          out.push(def_err(participant.0, DuplicateId, message, hint))
         }
       }
     }
+  }
+
+  fn structural_scope(elements : Array[ElementDef]) -> Unit {
+    let participants : Array[(String, String)] = []
+    for e in elements {
+      match participant_identifier(e) {
+        Some(identifier) => participants.push((e.name, identifier))
+        None => ()
+      }
+    }
+    report(participants)
     // 構造の子は親が作る子スコープの兄弟同士で判定する (`or` の枝をまたぐ子も 1 つの子スコープ)。
-    for e in participants {
+    for e in elements {
+      if participant_identifier(e) is None {
+        continue
+      }
       match e.body {
         Or(branches) => {
           let children : Array[ElementDef] = []
@@ -7262,22 +7274,57 @@ fn collect_duplicate_ids(def : Definition, out : Array[DefError]) -> Unit {
               children.push(item)
             }
           }
-          scope(children)
+          structural_scope(children)
         }
-        Group(items) => scope(items)
+        Group(items) => structural_scope(items)
         Cell | Enum(_) => ()
       }
     }
   }
 
   let siblings : Array[ElementDef] = []
+  let participants : Array[(String, String)] = []
   for e in def.options {
     siblings.push(e)
+    match participant_identifier(e) {
+      Some(identifier) => participants.push((e.name, identifier))
+      None => ()
+    }
   }
   for e in def.positionals {
     siblings.push(e)
+    match participant_identifier(e) {
+      Some(identifier) => participants.push((e.name, identifier))
+      None => ()
+    }
   }
-  scope(siblings)
+  for c in def.commands {
+    let identifier = c.reference_identifier()
+    if identifier != "" {
+      participants.push((c.name, identifier))
+    }
+  }
+  report(participants)
+
+  // option / positional の構造子が作る子スコープと、command が作る子スコープを再帰する。
+  for e in siblings {
+    if participant_identifier(e) is None {
+      continue
+    }
+    match e.body {
+      Or(branches) => {
+        let children : Array[ElementDef] = []
+        for branch in branches {
+          for item in branch.items {
+            children.push(item)
+          }
+        }
+        structural_scope(children)
+      }
+      Group(items) => structural_scope(items)
+      Cell | Enum(_) => ()
+    }
+  }
   for c in def.commands {
     collect_duplicate_ids(c.body, out)
   }

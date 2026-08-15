@@ -3047,7 +3047,7 @@ fn dec_command(
   // DR-134 §1/§7: `value` は node 共通属性で、command node でも合法。値の供給に command 専用の
   // 規則は無い (§5) ので `default` / `default_fn` も同じ担体として受ける。
   let allowed = [
-    "type", "name", "options", "positionals", "commands", "export_key", "config",
+    "type", "name", "id", "options", "positionals", "commands", "export_key", "config",
     "value", "default", "default_fn",
   ]
   for key in owned.vocab {
@@ -3087,6 +3087,7 @@ fn dec_command(
   }
   DCommand({
     name,
+    id: dec_reference_id(o, "command"),
     body,
     export_key: export_,
     const_values,
