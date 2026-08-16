@@ -4677,3 +4677,43 @@ test "option structural outer repeat consumes one trigger and multiple body rows
       )
   }
 }
+
+///|
+/// 保証 (DR-044 §1 / DR-078 §1): option 自身が structural `or` で **outer repeat** を宣言した
+/// とき、各反復は独立した行になる。行の境界標識 `#row` は「反復宣言子が配列を作る」経路
+/// すべてに要る (`multiple` = 1 発火が畳み単位 / `repeat` = 1 反復が行) ので、`multiple` だけを
+/// 見て標識を打つと各反復の束縛が同じ結果スコープへ平坦に積まれ、last-wins で 1 行に潰れる。
+/// Group arm (`seq_value_node` -> `seq_row_bearing`) と同じ判定であることの pin。
+///
+/// (docs/issue/2026-07-27-option-structural-or-group-outer-repeat-not-wired.md 受け入れ条件 1/2)
+test "option structural or + outer repeat は反復ごとに行を作る (DR-044 §1 / DR-078 §1)" {
+  let src =
+    #|{"options": [
+    #|  {"name": "sel", "long": true, "repeat": {"min": 1, "max": 2}, "or": [
+    #|    {"name": "n", "type": "number"},
+    #|    {"seq": [{"name": "s1", "type": "string"}, {"name": "s2", "type": "string"}]}
+    #|  ]}
+    #|]}
+  let ast = load_definition(src)
+  // トリガは 1 回、body は 2 反復 (number 枝 -> seq 枝)。枝は型で一意に決まるので曖昧にならない。
+  let args = ["--sel", "1", "a", "b"]
+  let po = parse_legacy(ast, args)
+  match po {
+    @engine.Success(_) => ()
+    other => fail("parse should succeed, got " + render_outcome(other))
+  }
+  // 反復ごとに別の行スコープが立つ = `#row` 標識が打たれている証拠。標識が無いと
+  // 2 反復の束縛が同じスコープへ平坦に積まれ、行が 1 つに潰れる。
+  match po {
+    @engine.Success(binds) => {
+      let mut rows = 0
+      for b in binds {
+        if b.key == "#row" {
+          rows = rows + 1
+        }
+      }
+      assert_eq(rows, 2)
+    }
+    _ => ()
+  }
+}

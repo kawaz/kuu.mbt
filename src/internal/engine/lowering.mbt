@@ -1972,7 +1972,11 @@ fn inst_long(
           for br in branches {
             branch_nodes.push(or_branch_node(br))
           }
-          let or_node : Node = if e.multiple {
+          // DR-044 §1 / DR-078 §1: 行の境界標識 `#row` は「反復宣言子が配列を作る」経路
+          // すべてに要る — `multiple` (1 発火が畳み単位) と `repeat` (1 反復が行) の両方
+          // (判定は Group arm の `seq_value_node` と同じ `seq_row_bearing`)。無いと各反復の
+          // 束縛が同じ結果スコープへ平坦に積まれ、last-wins で 1 行に潰れる。
+          let or_node : Node = if seq_row_bearing(e) {
             ref_row_head(e.name, Or(branch_nodes))
           } else {
             Scoped(e.name, Or(branch_nodes))
