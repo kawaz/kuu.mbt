@@ -79,6 +79,11 @@ pub struct ExportScopeMap {
   priv occupied_cells_ : Map[String, Bool]
   priv occupied_scopes_ : Map[String, Bool]
   priv projected_cells_ : Map[String, Bool]
+  // DR-123 §3 (適用範囲の明確化、2026-08-16): 反復宣言子を持つセルは default 席が常に
+  // 埋まっている (宣言 default か暗黙 `[]`) ため、**実現したスコープ**の全キー列挙
+  // (DR-130 §1) で `null` ではなく `[]` で現れる。未選択 `or` 枝の内側は対象外 — 暗黙 `[]`
+  // も枝の default であり、DR-130 §4 が「未選択枝の default は充填せず」と定める。
+  priv repeating_cells_ : Map[String, Bool]
   priv projected_scopes_ : Map[String, Bool]
   priv children_ : Map[String, ExportScopeMap]
 }
@@ -95,6 +100,7 @@ pub fn ExportScopeMap::empty() -> ExportScopeMap {
     occupied_cells_: Map([], capacity=0),
     occupied_scopes_: Map([], capacity=0),
     projected_cells_: Map([], capacity=0),
+    repeating_cells_: Map([], capacity=0),
     projected_scopes_: Map([], capacity=0),
     children_: Map([], capacity=0),
   }
@@ -191,6 +197,31 @@ pub fn ExportScopeMap::project_cell(
   name : String,
 ) -> Unit {
   self.projected_cells_.set(name, true)
+}
+
+///|
+/// DR-123 §3: **実現したスコープの直下**にある反復セルの印。未選択 `or` 枝の内側では
+/// 付けない (枝の default は枝が選ばれた時だけ生きる、DR-130 §4)。
+pub fn ExportScopeMap::mark_repeating_cell(
+  self : ExportScopeMap,
+  name : String,
+) -> Unit {
+  self.repeating_cells_.set(name, true)
+}
+
+///|
+/// 露出キーが反復セル由来か (`projection_keys` と同じ写像で引く)。
+pub fn ExportScopeMap::key_is_repeating(
+  self : ExportScopeMap,
+  key : String,
+) -> Bool {
+  for name, _ in self.repeating_cells_ {
+    match self.exposed_cell(name) {
+      Some(exposed) => if exposed == key { return true }
+      None => ()
+    }
+  }
+  false
 }
 
 ///|

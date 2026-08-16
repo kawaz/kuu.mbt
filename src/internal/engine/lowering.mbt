@@ -7268,6 +7268,9 @@ fn gather_element_seats(
   out : Array[DefError],
   project : Bool,
   template_declarations : Map[String, ElementDef],
+  // DR-123 §3 (適用範囲): `or` 枝の内側は「枝が選ばれた時だけ生きる」領域なので、
+  // 反復セルの暗黙 `[]` を付けない (DR-130 §4 が優先し `null` のまま)。
+  in_or_branch? : Bool = false,
 ) -> Unit {
   // 非参加要素の席は自分も内側も数えない — alias / global コピーは canonical 側と同じ構造の
   // 写しなので、内側まで数えると canonical の席が二重に立つ。軸は remap のために登録する
@@ -7283,6 +7286,10 @@ fn gather_element_seats(
         node.occupy_cell(e.name)
         if project {
           node.project_cell(e.name)
+          if !in_or_branch &&
+            (elem_repeat(e) is Some(_) || e.multiple || e.separator is Some(_)) {
+            node.mark_repeating_cell(e.name)
+          }
         }
         match resolved_export_key(e.name, e.export_key) {
           Some(key) =>
@@ -7342,13 +7349,27 @@ fn gather_element_seats(
           node.occupy_cell(e.name)
           if project {
             node.project_cell(e.name)
+            if !in_or_branch &&
+              (
+                elem_repeat(e) is Some(_) ||
+                e.multiple ||
+                e.separator is Some(_)
+              ) {
+              node.mark_repeating_cell(e.name)
+            }
           }
           seats.push({ element: e.name, key, space: group_value_space() })
           let inner : Array[ExportSeat] = []
           for br in branches {
             for it in br.items {
               gather_element_seats(
-                it, inner_node, inner, out, true, template_declarations,
+                it,
+                inner_node,
+                inner,
+                out,
+                true,
+                template_declarations,
+                in_or_branch=true,
               )
             }
           }
@@ -7358,7 +7379,13 @@ fn gather_element_seats(
           for br in branches {
             for it in br.items {
               gather_element_seats(
-                it, inner_node, seats, out, true, template_declarations,
+                it,
+                inner_node,
+                seats,
+                out,
+                true,
+                template_declarations,
+                in_or_branch=true,
               )
             }
           }
@@ -7377,6 +7404,14 @@ fn gather_element_seats(
           node.occupy_cell(e.name)
           if project {
             node.project_cell(e.name)
+            if !in_or_branch &&
+              (
+                elem_repeat(e) is Some(_) ||
+                e.multiple ||
+                e.separator is Some(_)
+              ) {
+              node.mark_repeating_cell(e.name)
+            }
           }
           seats.push({ element: e.name, key, space: group_value_space() })
           let inner : Array[ExportSeat] = []

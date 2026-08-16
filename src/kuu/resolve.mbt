@@ -1378,7 +1378,17 @@ fn build_result(
       Some(node) =>
         for key in node.projection_keys() {
           if !result_object_has_key(obj, key) {
-            obj.push((key, @abi.Scalar(@abi.Null)))
+            // DR-123 §3 (適用範囲の明確化): **実現したスコープ**で 0 発火の反復セルは
+            // `null` ではなく `[]` — ラダー最下段の暗黙 default が席を埋めるため
+            // (未発火 flag が preset default の `false` で現れるのと同じ経路)。
+            // 未選択 `or` 枝の内側は対象外で `null` のまま (DR-130 §4「未選択枝の default は
+            // 充填せず」— 暗黙 `[]` も枝の default)。印は宣言時に枝の内外で撃ち分けてある。
+            // 暗黙 `[]` には値の座が無いので sources にはタグが載らない (DR-122 §2)。
+            if node.key_is_repeating(key) {
+              obj.push((key, @abi.Array([])))
+            } else {
+              obj.push((key, @abi.Scalar(@abi.Null)))
+            }
           }
         }
       None => ()
