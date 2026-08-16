@@ -409,9 +409,12 @@ fn collapse_duplicate_rows(
   let keys : Array[String] = []
   let out : Array[QueryRow] = []
   for row in rows {
+    // 突き合わせは「畳み前の挿入文字列」と「現在の表示綴り」の両方で行う。"eq" 側の畳みは
+    // 綴りを `--x` -> `--x=` に書き換えるので、畳み前キーだけだと最初から `--x=` として emit
+    // された行 (§5 のペア成立由来) を取りこぼし、表示上同一の行が 2 本残る。
     let mut found = -1
     for i = 0; i < keys.length(); i = i + 1 {
-      if keys[i] == row.spelling {
+      if keys[i] == row.spelling || out[i].spelling == row.spelling {
         found = i
         break
       }
@@ -454,12 +457,21 @@ fn collapse_duplicate_rows(
 /// `word-end-and-cont-coexist-same-origin`) ので、畳むべきペアは必ず origin も一致する。逆に
 /// DR-104 §3 明確化が合法とする「同綴り別 origin」(DR-041 §4 の重複トリガ) は別 entry 由来の
 /// 別候補であり、spelling 単独をキーにすると無関係な候補どうしがペア扱いされて片方が消える。
+/// DR-117 §5 のペア同一性 — 帰属 scope + 由来 entry + 綴り。
+fn pair_identity_key(s : ScopedCandidate) -> String {
+  scope_key(s.scope) + s.candidate.origin + "\u{001f}" + s.candidate.spelling
+}
+
+///|
 fn merge_insert_form(
   candidates : Array[ScopedCandidate],
   insert_form : String,
 ) -> Array[PolicyCandidate] {
-  // origin と spelling の組ごとに word_end / cont の bit を集計する。同綴りでも由来 entry が
-  // 異なる候補は別物であり、互いの term とペアを形成しない。
+  // 帰属 scope と origin と spelling の組ごとに word_end / cont の bit を集計する。同綴りでも
+  // 由来 entry が異なる候補は別物であり、互いの term とペアを形成しない。§5 のペアは
+  // **同じセルの 2 つの入口** (space 形 main entry と eq-split matcher) についての規則なので、
+  // 帰属 scope も同一性の一部 — これが無いと、曖昧読みで root と子 scope に同名要素が併存する
+  // 退化構成で、別セルの候補どうしが誤ってペア成立し片方が畳み消される。
   let has_word_end : Map[String, Bool] = Map([])
   let has_cont : Map[String, Bool] = Map([])
   for s in candidates {
@@ -467,7 +479,7 @@ fn merge_insert_form(
     if c.is_value {
       continue
     }
-    let key = c.origin + "\u{001f}" + c.spelling
+    let key = pair_identity_key(s)
     if c.term == WordEnd {
       has_word_end[key] = true
     } else {
@@ -482,7 +494,7 @@ fn merge_insert_form(
       out.push({ scoped: s, eq_form: false })
       continue
     }
-    let key = c.origin + "\u{001f}" + c.spelling
+    let key = pair_identity_key(s)
     let pair_present = has_word_end.get(key) is Some(true) &&
       has_cont.get(key) is Some(true)
     if !pair_present {
