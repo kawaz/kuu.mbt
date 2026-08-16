@@ -4160,6 +4160,9 @@ fn head_elem_names_into(node : Node, out : Array[String]) -> Unit {
       }
     Many(inner, _) => head_elem_names_into(inner, out)
     BoundedTail(h, _, _) => head_elem_names_into(h, out)
+    // 結果スコープの包み。中身は同じ head の住人なので `ScopeNode` と同じく辿る
+    // (option 自身が structural or / seq のとき head は `Scoped(name, ...)` になる)。
+    Scoped(_, inner) => head_elem_names_into(inner, out)
     ScopeNode(sc) => {
       for g in sc.greedy {
         head_elem_names_into(g, out)

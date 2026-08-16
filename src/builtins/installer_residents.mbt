@@ -104,10 +104,17 @@ fn resident_long(json : Json) -> Result[@engine.LongDeclaration, String] {
 }
 
 ///|
-fn resident_repeat(json : Json) -> Result[@engine.RepeatSpec, String] {
+fn resident_repeat(json : Json) -> Result[@engine.RepeatSpec?, String] {
+  // DR-043 / REFERENCE §要素属性: `repeat` は `boolean | object`。`true` は**無制限**
+  // (min 0 / 上限なし) の糖衣、`false` は反復なし。`multiple` が bool 形を受けるのと同型。
+  match json {
+    True => return Ok(Some({ min: 0, max: None, is_lazy: false }))
+    False => return Ok(None)
+    _ => ()
+  }
   let object = match resident_object(json) {
     Ok(value) => value
-    Err(_) => return Err("repeat is not an object")
+    Err(_) => return Err("repeat is not a bool/object")
   }
   for key, _ in object {
     if key != "min" && key != "max" && key != "lazy" {
@@ -128,7 +135,7 @@ fn resident_repeat(json : Json) -> Result[@engine.RepeatSpec, String] {
     Ok(value) => value
     Err(reason) => return Err(reason)
   }
-  Ok({ min, max, is_lazy })
+  Ok(Some({ min, max, is_lazy }))
 }
 
 ///|
@@ -575,7 +582,7 @@ impl @node.InstallerExt for RepeatInstaller with fn decode(_self, json, ctx) {
   let repeat = match object.get("repeat") {
     Some(value) =>
       match resident_repeat(value) {
-        Ok(decoded) => Some(decoded)
+        Ok(decoded) => decoded
         Err(reason) => return Err(reason)
       }
     None => None

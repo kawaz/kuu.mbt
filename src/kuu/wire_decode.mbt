@@ -1461,9 +1461,15 @@ fn dec_help_value_structure(
   // (type/value_name) を single としてラップする。
   match o.get("repeat") {
     Some(rj) => {
-      let ro = match rj.j_obj() {
+      // DR-043: `repeat: true` は無制限 (min 0 / 上限なし) の糖衣。help の値構造でも
+      // 同じ綴りを受ける (受理面は 1 箇所に閉じない — 要素側 `resident_repeat` と同型)。
+      let ro : Map[String, Json] = match rj.j_obj() {
         Some(x) => x
-        None => raise DecodeSkip("value_structure repeat is not an object")
+        None =>
+          match rj {
+            True => Map([])
+            _ => raise DecodeSkip("value_structure repeat is not a bool/object")
+          }
       }
       let min = match ro.get("min") {
         Some(mj) =>

@@ -434,6 +434,53 @@ pub fn fixture_deep_shape_type() -> &@extension.TypeExt {
 }
 
 ///|
+/// DR-138 §6b `fixture/scalar_mix`: primitive union の乗り物。`out` は [number, string]。
+/// string 形は canonical default の number 受理輪郭 (DR-074) で読めれば number を、
+/// さもなくばトークンをそのまま string を産出する (total — 受理判定を持たない)。
+/// union セルへの cell fn (`incr` 等) の ctx.old = 時点観測値・産出の並行着地の乗り物。
+priv struct FixtureScalarMixType {}
+
+///|
+impl @extension.TypeExt for FixtureScalarMixType with fn name(_self) {
+  "fixture/scalar_mix"
+}
+
+///|
+impl @extension.TypeExt for FixtureScalarMixType with fn has_value_slot(_self) {
+  true
+}
+
+///|
+impl @extension.TypeExt for FixtureScalarMixType with fn output_type(_self) {
+  Some(@abi.ValueType::Union([@abi.ValueType::Number, @abi.ValueType::String]))
+}
+
+///|
+impl @extension.TypeExt for FixtureScalarMixType with fn parse_token(
+  _self,
+  token,
+) {
+  // number に読めれば number、さもなくば string。total なので Reject しない。
+  match @extension.number_type().parse_token(token) {
+    Ok(value) => Ok(value)
+    Err(_) => Ok(@abi.String(token))
+  }
+}
+
+///|
+impl @extension.TypeExt for FixtureScalarMixType with fn default_seat_resolver(
+  _self,
+  ctx,
+) {
+  ctx.declared()
+}
+
+///|
+pub fn fixture_scalar_mix_type() -> &@extension.TypeExt {
+  FixtureScalarMixType::{  } as &@extension.TypeExt
+}
+
+///|
 /// Registers the `fixture/*` residents into a registry for a conformance run (DR-132 §1:
 /// the runner contract requires `fixture/*` to resolve in the conformance execution
 /// context only). Call after `install_canonical` when assembling a conformance registry.
@@ -458,5 +505,8 @@ pub fn install_conformance_fixture_residents(registry : @node.Registry) -> Unit 
   }
   guard registry.register_type(fixture_deep_shape_type()) else {
     abort("duplicate fixture type resident name: fixture/deep_shape")
+  }
+  guard registry.register_type(fixture_scalar_mix_type()) else {
+    abort("duplicate fixture type resident name: fixture/scalar_mix")
   }
 }
