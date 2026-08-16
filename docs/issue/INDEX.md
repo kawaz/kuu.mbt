@@ -2,6 +2,7 @@
 
 | date | category | status | slug | 概要 |
 |---|---|---|---|---|
+| 2026-08-16 | bug | open | [command-alias-completion-metadata](./2026-08-16-command-alias-completion-metadata.md) | command alias候補に説明も (alias) 注記も付かない。engine origin・model entry・is_alias の3層原因 |
 | 2026-08-16 | bug | open | [alias-pairs-index-zip-fragility](./2026-08-16-alias-pairs-index-zip-fragility.md) | option_alias_pairs の index zip が非対称フィルタで壊れ、positional target alias で誤帰属・alias 消滅 |
 | 2026-08-16 | design | open | [named-alias-independent-entry-vs-dr113](./2026-08-16-named-alias-independent-entry-vs-dr113.md) | name付き alias の options列独立entry出力が DR-113 §4.3/4.4「独立一覧しない」と衝突 (help_wbtest.mbt:63 が現挙動を pin) |
 | 2026-08-16 | design | open | [builtin-namespace-sugar-unification](./2026-08-16-builtin-namespace-sugar-unification.md) | DR-094 の `builtin/` 糖衣が type 参照のみ — filter/accumulator/collector/cell_fn/completer は明示 n… |
