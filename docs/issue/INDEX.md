@@ -35,3 +35,4 @@
 | 2026-08-12 | design | open | [completion-query-residual-minors](./2026-08-12-completion-query-residual-minors.md) | completion_query の残 Minor 3 件 — fire_path 純度 pin / merge ペアキーの scope 欠落 / emit 畳みキーの取りこぼし (RE-3・RE-4・RE-6) |
 | 2026-08-16 | design | open | [branch-reject-provenance](./2026-08-16-branch-reject-provenance.md) | abi.Branch / ParseError が Reject の出自を運ばない — 敗北 or 枝の診断が残余に混入する (DR-037 を表現できない) |
 | 2026-08-16 | bug | open | [exit-path-prepend-scope-boundary](./2026-08-16-exit-path-prepend-scope-boundary.md) | command 退出後に親 scope で立った Held/Pending の path へ退出済み command 名が prepend される (DR-066 §4 違反) |
+| 2026-08-17 | bug | open | [template-node-built-before-name-axis-settle](./2026-08-17-template-node-built-before-name-axis-settle.md) | definitions.templates の Node が name 軸 settle 前に構築され、inline seq と結果キーが割れる (DR-078 §1 / DR-136 §4) |
