@@ -729,6 +729,9 @@ priv struct TypeSeat {
   path : Array[String]
   name : String
   value_type : @abi.ValueType
+  // 明示 `default` 効果 (op=default) の落ち先 (DR-138 §3 — 下位席の宣言 default を
+  // 完全値 1 発の供給としてセルへ運ぶ)。
+  default_value : @abi.Value?
 }
 
 ///|
@@ -745,7 +748,16 @@ fn collect_type_seats(
         for segment in entity.declaring_path {
           seat.push(segment)
         }
-        out.push({ path: seat, name: entity.name, value_type })
+        let default_value : @abi.Value? = match entity.default_values {
+          Some(values) =>
+            if values.length() > 0 {
+              Some(values[0])
+            } else {
+              None
+            }
+          None => None
+        }
+        out.push({ path: seat, name: entity.name, value_type, default_value })
       }
       None => ()
     }

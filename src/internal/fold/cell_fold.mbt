@@ -927,6 +927,7 @@ pub fn cull_union_cell(
   members : Array[@abi.ValueType],
   bindings : Array[@abi.Binding],
   registry : @extension.Registry,
+  default_fall? : @abi.Value? = None,
 ) -> UnionCulling {
   let seats : Array[CellSeats] = []
   let landed : Array[Bool] = []
@@ -961,17 +962,26 @@ pub fn cull_union_cell(
           key,
           registry,
         )
-        match transition {
-          ToValue(value) =>
+        // 明示 `default` 効果 (op=default、committed=true — DR-045 §2) は下位席の
+        // 宣言 default を「完全値 1 発の供給」としてセルへ運ぶ (DR-138 §3)。淘汰の
+        // 位相では丸ごと set と同じ着地物になるので、同じ経路で型適合する全枝へ着地する。
+        let seated : @abi.Value? = match transition {
+          ToValue(value) => Some(value)
+          ToDefault => default_fall
+          // `empty` は union / tuple 宣言セルには置けない (DR-131 §3.1 の target 域、
+          // 定義時 invalid-range) ため、ここへは届かない。
+          ToEmpty => None
+          NoChange | FnMissing(_) | FnFailed(_) => None
+        }
+        match seated {
+          Some(value) =>
             if @extension.value_conforms(value, variant, registry) {
               seats[index].put(key, Seated(value))
               landed[index] = true
               last_seq[index] = seq
               last_pos[index] = pos
             }
-          ToDefault => ()
-          ToEmpty => ()
-          NoChange | FnMissing(_) | FnFailed(_) => ()
+          None => ()
         }
       } else {
         let old = match

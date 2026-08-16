@@ -309,7 +309,19 @@ fn branch_fold_reject(
             cell_bindings.push(binding)
           }
         }
-        match @fold.cull_union_cell(key, members, cell_bindings, extensions) {
+        // 明示 `default` 効果の落ち先は単相セルと同じラダー規則 (下の default_fall と同源)。
+        let cell_default_fall : Value? = match ladder {
+          Some(query) => query(decl.entity, decl.scope_path, eff)
+          None => branch_fold_declared_default(decl.entity)
+        }
+        match
+          @fold.cull_union_cell(
+            key,
+            members,
+            cell_bindings,
+            extensions,
+            default_fall=cell_default_fall,
+          ) {
           @fold.Incomplete(pos) => {
             cell_errors.push(
               branch_fold_failure(

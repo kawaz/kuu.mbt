@@ -342,13 +342,23 @@ fn apply_export_to_types(
       match node.exposed_cell(t.name) {
         None | Some("") => ()
         Some(new_name) =>
-          out.push({ path: new_path, name: new_name, value_type: t.value_type })
+          out.push({
+            path: new_path,
+            name: new_name,
+            value_type: t.value_type,
+            default_value: t.default_value,
+          })
       }
     } else if node.scope_is_occupied(t.name) {
       match node.exposed_scope(t.name) {
         None | Some("") => ()
         Some(new_name) =>
-          out.push({ path: new_path, name: new_name, value_type: t.value_type })
+          out.push({
+            path: new_path,
+            name: new_name,
+            value_type: t.value_type,
+            default_value: t.default_value,
+          })
       }
     }
   }
@@ -5223,7 +5233,14 @@ fn cull_union_bindings(
           cell.push(binding)
         }
       }
-      match @fold.cull_union_cell(seat.name, variants, cell, registry) {
+      match
+        @fold.cull_union_cell(
+          seat.name,
+          variants,
+          cell,
+          registry,
+          default_fall=seat.default_value,
+        ) {
         @fold.NoWrites => next.push(alternative)
         @fold.Winner(candidate) =>
           next.push(
