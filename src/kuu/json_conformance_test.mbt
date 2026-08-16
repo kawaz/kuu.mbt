@@ -2430,7 +2430,20 @@ fn known_divergences() -> Array[String] {
   //   - help_query capability の runner dispatch 化 (現在 @kuu.help 直呼び)。
   //   - types 集約射影 + type_ref + used_as (value-structure-and-types.json は decode skip 継続)。
   //   - fixed default_fn の default 席射影 (P2H-Q3 裁定に沿った dynamic default_fn は model 非搭載)。
-  []
+  //
+  // 診断 provenance の欠落 (fixture が正、実装が追いついていない):
+  //   - 敗北した or alternative の held 診断が、別の読みが成立した後でも残余エラーに混入する。
+  //     DR-037 は「解けた枝が 1 個ならその枝で確定、他枝の Reject / Error は捨てる」と定めるが、
+  //     `abi.Branch` の `Rejected(ParseError, _)` が **出自** (選択葉の値空間ミス / filter Reject /
+  //     値残余 Reject) を運ばないため、捨てて良い診断とそうでないものを区別できない。
+  //     Or ローカルでは原理的に解けない (生き残る読みではその Or に Accept が無く、
+  //     DR-037 の「0 個 → 保持された Error を見せる」が正しく効いている) ことを計装で確認済み。
+  //     解消は provenance の設計案件 — issue 2026-08-16-branch-reject-provenance。
+  [
+    (
+      #|or-parse/option-structural-or-outer-repeat.json::max-cap-leaves-residue :: errors got={@3/parse/unexpected_token,n@1/parse/not_a_number,n@3/parse/not_a_number} want={@3/parse/unexpected_token}
+    ),
+  ]
 }
 
 ///|

@@ -4203,11 +4203,6 @@ fn drop_optional_missing(
           out.push(Pending(remaining, bindings))
         }
       }
-      // 値の欠落 (Pending) だけでなく、head の値スロットが**読めなかった** Held も同じ理由で
-      // 落とす — min を満たした後の "more" に到達しているということは直前の rep が成立して
-      // おり、次の 1 周が組めないのは正当な停止 (DR-037 の「この枝ではない」) である。
-      // 落とすのは head 自身の要素に帰属する診断だけで、外側の継続由来の Held は残る。
-      Held(error, _) => if !str_mem(names, error.element) { out.push(branch) }
       _ => out.push(branch)
     }
   }
