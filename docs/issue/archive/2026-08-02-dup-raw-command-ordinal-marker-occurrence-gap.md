@@ -1,6 +1,6 @@
 ---
 title: duplicate raw command の複数入場で ordinal marker が occurrence を区別できない
-status: open
+status: resolved
 category: bug
 created: 2026-08-02T20:18:00+09:00
 last_read:
@@ -9,10 +9,10 @@ wip_entered:
 blocked_entered:
 pending_entered:
 discarded_entered:
-resolved_entered:
+resolved_entered: 2026-08-16T00:00:00+09:00
 discard_reason:
 pending_reason:
-close_reason:
+close_reason: ["done:gap実在確認、design worker独立導出との突き合わせで実装バグ3件発見","kuu.mbt/118c8c77:同一宣言への再入場読みの計数(gap本体)","kuu.mbt/10f7de7c:再入場ガードとviabilityの不整合による診断ゼロ失敗+同位置残余の2重を修正","spec/fixtures/command-scope/duplicate-raw-command-occurrence.json:4 case+回帰検出器","spec/fixtures/command-scope/duplicate-id-sibling-commands.json","spec/fixtures/command-scope/duplicate-raw-command-transparent.json","kuu.mbt/duplicate_command_occurrence_wbtest.mbt:3 test","done:受け入れ条件3点充足、conformance 453/1000 green"]
 blocked_by:
 origin: 2026-08-02-dup-label-scope-resolve-gap
 ---
