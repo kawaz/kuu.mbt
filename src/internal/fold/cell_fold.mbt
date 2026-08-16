@@ -336,6 +336,27 @@ fn declared_field_reference(
 }
 
 ///|
+/// DR-138 §1: 入れ子 union は葉 variant の集合へ平坦化して読む (結合的)。構造的型付けは
+/// variant の同一性を値に保存しない (DR-127 §2.2) ため入れ子の階層は観測を持たず、
+/// 枝候補は葉 variant ごとに立つ。着地・完成判定・器の vivify すべてが葉集合を単位にする。
+pub fn union_leaf_variants(
+  members : Array[@abi.ValueType],
+) -> Array[@abi.ValueType] {
+  let leaves : Array[@abi.ValueType] = []
+  fn walk(current : Array[@abi.ValueType]) -> Unit {
+    for variant in current {
+      match variant {
+        @abi.ValueType::Union(nested) => walk(nested)
+        _ => leaves.push(variant)
+      }
+    }
+  }
+
+  walk(members)
+  leaves
+}
+
+///|
 /// 宣言 ValueType の tuple 段から、固定位置の type 参照を引く。
 fn declared_tuple_reference(declared : @abi.ValueType, index : Int) -> String? {
   match declared {

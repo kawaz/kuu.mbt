@@ -730,8 +730,26 @@ fn null_fill_value(
           (entry.0, null_fill_value(entry.1, Some(value_type), registry))
         }),
       )
+    // tuple 座も補形の通り道 (DR-130 §4.1) — 座の型が record 産出型なら座の内側の
+    // 欠落フィールドまで補形が届く。座数は宣言アリティで固定 (DR-137 §2)。
+    (Some(@abi.ValueType::Tuple(references)), @abi.Array(items)) => {
+      let out : Array[@abi.Value] = []
+      for index, item in items {
+        let seat_declared : @abi.ValueType? = if index < references.length() {
+          match registry.resolve_type_reference(references[index]) {
+            Some(resident) => resident.output_type()
+            None => None
+          }
+        } else {
+          None
+        }
+        out.push(null_fill_value(item, seat_declared, registry))
+      }
+      @abi.Array(out)
+    }
     (Some(@abi.ValueType::Union(members)), _) => {
-      for variant_member in members {
+      // 入れ子 union は葉集合へ平坦化して読む (DR-138 §1)。
+      for variant_member in @fold.union_leaf_variants(members) {
         if @extension.value_conforms(value, variant_member, registry) {
           return null_fill_value(value, Some(variant_member), registry)
         }
@@ -5187,7 +5205,7 @@ fn cull_union_bindings(
   let mut alternatives : Array[Array[@abi.Binding]] = [bindings]
   for seat in seats {
     let variants : Array[@abi.ValueType]? = match seat.value_type {
-      @abi.ValueType::Union(members) => Some(members)
+      @abi.ValueType::Union(members) => Some(@fold.union_leaf_variants(members))
       @abi.ValueType::Tuple(references) =>
         Some([@abi.ValueType::Tuple(references)])
       _ => None

@@ -295,7 +295,8 @@ fn branch_fold_reject(
     // DR-138: union と単相 tuple は旧「動的に 1 枝を選んで Reject」せず、全枝へ並行着地して
     // 確定相で未完成を淘汰する。生存ゼロだけ Held 等価へ写す。
     let variants : Array[@abi.ValueType]? = match declared {
-      Some(@abi.ValueType::Union(members)) => Some(members)
+      Some(@abi.ValueType::Union(members)) =>
+        Some(@fold.union_leaf_variants(members))
       Some(@abi.ValueType::Tuple(references)) =>
         Some([@abi.ValueType::Tuple(references)])
       _ => None
