@@ -583,6 +583,9 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
               levels,
               target_residual~,
             )
+            // DR-138 §6 (a): 値空間 link の operand は着地座の type のパーサを通り、
+            // その失敗は「読みの成立に効く」Error である (淘汰で沈黙させない)。
+            // 値残余を持たない link の Reject は従来どおり静かに脱落 (DR-037)。
             if target_residual.length() > 0 {
               out.push(Held(error, linked))
             } else {
@@ -874,21 +877,25 @@ fn eval_with_downstream(
           )
         },
         (ctx2, error, bindings) => {
-          on_rejected(
-            ctx2,
-            error,
-            bindings_through_link(
-              bindings,
-              from,
-              target,
-              target_scope,
-              target_tuple_arities,
-              target_selections,
-              target_observation,
-              levels,
-              target_residual~,
-            ),
+          let linked = bindings_through_link(
+            bindings,
+            from,
+            target,
+            target_scope,
+            target_tuple_arities,
+            target_selections,
+            target_observation,
+            levels,
+            target_residual~,
           )
+          // DR-138 §6 (a): 値空間 link の operand 失敗は Error 位相 (上記 2 箇所と同規則)。
+          // ここは CPS 版の downstream 経路で、変換が抜けていると同じ失敗が読みによって
+          // Reject / Error に割れる。
+          if target_residual.length() > 0 {
+            on_held(ctx2, error, linked)
+          } else {
+            on_rejected(ctx2, error, linked)
+          }
         },
         (ctx2, error, bindings) => {
           on_held(
@@ -3876,6 +3883,9 @@ fn consume_compound(
               levels,
               target_residual~,
             )
+            // DR-138 §6 (a): 値空間 link の operand は着地座の type のパーサを通り、
+            // その失敗は「読みの成立に効く」Error である (淘汰で沈黙させない)。
+            // 値残余を持たない link の Reject は従来どおり静かに脱落 (DR-037)。
             if target_residual.length() > 0 {
               out.push(Held(error, linked))
             } else {
@@ -4913,58 +4923,6 @@ fn collect_pos_scopes(
 // ── top level (spec DR-038 path counting) ────────────────────────────────────
 
 ///|
-/// DR-138 §6(a): 値空間 link の operand 自身を読む entry 名を集める。operand の
-/// parse failure は枝の非着地ではなく読み全体の Error であり、完全な sibling 枝でも救済しない。
-fn collect_value_link_operands(
-  node : Node,
-  defs : Map[String, Node],
-  out : Array[String],
-  seen_refs : Array[String],
-) -> Unit {
-  match node {
-    LinkTarget(from, _, _, _, _, _, residual, _, _, inner) => {
-      if residual.length() > 0 && !str_mem(out, from) {
-        out.push(from)
-      }
-      collect_value_link_operands(inner, defs, out, seen_refs)
-    }
-    ScopeNode(scope) => {
-      for child in scope.greedy {
-        collect_value_link_operands(child, defs, out, seen_refs)
-      }
-      for child in scope.positional {
-        collect_value_link_operands(child, defs, out, seen_refs)
-      }
-    }
-    Or(items) | Seq(items) =>
-      for item in items {
-        collect_value_link_operands(item, defs, out, seen_refs)
-      }
-    Many(inner, _)
-    | Scoped(_, inner)
-    | Rooted(inner, _)
-    | GreedyRepeat(inner) =>
-      collect_value_link_operands(inner, defs, out, seen_refs)
-    BoundedTail(inner, _, _) | IndexedRepeat(_, inner, _, _) =>
-      collect_value_link_operands(inner, defs, out, seen_refs)
-    CommandSatisfied(_, _, _, child) =>
-      collect_value_link_operands(ScopeNode(child), defs, out, seen_refs)
-    Ref(name) =>
-      if !str_mem(seen_refs, name) {
-        match defs.get(name) {
-          Some(inner) => {
-            let next = seen_refs.copy()
-            next.push(name)
-            collect_value_link_operands(inner, defs, out, next)
-          }
-          None => ()
-        }
-      }
-    _ => ()
-  }
-}
-
-///|
 fn int_contains(values : Array[Int], target : Int) -> Bool {
   for value in values {
     if value == target {
@@ -5010,8 +4968,6 @@ pub fn parse_tree(
     ScopeNode(sc) => none_cells(sc, defs)
     _ => []
   }
-  let fatal_link_operands : Array[String] = []
-  collect_value_link_operands(root, defs, fatal_link_operands, [])
   let branches = match root {
     ScopeNode(sc) =>
       scope_step(sc, ctx, 0, 0, [], false, KTop(collect_scopes(root, defs)))
@@ -5261,25 +5217,6 @@ pub fn parse_tree(
     errors2.push(e)
   }
   let errors = errors2
-  // 値空間 link operand の型 parse failure は淘汰対象でない。Held を保持したまま、
-  // sibling の完全経路を破棄して読み全体を Failure にする。
-  let mut fatal_operand_error = false
-  for branch in branches {
-    match branch {
-      Held(error, _) | Rejected(error, _) if str_mem(
-          fatal_link_operands,
-          error.element,
-        ) => {
-        push_error(errors, error)
-        fatal_operand_error = true
-      }
-      _ => ()
-    }
-  }
-  if fatal_operand_error {
-    full.clear()
-    full_ledgers.clear()
-  }
   // DR-114 §6.1: 勝ち候補ごとの FiringRecord 台帳を配達する。値残余セル分は枝ローカル fold の
   // 枝内実行結果 (branch_ledgers) を引き継ぎ、値残余の無い Invoke セルは裁定後のこの 1 回の
   // fold (`branch_fold_plain_records`) で実行・記録する。
