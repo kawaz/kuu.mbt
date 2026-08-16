@@ -11,6 +11,7 @@
 | 2026-08-16 | design | open | [union-fold-ledger-identity-redesign](./2026-08-16-union-fold-ledger-identity-redesign.md) | union/tuple セル fold・ledger・identity の再設計 (A1 + C-1検査脱落 + 関連 統合) |
 | 2026-08-16 | bug | open | [placeholder-op-default-null-fallthrough](./2026-08-16-placeholder-op-default-null-fallthrough.md) | degenerate op=default で placeholder Bool(false) が result/sources に漏れる (A2+R6 F7 統合、裁定要) |
 | 2026-08-16 | design | open | [multi-token-viability-consistency](./2026-08-16-multi-token-viability-consistency.md) | 多トークン値スロットの viability が失敗様式で非一貫 (DR-097 と DESIGN L438 のどちらに揃えるか裁定要) |
+| 2026-08-16 | task | open | [union-tuple-fixture-coverage-gaps](./2026-08-16-union-tuple-fixture-coverage-gaps.md) | union/tuple 系 fixture 網羅の死角。Major指定の複数バグ (C2/C3/A4/C-4等) が未検出だった直接原因 |
 | 2026-08-14 | task | open | [ref-link-resolution-name-axis-to-id-axis](./2026-08-14-ref-link-resolution-name-axis-to-id-axis.md) | ref/link/observes/borrow の解決が name 軸のまま — DR-046 §1 の id 軸へ載せ替える |
 | 2026-07-18 | design | open | [api-surface-contract-triage](./2026-07-18-api-surface-contract-triage.md) | API 公開面の契約/実装仕分けと帰属修正 (Filter descriptor builtins 誤配置ほか、コールドレビュー起点) |
 | 2026-07-18 | design | open | [feature-bundle-composition-api](./2026-07-18-feature-bundle-composition-api.md) | named bundle による組成 API — 機能単位で複数 registry への登録を 1 名前に束ねる (TRI-Q8 の発展) |
