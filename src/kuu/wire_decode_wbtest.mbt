@@ -812,3 +812,52 @@ test "dec_or_leaf rejects unopened structural child value-source keys" {
     fail("expected DecodeSkip for: " + src)
   }
 }
+
+///|
+/// DR-064 §2 (配置は挙動に影響しない) + §5 (dd プリセットは name デフォルト `"--"` を供給する):
+/// dd installer は `type: "dd"` を配置不問で回収し、lowered 形 (greedy 面の dd exact 衛星) は
+/// options[] 配置でも positionals[] 配置でも同一になる。name 省略の `{"type":"dd"}` も canonical。
+/// 4 通り (配置 2 × name 明示/省略) すべてが定義エラーなく通り、`--` 以降を severed 化して
+/// `-x` を positional へ raw 消費させることを実行結果で確認する。
+test "dd decodes in both placements with the '--' name default (DR-064 §2/§5)" {
+  let defs : Array[(String, String)] = [
+    ("options + explicit name", (
+      #|{"positionals":[{"name":"p","type":"string"}],"options":[{"name":"--","type":"dd"}]}
+    )),
+    ("options + name omitted", (
+      #|{"positionals":[{"name":"p","type":"string"}],"options":[{"type":"dd"}]}
+    )),
+    ("positionals + explicit name", (
+      #|{"positionals":[{"name":"--","type":"dd"},{"name":"p","type":"string"}],"options":[]}
+    )),
+    ("positionals + name omitted", (
+      #|{"positionals":[{"type":"dd"},{"name":"p","type":"string"}],"options":[]}
+    )),
+  ]
+  for entry in defs {
+    let (label, src) = entry
+    let ast = match parse_definition(@json.parse(src)) {
+      Ok(ast) => ast
+      Err(Malformed(reason)) => {
+        fail(label + ": definition was rejected as malformed: " + reason)
+        return
+      }
+      Err(Rejected(errs)) => {
+        let messages : Array[String] = []
+        for e in errs {
+          messages.push(e.element + ": " + e.message)
+        }
+        fail(label + ": definition errors " + messages.join("; "))
+        return
+      }
+    }
+    match test_resolve(ast, ["--", "-x"]) {
+      Success(binds) =>
+        assert_eq(
+          output(ast, binds).result,
+          @abi.Object([("p", @abi.Scalar(@abi.String("-x")))]),
+        )
+      Failure(_) => fail(label + ": expected '--' to sever and hand '-x' to p")
+    }
+  }
+}

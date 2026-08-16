@@ -464,8 +464,11 @@ impl @node.InstallerExt for DdInstaller with fn vocab(_self) {
 
 ///|
 impl @node.InstallerExt for DdInstaller with fn decode(_self, json, ctx) {
+  // DR-064 §2: dd は**配置不問で回収**される要素で、lowered 形 (greedy 面の dd exact 衛星) は
+  // 配置に依らず同一。positionals[] 配置も合法であり reject しない (DR-054 の境界基準 —
+  // 挙動不変なので Error でも warn でもない。canonical からの逸脱は lint の style 指摘)。
   let vocab = match ctx {
-    Option => ["match", "self"]
+    Option | Positional => ["match", "self"]
     _ => []
   }
   let object = match resident_object(json) {

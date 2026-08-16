@@ -474,6 +474,14 @@ fn pos(
 }
 
 ///|
+/// DR-064: `type: "dd"` かつ dd installer が当該配置で語彙 (`match` / `self`) を供給した要素は
+/// dd 宣言である。DR-064 §2 が「dd installer は配置不問で回収し lowered 形は同一」と定める通り、
+/// 判定は options[] / positionals[] のどちらに居るかに依存しない。
+fn is_dd_decl(tystr : String, owned : InstallerDecoded) -> Bool {
+  tystr == "dd" && conformance_str_in(owned.vocab, "match")
+}
+
+///|
 fn dd_marker(
   match_? : String? = None,
   self_keep? : Bool = false,
@@ -2140,6 +2148,11 @@ fn dec_option(
     None =>
       if structural {
         ""
+      } else if is_dd_decl(tystr, owned) {
+        // DR-064 §5: dd プリセットは name のデフォルト `"--"` を供給する — canonical の宣言は
+        // `{"type": "dd"}` だけで足りる。明示 name は合成順 (DESIGN §3.5) で普通に上書きされ、
+        // dd の綴り差し替え (方言 CLI) に開く。
+        "--"
       } else {
         raise DecodeSkip("option missing 'name'")
       }
@@ -2173,7 +2186,7 @@ fn dec_option(
           }
       }
   }
-  if tystr == "dd" && conformance_str_in(owned.vocab, "match") {
+  if is_dd_decl(tystr, owned) {
     return DOpt({
       ..dd_marker(
         match_=owned.dd_match,
@@ -2630,13 +2643,38 @@ fn dec_positional(
       }
     None => ()
   }
+  // DR-064 §2: dd は配置不問で回収され、lowered 形 (greedy 面の dd exact 衛星) は配置に依らず
+  // 同一。positionals[] 配置も合法なので、options[] と同じ dd 宣言判定をここでも行う (これが
+  // 無いと `type: "dd"` が未知の値型として UnknownVocab で弾かれる)。
+  let pos_tystr = match jf_str(o, "type") {
+    Some(t) => t
+    None => ""
+  }
   let name = match jf_str(o, "name") {
     Some(s) => s
-    None => raise DecodeSkip("positional missing 'name'")
+    None =>
+      if is_dd_decl(pos_tystr, owned) {
+        // DR-064 §5: dd プリセットの name デフォルト `"--"` は配置に依らず供給される。
+        "--"
+      } else {
+        raise DecodeSkip("positional missing 'name'")
+      }
   }
   check_reserved_name(name, "positional")
   let element_id = dec_reference_id(o, "positional")
   let element_trigger = dec_trigger_name(o)
+  if is_dd_decl(pos_tystr, owned) {
+    return {
+      ..dd_marker(
+        match_=owned.dd_match,
+        self_keep=owned.dd_self_keep,
+        required=owned.required,
+      ),
+      name,
+      id: element_id,
+      trigger_name: element_trigger,
+    }
+  }
   // DR-061 §3: positional も type shadow を consultation (dec_option と同型)。
   // DR-089 §2: type 省略 = none の糖衣 (旧実装は @builtins.string_type() を勝手にあてる default-typing だった —
   // DR-089 の「採用しなかった案」が明示的に否定するパターン。`ref` 付きの場合はそもそも ty が
