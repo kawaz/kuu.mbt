@@ -677,22 +677,19 @@ fn normalize_option(
         None => None
       }
     } else if !e.multiple && e.repeat is None && e.separator is None {
-      // DR-137/138: tuple（および tuple を含む union）の JSON array default は、
+      // DR-137/138: tuple (および tuple を葉に含む union) の JSON array default は、
       // scalar セルへの「複合値 1 個」であり accumulator の複数 piece ではない。
-      // wire decode が一様配列へ展開した値を、型が array 値を受理する場合だけ 1 値へ戻す。
+      // wire decode が一様配列へ展開した値を 1 値へ戻す。tuple を含まない宣言は
+      // 従来の複数 piece 経路のまま (DR-138 §9 — 単相セル / 非 tuple union の既存規定は無傷)。
       match e.default_values {
         Some(values) if values.length() != 1 =>
           match e.ty.output_type() {
-            Some(declared) => {
-              let composite = @abi.Value::Array(values)
-              if @extension.value_conforms(composite, declared, extensions) ||
-                declared is @abi.ValueType::Union(_) ||
-                declared is @abi.ValueType::Tuple(_) {
-                Some([composite])
+            Some(declared) =>
+              if value_type_contains_tuple(declared) {
+                Some([@abi.Value::Array(values)])
               } else {
                 Some(values)
               }
-            }
             None => Some(values)
           }
         supplied => supplied
@@ -5217,6 +5214,19 @@ fn empty_target_is_container_capable(e : ElementDef) -> Bool {
 /// scalar には「空」が無く、union は「どの variant の空か」が決まらず、tuple は固定
 /// アリティなので空値を持たない (`value` も静的に器の形を言えない) — いずれも
 /// definition-error `invalid-range`。
+/// 宣言が tuple を (union の葉として、直接に) 含むか。tuple の JSON array default だけを
+/// 「複合値 1 個」へ戻すための判定 — 入れ子 union は葉集合へ平坦化して読む (DR-138 §1)。
+/// array / map / record の中身は別の器であり、その内側の tuple はセル値の形を変えない。
+fn value_type_contains_tuple(declared : ValueType) -> Bool {
+  match declared {
+    Tuple(_) => true
+    Union(members) => members.iter().any(value_type_contains_tuple)
+    String | Number | Bool | Null | Value | Array(_) | Map(_) | Record(_) =>
+      false
+  }
+}
+
+///|
 fn empty_target_type_allows(declared : ValueType) -> Bool {
   match declared {
     Array(_) | Map(_) | Record(_) => true

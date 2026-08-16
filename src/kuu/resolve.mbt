@@ -4720,11 +4720,19 @@ fn resolve_default_fn(
       )
     Ok(@extension.FnOutput::Value(@abi.Null)) => Ok([])
     Ok(@extension.FnOutput::Value(value)) => {
-      // DR-137/138: typed set default が返す複合値は既に値空間の値である。
-      let direct = match entity.ty.output_type() {
-        Some(declared) =>
-          @extension.value_conforms(value, declared, extensions.extensions())
-        None => false
+      // DR-137/138: typed set default が返す**複合値**は既に値空間の値なので、
+      // configval 経由の再構成を通さずそのまま座る。primitive はこの限りではない —
+      // 下位席は通常の値 pipeline で読む (DR-138 §3) ため、型 parser と piece filter を
+      // 通す。value_conforms は粗い ValueType しか見ず int / number を区別しないので、
+      // primitive まで direct にすると default_fn の 1.5 が int セルへ素通りする。
+      let direct = if value is (@abi.Array(_) | @abi.Object(_)) {
+        match entity.ty.output_type() {
+          Some(declared) =>
+            @extension.value_conforms(value, declared, extensions.extensions())
+          None => false
+        }
+      } else {
+        false
       }
       if direct {
         apply_entity_filters(
@@ -5223,7 +5231,7 @@ fn union_incomplete_error(
     },
     kind: @abi.Parse,
     reason: "incomplete_value",
-    message: "the supplied writes do not complete any declared value variant",
+    message: "the values supplied for \{seat.name} do not add up to a complete value",
     path: seat.path,
   }
 }

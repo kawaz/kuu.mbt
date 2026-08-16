@@ -329,7 +329,7 @@ fn branch_fold_reject(
                 pos,
                 decl.scope_path,
                 "incomplete_value",
-                "the supplied writes do not complete any declared value variant",
+                "the values supplied for \{key} do not add up to a complete value",
               ),
             )
             continue
