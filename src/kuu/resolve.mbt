@@ -5176,6 +5176,7 @@ fn union_candidate_shadow(
 fn union_winner_bindings(
   bindings : Array[@abi.Binding],
   seat : TypeSeat,
+  cell_scope : Array[String],
   variants : Array[@abi.ValueType],
   candidate : @fold.UnionCandidate,
   registry : @extension.Registry,
@@ -5183,8 +5184,9 @@ fn union_winner_bindings(
   let out : Array[@abi.Binding] = []
   let cell : Array[@abi.Binding] = []
   for binding in bindings {
-    if binding.key == seat.name &&
-      path_eq(drop_index_segments(binding.scope), seat.path) {
+    // 差し替えは**その実 runtime scope のセル**だけに効かせる (repeat 行をまたいで
+    // 巻き込むと、勝ち枝 carrier 1 件で他の行の binding が消える)。
+    if binding.key == seat.name && path_eq(binding.scope, cell_scope) {
       cell.push(binding)
     } else {
       out.push(binding)
@@ -5259,97 +5261,119 @@ fn cull_union_bindings(
     }
     let next : Array[Array[@abi.Binding]] = []
     for alternative in alternatives {
-      let cell : Array[@abi.Binding] = []
+      // 淘汰の単位は**実 runtime scope のセル**である。宣言の path は repeat 行の添字段
+      // (`#0` / `#1`) を持たないので、添字を落とした照合で拾うところまでは正しいが、
+      // 拾った binding をそのまま 1 セルとして畳むと **repeat group の各行が 1 セルへ
+      // 潰れる** (行をまたいで座を貸し借りし、勝ち枝 carrier への差し替えで行が消える)。
+      // 行ごとに独立の値である (DR-034 / DR-084 §1、完成判定は値への述語 DR-138 §1)
+      // ため、実 scope で分けてから畳む。engine 側 (branch_fold の scope_matches) が
+      // 完全一致で見ているのと同じ identity に揃える形。
+      let cell_scopes : Array[Array[String]] = []
       for binding in alternative {
         if binding.key == seat.name &&
           path_eq(drop_index_segments(binding.scope), seat.path) {
-          cell.push(binding)
+          let mut seen = false
+          for known in cell_scopes {
+            if path_eq(known, binding.scope) {
+              seen = true
+              break
+            }
+          }
+          if !seen {
+            cell_scopes.push(binding.scope)
+          }
         }
       }
-      // accum セル (multiple / repeat) の row は、それぞれが別の値である (DR-034 /
-      // DR-084 §1)。完成判定は値への述語 (DR-138 §1) なので row ごとに独立に回し、
-      // 部分値の row が兄弟 row の座を借りて完成することはない。link パスに row 添字は
-      // 無い (DR-029 文法) ため、1 binding = 1 row として扱える。
-      if seat.is_accumulator {
-        let row_errors : Array[@abi.ParseError] = []
-        for row in cell {
+      // セルが 1 つも無い読みはそのまま通す (NoWrites 相当)。
+      if cell_scopes.length() == 0 {
+        next.push(alternative)
+        continue
+      }
+      // scope ごとに畳み、Tie は読みの分岐として展開する (複数 scope なら直積)。
+      let mut staged : Array[Array[@abi.Binding]] = [alternative]
+      let cell_failure : Array[@abi.ParseError] = []
+      for cell_scope in cell_scopes {
+        if cell_failure.length() > 0 {
+          break
+        }
+        let stepped : Array[Array[@abi.Binding]] = []
+        for staged_alt in staged {
+          let cell : Array[@abi.Binding] = []
+          for binding in staged_alt {
+            if binding.key == seat.name && path_eq(binding.scope, cell_scope) {
+              cell.push(binding)
+            }
+          }
+          // accum セル (multiple / repeat) の row は、それぞれが別の値である (DR-034 /
+          // DR-084 §1)。完成判定は値への述語 (DR-138 §1) なので row ごとに独立に回し、
+          // 部分値の row が兄弟 row の座を借りて完成することはない。link パスに row 添字は
+          // 無い (DR-029 文法) ため、1 binding = 1 row として扱える。
+          if seat.is_accumulator {
+            for row in cell {
+              match
+                @fold.cull_union_cell(
+                  seat.name,
+                  variants,
+                  [row],
+                  registry,
+                  default_fall=seat.default_value,
+                ) {
+                @fold.Incomplete(pos) =>
+                  cell_failure.push(union_incomplete_error(seat, pos, at_pos))
+                @fold.WriteFailed(reason, message, pos) =>
+                  cell_failure.push(
+                    union_write_failure(seat, reason, message, pos, at_pos),
+                  )
+                _ => ()
+              }
+            }
+            // 全 row が独立に完成している。行の積み上げは accumulator の管轄なので
+            // 勝ち枝 carrier への差し替えはせず、binding 列をそのまま通す。
+            stepped.push(staged_alt)
+            continue
+          }
           match
             @fold.cull_union_cell(
               seat.name,
               variants,
-              [row],
+              cell,
               registry,
               default_fall=seat.default_value,
             ) {
+            @fold.NoWrites => stepped.push(staged_alt)
+            @fold.Winner(candidate) =>
+              stepped.push(
+                union_winner_bindings(
+                  staged_alt, seat, cell_scope, variants, candidate, registry,
+                ),
+              )
+            @fold.Tie(candidates) =>
+              for candidate in candidates {
+                stepped.push(
+                  union_winner_bindings(
+                    staged_alt, seat, cell_scope, variants, candidate, registry,
+                  ),
+                )
+              }
             @fold.Incomplete(pos) =>
-              row_errors.push(union_incomplete_error(seat, pos, at_pos))
+              cell_failure.push(union_incomplete_error(seat, pos, at_pos))
+            // 書き込み自体の失敗は淘汰と別位相 (DR-138 §6)。
             @fold.WriteFailed(reason, message, pos) =>
-              row_errors.push({
-                element: seat.name,
-                args_pos: if pos >= 0 {
-                  pos
-                } else {
-                  at_pos
-                },
-                kind: @abi.Parse,
-                reason,
-                message,
-                path: seat.path,
-              })
-            _ => ()
+              cell_failure.push(
+                union_write_failure(seat, reason, message, pos, at_pos),
+              )
           }
         }
-        // 違反 row は全保持する (DR-053 — args_pos が違うので dedupe されない)。
-        if row_errors.length() > 0 {
-          return UnionIncomplete(row_errors)
-        }
-        // 全 row が独立に完成している。行の積み上げは accumulator の管轄なので
-        // 勝ち枝 carrier への差し替えはせず、binding 列をそのまま通す。
-        next.push(alternative)
-        continue
+        staged = stepped
       }
-      match
-        @fold.cull_union_cell(
-          seat.name,
-          variants,
-          cell,
-          registry,
-          default_fall=seat.default_value,
-        ) {
-        @fold.NoWrites => next.push(alternative)
-        @fold.Winner(candidate) =>
-          next.push(
-            union_winner_bindings(
-              alternative, seat, variants, candidate, registry,
-            ),
-          )
-        @fold.Tie(candidates) =>
-          for candidate in candidates {
-            next.push(
-              union_winner_bindings(
-                alternative, seat, variants, candidate, registry,
-              ),
-            )
-          }
-        @fold.Incomplete(pos) =>
-          return UnionIncomplete([union_incomplete_error(seat, pos, at_pos)])
-        // 書き込み自体の失敗は淘汰と別位相 (DR-138 §6)。
-        @fold.WriteFailed(reason, message, pos) =>
-          return UnionIncomplete([
-            {
-              element: seat.name,
-              args_pos: if pos >= 0 {
-                pos
-              } else {
-                at_pos
-              },
-              kind: @abi.Parse,
-              reason,
-              message,
-              path: seat.path,
-            },
-          ])
+      // 違反は全保持する (DR-053 — args_pos が違うので dedupe されない)。
+      if cell_failure.length() > 0 {
+        return UnionIncomplete(cell_failure)
       }
+      for staged_alt in staged {
+        next.push(staged_alt)
+      }
+      continue
     }
     alternatives = next
   }
@@ -5359,3 +5383,28 @@ fn cull_union_bindings(
     UnionInterpretations(alternatives)
   }
 }
+
+///|
+/// DR-138 §6 の書き込み時失敗を当該セルの ParseError にする。
+fn union_write_failure(
+  seat : TypeSeat,
+  reason : String,
+  message : String,
+  pos : Int,
+  consumed_pos : Int,
+) -> @abi.ParseError {
+  {
+    element: seat.name,
+    args_pos: if pos >= 0 {
+      pos
+    } else {
+      consumed_pos
+    },
+    kind: @abi.Parse,
+    reason,
+    message,
+    path: seat.path,
+  }
+}
+
+///|
