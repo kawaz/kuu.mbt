@@ -257,7 +257,7 @@ fn branch_fold_reject(
   extensions : Registry,
   ladder : ((Entity, Array[String], Array[Binding]) -> Value?)?,
   ledger : @fold.FiringLedger?,
-) -> ParseError? {
+) -> Array[ParseError] {
   // 値残余を持つセルだけ畳む (このセル集合以外の効果は値状態に関与させる必要がない —
   // 値残余の解決素材はそのセル自身の容器の中身だけである)。出現順を保つ。
   let affected : Array[(Array[String], String)] = []
@@ -275,6 +275,10 @@ fn branch_fold_reject(
       }
     }
   }
+  // 値残余セルは互いに独立に裁く (DR-138 §4 — セルは書き込みと候補状態の単位)。
+  // 未完成 (incomplete_value) は淘汰の帰結なので全セル分を集めて報告し、
+  // 書き込み時失敗はそのセルで枝が死ぬので即座に打ち切る。
+  let cell_errors : Array[ParseError] = []
   for cell in affected {
     let (scope, key) = cell
     let decl = match seat_decl_lookup(decls, seat_decl_key(scope, key)) {
@@ -305,8 +309,8 @@ fn branch_fold_reject(
           }
         }
         match @fold.cull_union_cell(key, members, cell_bindings, extensions) {
-          @fold.Incomplete(pos) =>
-            return Some(
+          @fold.Incomplete(pos) => {
+            cell_errors.push(
               branch_fold_failure(
                 cell_bindings[cell_bindings.length() - 1],
                 pos,
@@ -315,6 +319,8 @@ fn branch_fold_reject(
                 "the supplied writes do not complete any declared value variant",
               ),
             )
+            continue
+          }
           // 生存枝あり / 書き込み無し: このセルは確定相の管轄 (DR-138 §2)。
           // 単相セル向けの以降の枝ローカル fold は適用せず、次の値残余セルの検査へ進む
           // (ここで関数ごと return すると同居する他セルの失敗検査が漏れる)。
@@ -355,7 +361,8 @@ fn branch_fold_reject(
         // fold が実行して判明した fn の失敗は Error 位相の除外素材 (resolve 相と同じ語彙)。
         match transition {
           @fold.FnMissing(name) =>
-            return Some(
+            return branch_fold_reject_stop(
+              cell_errors,
               branch_fold_failure(
                 b,
                 consumed_pos,
@@ -365,7 +372,8 @@ fn branch_fold_reject(
               ),
             )
           @fold.FnFailed({ reason, message, .. }) =>
-            return Some(
+            return branch_fold_reject_stop(
+              cell_errors,
               branch_fold_failure(
                 b,
                 consumed_pos,
@@ -422,7 +430,8 @@ fn branch_fold_reject(
         @fold.NoChange => ()
         // fold が実行して判明した fn の失敗は Error 位相の除外素材 (resolve 相と同じ語彙)。
         @fold.FnMissing(name) =>
-          return Some(
+          return branch_fold_reject_stop(
+            cell_errors,
             branch_fold_failure(
               b,
               consumed_pos,
@@ -432,7 +441,8 @@ fn branch_fold_reject(
             ),
           )
         @fold.FnFailed({ reason, message, .. }) =>
-          return Some(
+          return branch_fold_reject_stop(
+            cell_errors,
             branch_fold_failure(
               b,
               consumed_pos,
@@ -443,7 +453,8 @@ fn branch_fold_reject(
           )
         // DR-127 §4.1 / DR-131 §7: Sentinel (default / empty) は値残余座で解決失敗。
         @fold.ToDefault | @fold.ToEmpty =>
-          return Some(
+          return branch_fold_reject_stop(
+            cell_errors,
             branch_fold_error(
               b,
               consumed_pos,
@@ -454,7 +465,8 @@ fn branch_fold_reject(
         @fold.ToValue(value) => {
           // DR-127 §3: 空の座 (未 vivify) で ctx.old を読んだ Value fn は戻り値に依らず解決失敗。
           if !container_present && old_consulted {
-            return Some(
+            return branch_fold_reject_stop(
+              cell_errors,
               branch_fold_error(
                 b,
                 consumed_pos,
@@ -486,7 +498,8 @@ fn branch_fold_reject(
                     value, structural, producer, extensions,
                   ) {
                   Some((_, detail)) =>
-                    return Some(
+                    return branch_fold_reject_stop(
+                      cell_errors,
                       branch_fold_error(
                         b,
                         consumed_pos,
@@ -511,7 +524,8 @@ fn branch_fold_reject(
                         value, out, producer, extensions,
                       ) {
                       Some((reason, message)) =>
-                        return Some(
+                        return branch_fold_reject_stop(
+                          cell_errors,
                           branch_fold_failure(
                             b,
                             consumed_pos,
@@ -542,7 +556,8 @@ fn branch_fold_reject(
               ) {
               Ok(_) => ()
               Err(fault) =>
-                return Some(
+                return branch_fold_reject_stop(
+                  cell_errors,
                   branch_fold_error(
                     b,
                     consumed_pos,
@@ -556,7 +571,17 @@ fn branch_fold_reject(
       }
     }
   }
-  None
+  cell_errors
+}
+
+///|
+/// 書き込み時失敗はそのセルで枝が死ぬ — 既に集まっている incomplete_value と一緒に返す。
+fn branch_fold_reject_stop(
+  collected : Array[ParseError],
+  error : ParseError,
+) -> Array[ParseError] {
+  collected.push(error)
+  collected
 }
 
 ///|

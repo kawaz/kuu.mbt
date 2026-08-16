@@ -5056,14 +5056,20 @@ pub fn parse_tree(
             Some(_) => Some(@fold.FiringLedger::new())
             None => None
           }
-          match branch_fold_reject(eff, p, decls, extensions, ladder, ledger) {
-            Some(pe) => {
+          // 値残余セルは独立に裁かれるので複数の失敗が同時に返りうる (DR-138 §4 —
+          // 1 読みの中に union セルが 2 個あれば両方の incomplete_value が観測される)。
+          // Held は 1 件 1 error なので、error ごとに Held 枝を立てる。いずれも
+          // 完全経路ではないため経路数には影響せず、最終 errors 集合で合流する。
+          let cell_errors = branch_fold_reject(
+            eff, p, decls, extensions, ladder, ledger,
+          )
+          if cell_errors.length() == 0 {
+            folded.push(b)
+            branch_ledgers.push(ledger)
+          } else {
+            for pe in cell_errors {
               folded.push(Held(pe, bs))
               branch_ledgers.push(None)
-            }
-            None => {
-              folded.push(b)
-              branch_ledgers.push(ledger)
             }
           }
         }
