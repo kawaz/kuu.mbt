@@ -3,6 +3,7 @@
 | date | category | status | slug | 概要 |
 |---|---|---|---|---|
 | 2026-08-16 | bug | open | [alias-pairs-index-zip-fragility](./2026-08-16-alias-pairs-index-zip-fragility.md) | option_alias_pairs の index zip が非対称フィルタで壊れ、positional target alias で誤帰属・alias 消滅 |
+| 2026-08-16 | design | open | [named-alias-independent-entry-vs-dr113](./2026-08-16-named-alias-independent-entry-vs-dr113.md) | name付き alias の options列独立entry出力が DR-113 §4.3/4.4「独立一覧しない」と衝突 (help_wbtest.mbt:63 が現挙動を pin) |
 | 2026-08-16 | design | open | [builtin-namespace-sugar-unification](./2026-08-16-builtin-namespace-sugar-unification.md) | DR-094 の `builtin/` 糖衣が type 参照のみ — filter/accumulator/collector/cell_fn/completer は明示 n… |
 | 2026-08-16 | task | open | [decode-attribute-carry-allowlist-audit](./2026-08-16-decode-attribute-carry-allowlist-audit.md) | decode面の属性 silent discard 監査 (allowlist ⊆ carry 検査、A7+R5 m1 統合) |
 | 2026-08-16 | bug | open | [tie-source-provenance-flag-design](./2026-08-16-tie-source-provenance-flag-design.md) | tie判別 `effects_ != raw.binds` が Winner 置換全般で真になり sparse 射影無効化で Default-source scalar が漏れる |
