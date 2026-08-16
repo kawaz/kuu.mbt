@@ -2394,15 +2394,6 @@ priv enum LinkPathResolution {
 }
 
 ///|
-fn value_type_primitive_only(value_type : ValueType) -> Bool {
-  match value_type {
-    String | Number | Bool | Null => true
-    Union(members) => members.iter().all(value_type_primitive_only)
-    Array(_) | Map(_) | Record(_) | Tuple(_) | Value => false
-  }
-}
-
-///|
 /// Cells whose result carrier is the collected array (DR-044 §1: repeat /
 /// multiple / separator are arrays regardless of cardinality).
 fn element_is_accumulator_cell(e : ElementDef) -> Bool {
@@ -5217,7 +5208,19 @@ fn empty_target_is_container_capable(e : ElementDef) -> Bool {
   }
   match e.ty.output_type() {
     None => true
-    Some(declared) => !value_type_primitive_only(declared)
+    Some(declared) => empty_target_type_allows(declared)
+  }
+}
+
+///|
+/// DR-131 §3.1: `empty` の target 域は **array / map / record に閉じている**。
+/// scalar には「空」が無く、union は「どの variant の空か」が決まらず、tuple は固定
+/// アリティなので空値を持たない (`value` も静的に器の形を言えない) — いずれも
+/// definition-error `invalid-range`。
+fn empty_target_type_allows(declared : ValueType) -> Bool {
+  match declared {
+    Array(_) | Map(_) | Record(_) => true
+    String | Number | Bool | Null | Value | Tuple(_) | Union(_) => false
   }
 }
 
