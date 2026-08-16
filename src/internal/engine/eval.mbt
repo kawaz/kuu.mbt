@@ -1546,8 +1546,8 @@ fn eval_scope_with_downstream(
       for branch in on_accept(ctx, pos, acc, severed) {
         out.push(branch)
       }
-    } else if !greedy_reads(sc, ctx, pos) {
-      let drop_redundant_residual = any_trigger_matches(sc, ctx, pos)
+    } else if !greedy_reads(sc, ctx, pos, acc) {
+      let drop_redundant_residual = any_trigger_matches(sc, ctx, pos, acc)
       for branch in on_accept(ctx, pos, acc, severed) {
         match branch {
           Held(error, _) =>
@@ -2612,34 +2612,40 @@ fn has_viable(brs : Array[Branch], pos : Int, ctx : Ctx) -> Bool {
 /// one pass without any continuation/CPS machinery (spec `停止性と有界性`:
 /// the predicate is closed over the reading's own span, at most a handful
 /// of tokens, and never recurses into downstream search).
-fn greedy_engages(g : Node, ctx : Ctx, pos : Int) -> Bool {
+fn greedy_engages(g : Node, ctx : Ctx, pos : Int, acc : Array[Binding]) -> Bool {
   match g {
     Or(alts) => {
       for a in alts {
-        if greedy_engages(a, ctx, pos) {
+        if greedy_engages(a, ctx, pos, acc) {
           return true
         }
       }
       false
     }
-    CommandSatisfied(trigger, _, _, _) => ctx.toks[pos] == trigger
+    // 入場済みの宣言は、この読みではもう受け手ではない (同ファイルの CommandSatisfied
+    // 入場条件と同じ規則)。ここを true のままにすると、早閉じ判定が「親が読める」と
+    // 誤答し、かつ入場側は空を返すので、**診断を 1 件も伴わない失敗**になる
+    // (`greedy_trigger_matches` の doc が言う「より具体的な Held が既に積まれている」
+    // という前提が崩れる)。
+    CommandSatisfied(trigger, name, ordinal, _) =>
+      ctx.toks[pos] == trigger && !command_scope_selected(acc, [name], ordinal)
     DdSatisfied(t, _) => ctx.toks[pos] == t
     DdMatchSatisfied(spelling, is_pattern, _, _, _) =>
       dd_match_token(spelling, is_pattern, ctx.toks[pos])
     LinkTarget(_, _, _, _, _, _, _, _, _, inner) =>
-      greedy_engages(inner, ctx, pos)
-    Rooted(inner, _) => greedy_engages(inner, ctx, pos)
+      greedy_engages(inner, ctx, pos, acc)
+    Rooted(inner, _) => greedy_engages(inner, ctx, pos, acc)
     _ => has_viable(eval(g, ctx, pos), pos, ctx)
   }
 }
 
 ///|
-fn greedy_reads(sc : Scope, ctx : Ctx, pos : Int) -> Bool {
+fn greedy_reads(sc : Scope, ctx : Ctx, pos : Int, acc : Array[Binding]) -> Bool {
   if pos >= ctx.toks.length() {
     return false // no token to read (早閉じ check at the end of input)
   }
   for g in sc.greedy {
-    if greedy_engages(g, ctx, pos) {
+    if greedy_engages(g, ctx, pos, acc) {
       return true
     }
   }
@@ -2658,35 +2664,46 @@ fn greedy_reads(sc : Scope, ctx : Ctx, pos : Int) -> Bool {
 /// Error が唯一の結末」extends to 早閉じ: the coarser unexpected_token
 /// this early-close would ALSO produce is a strictly less informative
 /// restatement of the SAME reading's failure, not an independent one).
-fn greedy_trigger_matches(g : Node, ctx : Ctx, pos : Int) -> Bool {
+fn greedy_trigger_matches(
+  g : Node,
+  ctx : Ctx,
+  pos : Int,
+  acc : Array[Binding],
+) -> Bool {
   match g {
     Seq(items) =>
       if items.length() >= 1 {
         match items[0] {
           Exact(s) => ctx.toks[pos] == s
           NativeMatch(m) => run_matcher(m, ctx, pos).length() > 0
-          _ => greedy_engages(g, ctx, pos)
+          _ => greedy_engages(g, ctx, pos, acc)
         }
       } else {
         false
       }
     Or(alts) => {
       for a in alts {
-        if greedy_trigger_matches(a, ctx, pos) {
+        if greedy_trigger_matches(a, ctx, pos, acc) {
           return true
         }
       }
       false
     }
-    CommandSatisfied(trigger, _, _, _) => ctx.toks[pos] == trigger
+    // 入場済みの宣言は、この読みではもう受け手ではない (同ファイルの CommandSatisfied
+    // 入場条件と同じ規則)。ここを true のままにすると、早閉じ判定が「親が読める」と
+    // 誤答し、かつ入場側は空を返すので、**診断を 1 件も伴わない失敗**になる
+    // (`greedy_trigger_matches` の doc が言う「より具体的な Held が既に積まれている」
+    // という前提が崩れる)。
+    CommandSatisfied(trigger, name, ordinal, _) =>
+      ctx.toks[pos] == trigger && !command_scope_selected(acc, [name], ordinal)
     DdSatisfied(t, _) => ctx.toks[pos] == t
     DdMatchSatisfied(spelling, is_pattern, _, _, _) =>
       dd_match_token(spelling, is_pattern, ctx.toks[pos])
     NativeMatch(m) => run_matcher(m, ctx, pos).length() > 0
     LinkTarget(_, _, _, _, _, _, _, _, _, inner) =>
-      greedy_trigger_matches(inner, ctx, pos)
-    Rooted(inner, _) => greedy_trigger_matches(inner, ctx, pos)
-    _ => greedy_engages(g, ctx, pos)
+      greedy_trigger_matches(inner, ctx, pos, acc)
+    Rooted(inner, _) => greedy_trigger_matches(inner, ctx, pos, acc)
+    _ => greedy_engages(g, ctx, pos, acc)
   }
 }
 
@@ -2694,12 +2711,17 @@ fn greedy_trigger_matches(g : Node, ctx : Ctx, pos : Int) -> Bool {
 /// Whether ANY greedy entry's trigger fires at `pos` (see
 /// `greedy_trigger_matches`'s doc comment for why this is a separate,
 /// coarser probe than `greedy_reads`).
-fn any_trigger_matches(sc : Scope, ctx : Ctx, pos : Int) -> Bool {
+fn any_trigger_matches(
+  sc : Scope,
+  ctx : Ctx,
+  pos : Int,
+  acc : Array[Binding],
+) -> Bool {
   if pos >= ctx.toks.length() {
     return false
   }
   for g in sc.greedy {
-    if greedy_trigger_matches(g, ctx, pos) {
+    if greedy_trigger_matches(g, ctx, pos, acc) {
       return true
     }
   }
@@ -2715,7 +2737,10 @@ fn suppressed(sc : Scope, ctx : Ctx, pos : Int, severed : Bool) -> Bool {
   if severed {
     return false
   }
-  greedy_reads(sc, ctx, pos)
+  // 先食い抑止は「この位置で greedy の読みが成立しうるか」だけを見る構造判定で、
+  // その読みまでに**どの宣言へ入場済みか**は問わない。空 acc を渡すのは現状維持の
+  // 明示 (入場履歴を効かせるなら早閉じ判定とは別の根拠が要る)。
+  greedy_reads(sc, ctx, pos, [])
 }
 
 ///|
@@ -2877,7 +2902,7 @@ fn scope_step(
       for r in run_cont(k, ctx, pos, acc) {
         out.push(r)
       }
-    } else if !greedy_reads(sc, ctx, pos) {
+    } else if !greedy_reads(sc, ctx, pos, acc) {
       // DR-097 裁定側 (生成と裁定の層分離): if some entry's trigger DID
       // fire here but its reading is unviable, that entry's own `step_greedy`
       // call above already deposited a more specific Held into `out` (value-
@@ -2890,7 +2915,7 @@ fn scope_step(
       // any early-close outcome that reaches an Accept/Pending (e.g.
       // command-scope/early-close-viability.json's build→rest hand-off)
       // both still ride through untouched.
-      let drop_redundant_residual = any_trigger_matches(sc, ctx, pos)
+      let drop_redundant_residual = any_trigger_matches(sc, ctx, pos, acc)
       for r in run_cont(k, ctx, pos, acc) {
         match r {
           Held(pe, _) =>
@@ -5232,6 +5257,23 @@ pub fn parse_tree(
       e.args_pos < deepest_resid &&
       !int_contains(structural_repeat_residuals, e.args_pos) {
       continue
+    }
+    // 同じ位置の scope 残余は、どの読みがそこで止まったかに依らず**同じ躓き 1 つ**である。
+    // 複数の読みが同一トークンで止まると path (どのスコープを歩いていたか) だけが違う複製が
+    // 並ぶが、element は "" (スコープレベルの躓き) で利用者に見える内容は同一なので 1 件へ畳む。
+    // path が残余に対して規範を持たないことは corpus 側でも裏取り済み — `unexpected_token` を
+    // 期待する 32 case のうち `path` を pin するものは 0 件。
+    if is_scope_residual(e) {
+      let mut seen = false
+      for kept in errors2 {
+        if is_scope_residual(kept) && kept.args_pos == e.args_pos {
+          seen = true
+          break
+        }
+      }
+      if seen {
+        continue
+      }
     }
     errors2.push(e)
   }
