@@ -83,3 +83,13 @@ green)。残: 受け入れ条件 2 (中優先度キー default_fn / export_key /
 意味論の spec 突き合わせ) と 3 (低優先度キーの要否判断)。中優先度キーは decode を意図的に
 開けていない (dec_or_leaf は installer 語彙駆動化済みなので、意味論確定後は各 installer の
 StructuralChild アーム追加で開けられる)。
+
+## 追記 (2026-08-16): exact の structural seq/or leaf 拒否 (B6, kuu.mbt 全コードレビュー由来)
+
+統合レビュー報告 (kuu.mbt 全コードレビュー 2026-08-16、領域別8並列) にて、structural seq/or leaf の `exact` 拒否が本 issue の対象範囲の一部として明示された。
+
+- 場所: src/kuu/wire_decode.mbt:1922
+- structural seq/or leaf が `exact` を拒否する (positionals は受理している) — DR-067 §2 違反
+- 本 issue が扱う allowed_keys 残余キー同型化の一部と部分重複するが、`exact` は現状の優先度階層 (高: repeat/optional/multiple、中: default_fn/export_key/filters/env、低: ネストor/seq・表示メタ・ref等) に明示列挙されていない。**優先度付けの見直しが必要** — `exact` は他の受理面 (positionals) と非対称なので、次フェーズの棚卸しに含めること。
+
+出典: kuu.mbt 全コードレビュー 2026-08-16 (領域別8並列)
