@@ -4516,7 +4516,8 @@ fn head_progresses(
     // `keep` (true) is a 0-token Accept (same standing as `Bind`/`effect resident` below).
     DdMatchSatisfied(_, _, self_keep, _, _) => !self_keep
     Ext(extension) => !extension.consumes_zero_tokens()
-    IndexedRepeat(_, _, _, _) => true // 名前付き indexed repeat は head を消費
+    // `Many` / `GreedyRepeat` と同じ扱い — 反復回数ではなく head の形が消費を決める。
+    IndexedRepeat(_, inner, _, _) => head_progresses(inner, registry, visiting)
     BoundedTail(head, budget, _) =>
       budget >= 1 && head_progresses(head, registry, visiting)
     LinkTarget(_, _, _, _, _, _, _, _, _, inner) =>
@@ -4556,7 +4557,23 @@ fn head_progresses(
       false
     }
     Many(inner, _) => head_progresses(inner, registry, visiting)
-    Scoped(_, _) | ScopeNode(_) => true
+    // 結果スコープの包みは消費しない — 消費するのは中身。
+    Scoped(_, inner) => head_progresses(inner, registry, visiting)
+    // スコープが消費するのは greedy / positional のいずれかが消費するとき
+    // (`entities` は宣言であって消費 node ではない)。空スコープは 0 消費。
+    ScopeNode(scope) => {
+      for child in scope.greedy {
+        if head_progresses(child, registry, visiting) {
+          return true
+        }
+      }
+      for child in scope.positional {
+        if head_progresses(child, registry, visiting) {
+          return true
+        }
+      }
+      false
+    }
     GreedyRepeat(inner) => head_progresses(inner, registry, visiting)
   }
 }
