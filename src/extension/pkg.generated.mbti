@@ -143,6 +143,8 @@ pub fn unique_array_filter() -> ArrayFilterDescriptor
 
 pub fn unwrap_single_collector() -> &CollectorExt
 
+pub fn value_completes(@abi.Value, @abi.ValueType, Registry) -> Bool
+
 pub fn value_conforms(@abi.Value, @abi.ValueType, Registry) -> Bool
 
 pub fn value_str(@abi.Value) -> String

@@ -998,7 +998,8 @@ pub fn cull_union_cell(
     }
     match seats[index].value_at(key, []) {
       Ok(value) =>
-        if @extension.value_conforms(value, variant, registry) {
+        // 生存判定は完成判定 (DR-138 §1) — 着地判定 (宣言適合) とは別述語。
+        if @extension.value_completes(value, variant, registry) {
           survivors.push({
             variant_index: index,
             value: union_observed_value(value, variant),

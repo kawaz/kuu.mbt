@@ -94,11 +94,20 @@ fn breach_fail(breach : ContractBreach, owner : String) -> @abi.TypeParseFail {
 /// consumes one level of the *type*. A cyclic type-reference graph therefore cannot spin here — it
 /// can only be followed as deep as the finite value goes. (Cycles are separately a definition-error
 /// `circular-ref` at lowering, DR-126 §1.)
+/// `complete` selects which of the two predicates this walk computes (DR-137 §5 (c) /
+/// DR-138 §1 — the two are different phases and must not be conflated):
+///
+/// - `false` = **宣言適合** (生出力・着地判定): a tuple seat holding `null` is a normal
+///   inhabitant of the value space, so it does not breach the declaration.
+/// - `true` = **完成判定** (確定相): a tuple requires every seat non-null. record は
+///   presence-optional (DR-126 §3) なので部分値でも完成 — 完成要求は tuple 座と union
+///   variant を通してのみ伝播し、record / array / map の中身へは伝播しない。
 fn value_type_breach(
   value : @abi.Value,
   declared : @abi.ValueType,
   path : String,
   extensions : Registry,
+  complete? : Bool = false,
 ) -> ContractBreach? {
   if value is @abi.Null {
     return None
@@ -169,7 +178,11 @@ fn value_type_breach(
           }
           for index, item in items {
             if item is @abi.Null {
-              return mismatch
+              // 完成判定でのみ未充足。宣言適合としては null 座は正常 (DR-137 §5 (c))。
+              if complete {
+                return mismatch
+              }
+              continue
             }
             match extensions.resolve_type_reference(references[index]) {
               None => ()
@@ -183,6 +196,7 @@ fn value_type_breach(
                         nested,
                         path + "[" + index.to_string() + "]",
                         extensions,
+                        complete~,
                       ) {
                       Some(Shape(where_, detail)) =>
                         return Some(FieldType(where_, detail))
@@ -197,8 +211,11 @@ fn value_type_breach(
         _ => mismatch
       }
     Union(members) => {
+      // 入れ子 union は葉 variant の集合へ平坦化して読む (DR-138 §1) — この再帰が
+      // 平坦化そのもの。1 葉でも満たせば適合。
       for variant in members {
-        if value_type_breach(value, variant, path, extensions) is None {
+        if value_type_breach(value, variant, path, extensions, complete~)
+          is None {
           return None
         }
       }
@@ -340,6 +357,19 @@ pub fn value_conforms(
   extensions : Registry,
 ) -> Bool {
   value_type_breach(value, declared, "$", extensions) is None
+}
+
+///|
+/// DR-138 §1 — 枝が「完成」しているか (確定相の内部工程)。`value_conforms` の宣言適合に
+/// 加えて tuple の全座 non-null を要求する。record は presence-optional のため部分値でも
+/// 完成 (DR-126 §3)、入れ子 union は葉集合へ平坦化して読む。
+/// node `required` (DR-047 の最終セル値への述語) とは別層。
+pub fn value_completes(
+  value : @abi.Value,
+  declared : @abi.ValueType,
+  extensions : Registry,
+) -> Bool {
+  value_type_breach(value, declared, "$", extensions, complete=true) is None
 }
 
 ///|
