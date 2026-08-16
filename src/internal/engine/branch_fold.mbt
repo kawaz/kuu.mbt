@@ -334,6 +334,22 @@ fn branch_fold_reject(
             )
             continue
           }
+          // 書き込み自体の失敗は書き込み時に裁く (DR-138 §6) — このセルで枝が死ぬ。
+          @fold.WriteFailed(reason, message, pos) =>
+            return branch_fold_reject_stop(
+              cell_errors,
+              branch_fold_failure(
+                cell_bindings[cell_bindings.length() - 1],
+                if pos >= 0 {
+                  pos
+                } else {
+                  consumed_pos
+                },
+                decl.scope_path,
+                reason,
+                message,
+              ),
+            )
           // 生存枝あり / 書き込み無し: このセルは確定相の管轄 (DR-138 §2)。
           // 単相セル向けの以降の枝ローカル fold は適用せず、次の値残余セルの検査へ進む
           // (ここで関数ごと return すると同居する他セルの失敗検査が漏れる)。

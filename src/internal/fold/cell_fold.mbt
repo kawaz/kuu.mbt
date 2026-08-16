@@ -889,6 +889,9 @@ pub(all) enum UnionCulling {
   Incomplete(Int)
   Winner(UnionCandidate)
   Tie(Array[UnionCandidate])
+  /// 書き込み自体の失敗 (DR-138 §6) — 淘汰に吸わせず書き込み時に裁く。`(reason, message,
+  /// argv 位置)` を運び、呼び手が当該セルの ParseError にする。
+  WriteFailed(String, String, Int)
 }
 
 ///|
@@ -953,6 +956,20 @@ pub fn cull_union_cell(
     }
     if pos > deepest {
       deepest = pos
+    }
+    // cell fn 名の未登録は枝に依らない静的な失敗なので、variant ループの前に 1 度だけ
+    // 裁く (DR-138 §6 — 書き込み自体の失敗は淘汰で沈黙させない。単相セルの枝ローカル
+    // fold が同じ綴りを unknown-vocab の Error にするのと同一観測)。
+    match binding.op {
+      @abi.Invoke(invocation) =>
+        if registry.lookup_cell_fn(invocation.name) is None {
+          return WriteFailed(
+            "unknown-vocab",
+            "cell fn '" + invocation.name + "' is not registered",
+            pos,
+          )
+        }
+      _ => ()
     }
     for index, variant in members {
       if binding.value_residual.length() == 0 {

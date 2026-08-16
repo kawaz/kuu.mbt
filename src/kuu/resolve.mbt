@@ -5283,6 +5283,19 @@ fn cull_union_bindings(
             ) {
             @fold.Incomplete(pos) =>
               row_errors.push(union_incomplete_error(seat, pos, at_pos))
+            @fold.WriteFailed(reason, message, pos) =>
+              row_errors.push({
+                element: seat.name,
+                args_pos: if pos >= 0 {
+                  pos
+                } else {
+                  at_pos
+                },
+                kind: @abi.Parse,
+                reason,
+                message,
+                path: seat.path,
+              })
             _ => ()
           }
         }
@@ -5320,6 +5333,22 @@ fn cull_union_bindings(
           }
         @fold.Incomplete(pos) =>
           return UnionIncomplete([union_incomplete_error(seat, pos, at_pos)])
+        // 書き込み自体の失敗は淘汰と別位相 (DR-138 §6)。
+        @fold.WriteFailed(reason, message, pos) =>
+          return UnionIncomplete([
+            {
+              element: seat.name,
+              args_pos: if pos >= 0 {
+                pos
+              } else {
+                at_pos
+              },
+              kind: @abi.Parse,
+              reason,
+              message,
+              path: seat.path,
+            },
+          ])
       }
     }
     alternatives = next

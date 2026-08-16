@@ -391,3 +391,151 @@ test "seat_after: 遷移後の Opened/Seated/Emptied/不変を全列挙する" {
     is None,
   )
 }
+
+///|
+fn cull_test_write(
+  value : @abi.Value,
+  residual : Array[@abi.ObservationSegment],
+  at_pos : Int,
+) -> @abi.Binding {
+  {
+    ..@abi.Binding::new("cell", value, @abi.Cli, at_pos=Some(at_pos)),
+    op: @abi.Set,
+    value_residual: residual,
+  }
+}
+
+///|
+/// 保証 (DR-138 §1/§2/§4/§5/§6): union 宣言セルの確定相。書き込みは型適合する全枝へ並行着地し
+/// (含まない枝には Reject も Error も出ない)、未完成枝は淘汰され、生存枝の最終着地が後勝ちで
+/// セル値になる。生存ゼロは Incomplete、複数枝の同時最終着地は同値なら Winner・異値なら Tie。
+/// 書き込み自体の失敗 (未登録 cell fn) は淘汰に吸わせず WriteFailed で書き込み時に裁く。
+test "cull_union_cell: 並行着地・未完成淘汰・後勝ち・tie・書き込み失敗を分類する (DR-138 §1/§2/§4/§5/§6)" {
+  let registry = fold_test_registry()
+  let color : Array[@abi.ValueType] = [
+    @abi.ValueType::Tuple(["int", "int", "int"]),
+    @abi.ValueType::String,
+  ]
+
+  // 書き込みゼロ = 淘汰対象外。ラダーは通常どおり開く (DR-138 §3 の committed 基準)。
+  assert_true(cull_union_cell("cell", color, [], registry) is NoWrites)
+
+  // 位置書きだけでは tuple 枝が [0,255,null] で未完成、string 枝へは着地しない
+  // → 生存ゼロ。args_pos は当該セルに着地した書き込みのうち argv 位置最深 (DR-138 §4)。
+  let partial = cull_union_cell(
+    "cell",
+    color,
+    [
+      cull_test_write(@abi.Number(0.0), [@abi.ObservationIndex(0)], 1),
+      cull_test_write(@abi.Number(255.0), [@abi.ObservationIndex(1)], 3),
+    ],
+    registry,
+  )
+  assert_true(partial is Incomplete(3))
+
+  // 全座が埋まれば tuple 枝が完成し、生存枝は 1 本 → その値で確定。
+  let complete = cull_union_cell(
+    "cell",
+    color,
+    [
+      cull_test_write(@abi.Number(0.0), [@abi.ObservationIndex(0)], 1),
+      cull_test_write(@abi.Number(255.0), [@abi.ObservationIndex(1)], 3),
+      cull_test_write(@abi.Number(7.0), [@abi.ObservationIndex(2)], 5),
+    ],
+    registry,
+  )
+  match complete {
+    Winner(candidate) => {
+      assert_eq(candidate.variant_index, 0)
+      assert_true(candidate.value is @abi.Array(_))
+    }
+    _ => abort("expected the tuple branch to survive alone")
+  }
+
+  // 丸ごと set は型適合する枝にだけ着地する — string は tuple 枝の構造に適合しないので、
+  // 未完成の tuple 枝は淘汰され string 枝が残る (位置書きは黙って消える、DR-138 §2)。
+  let whole_set_wins = cull_union_cell(
+    "cell",
+    color,
+    [
+      cull_test_write(@abi.Number(0.0), [@abi.ObservationIndex(0)], 1),
+      cull_test_write(@abi.String("blue"), [], 3),
+    ],
+    registry,
+  )
+  match whole_set_wins {
+    Winner(candidate) => assert_eq(candidate.variant_index, 1)
+    _ => abort("expected the string branch to survive alone")
+  }
+
+  // 入れ子 union は葉集合へ平坦化して読む (DR-138 §1) — 葉の tuple へ位置書きが届く。
+  let nested = union_leaf_variants([
+    @abi.ValueType::Union([
+      @abi.ValueType::Tuple(["int", "int"]),
+      @abi.ValueType::Bool,
+    ]),
+    @abi.ValueType::String,
+  ])
+  assert_eq(nested.length(), 3)
+  match
+    cull_union_cell(
+      "cell",
+      nested,
+      [
+        cull_test_write(@abi.Number(1.0), [@abi.ObservationIndex(0)], 0),
+        cull_test_write(@abi.Number(2.0), [@abi.ObservationIndex(1)], 1),
+      ],
+      registry,
+    ) {
+    Winner(candidate) => assert_eq(candidate.variant_index, 0)
+    _ => abort("expected the flattened tuple leaf to survive")
+  }
+
+  // フィールド集合の違う record 2 variant の共有フィールドへの 1 書き込みは両枝を完成させ、
+  // 射影後の観測値が違う ({a:1} vs {a:1,b:null}) ので tie = ambiguous (DR-138 §5)。
+  let shape : Array[@abi.ValueType] = [
+    @abi.ValueType::Record([("a", "int")]),
+    @abi.ValueType::Record([("a", "int"), ("b", "int")]),
+  ]
+  match
+    cull_union_cell(
+      "cell",
+      shape,
+      [cull_test_write(@abi.Number(1.0), [@abi.ObservationName("a")], 1)],
+      registry,
+    ) {
+    Tie(candidates) => assert_eq(candidates.length(), 2)
+    _ => abort("expected both record branches to tie")
+  }
+
+  // 明示 `default` 効果は宣言 default を完全値 1 発として運ぶ (DR-138 §3)。
+  match
+    cull_union_cell(
+      "cell",
+      color,
+      [{ ..fold_test_binding(@abi.Invoke({ name: "default", args: [] })) }],
+      registry,
+      default_fall=Some(
+        @abi.Array([@abi.Number(1.0), @abi.Number(2.0), @abi.Number(3.0)]),
+      ),
+    ) {
+    Winner(candidate) => assert_eq(candidate.variant_index, 0)
+    _ => abort("expected the declared default to seat the tuple branch")
+  }
+
+  // 書き込み自体の失敗は淘汰と別位相 — 未登録 cell fn は沈黙せず書き込み時に裁く (§6)。
+  match
+    cull_union_cell(
+      "cell",
+      color,
+      [
+        {
+          ..fold_test_binding(@abi.Invoke({ name: "not-registered", args: [] }))
+        },
+      ],
+      registry,
+    ) {
+    WriteFailed(reason, _, _) => assert_eq(reason, "unknown-vocab")
+    _ => abort("expected an unregistered cell fn to surface as a write failure")
+  }
+}
