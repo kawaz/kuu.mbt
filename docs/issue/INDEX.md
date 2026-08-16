@@ -2,6 +2,7 @@
 
 | date | category | status | slug | 概要 |
 |---|---|---|---|---|
+| 2026-08-16 | bug | open | [tie-source-provenance-flag-design](./2026-08-16-tie-source-provenance-flag-design.md) | tie判別 `effects_ != raw.binds` が Winner 置換全般で真になり sparse 射影無効化で Default-source scalar が漏れる |
 | 2026-08-16 | design | open | [union-fold-ledger-identity-redesign](./2026-08-16-union-fold-ledger-identity-redesign.md) | union/tuple セル fold・ledger・identity の再設計 (A1 + C-1検査脱落 + 関連 統合) |
 | 2026-08-16 | bug | open | [placeholder-op-default-null-fallthrough](./2026-08-16-placeholder-op-default-null-fallthrough.md) | degenerate op=default で placeholder Bool(false) が result/sources に漏れる (A2+R6 F7 統合、裁定要) |
 | 2026-08-14 | task | open | [ref-link-resolution-name-axis-to-id-axis](./2026-08-14-ref-link-resolution-name-axis-to-id-axis.md) | ref/link/observes/borrow の解決が name 軸のまま — DR-046 §1 の id 軸へ載せ替える |
