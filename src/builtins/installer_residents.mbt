@@ -422,8 +422,16 @@ impl @node.InstallerExt for EnvInstaller with fn decode(_self, json, ctx) {
     Ok(value) => value
     Err(reason) => return Err(reason)
   }
+  // wire schema (`env: string`) と DESIGN §12 / DR-049 は env 席を**単数**と定める。
+  // 配列を受理すると席は 1 本しか立たない (installer は先頭しか読まない) ため、
+  // 2 個目以降が silent に落ちる。受理して黙って捨てるより decode で弾く方が誠実。
   match resident_strings(object, "env") {
-    Ok(values) => Ok({ vocab, declaration: Env(values) })
+    Ok(values) =>
+      if values.length() > 1 {
+        Err("env is a single string (wire schema), not a list")
+      } else {
+        Ok({ vocab, declaration: Env(values) })
+      }
     Err(reason) => Err(reason)
   }
 }

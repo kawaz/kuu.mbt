@@ -87,6 +87,9 @@ fn classify_long_form(
   own_name : String,
   ty : &TypeExt,
   extensions : Registry,
+  // DR-127 §3.2: List 形と同じく、値残余 entry の operand はフィールド側 type で読む。
+  // 渡さないと ArrayParts (long の Forms 形) だけ colon 形と挙動が割れる。
+  operand_ty? : &TypeExt = ty,
 ) -> LongSpelling {
   let original = invocation_form_text(form)
   let parts = match decode_fn_invocation_parts(form) {
@@ -131,7 +134,8 @@ fn classify_long_form(
           Variant({
             trigger,
             op: Set,
-            operand: Some(dsl_operand_value(ty, value)),
+            // 値は operand 側の type で読む (DR-127 §3.2)。sugar 判定は entry 自身の ty のまま。
+            operand: Some(dsl_operand_value(operand_ty, value)),
           })
         _ =>
           // A scalar target cannot map multiple logical values. Structured seq/repeat aggregation
@@ -246,7 +250,7 @@ fn resolve_long(
       let longs : Array[String] = []
       let vars : Array[Variant] = []
       for form in forms {
-        match classify_long_form(form, trigger, ty, extensions) {
+        match classify_long_form(form, trigger, ty, extensions, operand_ty~) {
           Main(n) => longs.push(n)
           Variant(v) => vars.push(v)
           Invalid(_, _) => ()
