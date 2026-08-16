@@ -346,6 +346,7 @@ fn apply_export_to_types(
             path: new_path,
             name: new_name,
             value_type: t.value_type,
+            is_accumulator: t.is_accumulator,
             default_value: t.default_value,
           })
       }
@@ -357,6 +358,7 @@ fn apply_export_to_types(
             path: new_path,
             name: new_name,
             value_type: t.value_type,
+            is_accumulator: t.is_accumulator,
             default_value: t.default_value,
           })
       }
@@ -5118,7 +5120,7 @@ fn split_on_sep(s : String, sep : String) -> Array[String] {
 priv enum UnionBindingCulling {
   UnionBindings(Array[@abi.Binding])
   UnionInterpretations(Array[Array[@abi.Binding]])
-  UnionIncomplete(@abi.ParseError)
+  UnionIncomplete(Array[@abi.ParseError])
 }
 
 ///|
@@ -5204,6 +5206,29 @@ fn union_winner_bindings(
 ///|
 /// 選択済み宣言セルをセル単位で一度だけ裁定する。セルに書き込みが無い場合は bindings を
 /// 変更せず、通常の値源ラダーへ委ねる。
+/// DR-138 §4: 生存ゼロの読みは完全経路に数えない。args_pos は当該セル (accum なら当該 row)
+/// に着地した書き込みのうち argv 位置最深のもの、argv 位置を持たない書き込みしか無い場合は
+/// 消費位置 (DR-127 §4.2 の既存規則)。
+fn union_incomplete_error(
+  seat : TypeSeat,
+  pos : Int,
+  consumed_pos : Int,
+) -> @abi.ParseError {
+  {
+    element: seat.name,
+    args_pos: if pos >= 0 {
+      pos
+    } else {
+      consumed_pos
+    },
+    kind: @abi.Parse,
+    reason: "incomplete_value",
+    message: "the supplied writes do not complete any declared value variant",
+    path: seat.path,
+  }
+}
+
+///|
 fn cull_union_bindings(
   ast : AtomicAST,
   bindings : Array[@abi.Binding],
@@ -5233,6 +5258,35 @@ fn cull_union_bindings(
           cell.push(binding)
         }
       }
+      // accum セル (multiple / repeat) の row は、それぞれが別の値である (DR-034 /
+      // DR-084 §1)。完成判定は値への述語 (DR-138 §1) なので row ごとに独立に回し、
+      // 部分値の row が兄弟 row の座を借りて完成することはない。link パスに row 添字は
+      // 無い (DR-029 文法) ため、1 binding = 1 row として扱える。
+      if seat.is_accumulator {
+        let row_errors : Array[@abi.ParseError] = []
+        for row in cell {
+          match
+            @fold.cull_union_cell(
+              seat.name,
+              variants,
+              [row],
+              registry,
+              default_fall=seat.default_value,
+            ) {
+            @fold.Incomplete(pos) =>
+              row_errors.push(union_incomplete_error(seat, pos, at_pos))
+            _ => ()
+          }
+        }
+        // 違反 row は全保持する (DR-053 — args_pos が違うので dedupe されない)。
+        if row_errors.length() > 0 {
+          return UnionIncomplete(row_errors)
+        }
+        // 全 row が独立に完成している。行の積み上げは accumulator の管轄なので
+        // 勝ち枝 carrier への差し替えはせず、binding 列をそのまま通す。
+        next.push(alternative)
+        continue
+      }
       match
         @fold.cull_union_cell(
           seat.name,
@@ -5257,18 +5311,7 @@ fn cull_union_bindings(
             )
           }
         @fold.Incomplete(pos) =>
-          return UnionIncomplete({
-            element: seat.name,
-            args_pos: if pos >= 0 {
-              pos
-            } else {
-              at_pos
-            },
-            kind: @abi.Parse,
-            reason: "incomplete_value",
-            message: "the supplied writes do not complete any declared value variant",
-            path: seat.path,
-          })
+          return UnionIncomplete([union_incomplete_error(seat, pos, at_pos)])
       }
     }
     alternatives = next

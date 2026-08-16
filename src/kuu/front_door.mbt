@@ -379,9 +379,9 @@ pub fn parse(
           }
           Ambiguous({ interpretations, help_entry: None })
         }
-        UnionIncomplete(error) =>
+        UnionIncomplete(cell_errors) =>
           Failure({
-            errors: [error],
+            errors: cell_errors,
             fired_action: None,
             help_entry: None,
             tried_triggers: [],
@@ -729,6 +729,9 @@ priv struct TypeSeat {
   path : Array[String]
   name : String
   value_type : @abi.ValueType
+  // accum セル (multiple / repeat) は row ごとに別の値なので、完成判定を row 単位で回す
+  // (DR-138 §1 は値への述語、row 境界は DR-034 / DR-084 §1)。
+  is_accumulator : Bool
   // 明示 `default` 効果 (op=default) の落ち先 (DR-138 §3 — 下位席の宣言 default を
   // 完全値 1 発の供給としてセルへ運ぶ)。
   default_value : @abi.Value?
@@ -757,7 +760,13 @@ fn collect_type_seats(
             }
           None => None
         }
-        out.push({ path: seat, name: entity.name, value_type, default_value })
+        out.push({
+          path: seat,
+          name: entity.name,
+          value_type,
+          is_accumulator: entity.accum is Some(_),
+          default_value,
+        })
       }
       None => ()
     }
