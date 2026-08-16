@@ -2631,21 +2631,16 @@ fn indexed_structural_child(
 
 ///|
 fn link_path_crosses_multiple(def : Definition, path : LinkPath) -> Bool {
-  let mut root : ElementDef? = None
+  // link の root も id 軸の参照 (DR-136 §6)。raw 一致だけだと、生の綴りで書いた link が
+  // multiple 横断 Unsupported ガードを**迂回**して素通りする (C4 と同根)。
+  let root_candidates : Array[ElementDef] = []
   for element in def.options {
-    if element.name == path.root {
-      root = Some(element)
-      break
-    }
+    root_candidates.push(element)
   }
-  if root is None {
-    for element in def.positionals {
-      if element.name == path.root {
-        root = Some(element)
-        break
-      }
-    }
+  for element in def.positionals {
+    root_candidates.push(element)
   }
+  let root = resolve_id_reference(root_candidates, path.root, fn(e) { e.name })
   guard root is Some(root_element) else { return false }
   let mut current = root_element
   for segment in path.segments {
@@ -3879,29 +3874,26 @@ fn str_replace_first(s : String, from : String, to : String) -> String {
 }
 
 ///|
-/// canonical option / positional 要素を name で検索。
+/// canonical option / positional 要素を**参照識別子 (id) 軸**で検索 (DR-046 §1 / DR-136 §6)。
+/// alias の target はこの軸の参照であり、raw 一致だけでは記号入りの宣言綴り
+/// (`socket-ttl` — 内部 name は id 軸写像後の `socket_ttl`) で書いた alias が
+/// **definition-error も出さずに無言消滅**する。2 段ルックアップ (①raw → ②当該軸の写像後)
+/// は `resolve_id_reference` が唯一の実装。
 fn find_elem(def : Definition, name : String) -> ElementDef? {
+  let candidates : Array[ElementDef] = []
   for e in def.options {
-    if e.name == name {
-      return Some(e)
-    }
+    candidates.push(e)
   }
   for e in def.positionals {
-    if e.name == name {
-      return Some(e)
-    }
+    candidates.push(e)
   }
-  None
+  resolve_id_reference(candidates, name, fn(e) { e.name })
 }
 
 ///|
+/// command の alias target も同じ id 軸 (CMDID-Q1=a で command まで軸参加が拡大)。
 fn find_command(def : Definition, name : String) -> CommandDef? {
-  for c in def.commands {
-    if c.name == name {
-      return Some(c)
-    }
-  }
-  None
+  resolve_id_reference(def.commands, name, fn(c) { c.name })
 }
 
 ///|

@@ -156,3 +156,24 @@ DR-134 の command 値担体 (`value:` / `default:` を持つ command) を link 
 - 対処方針: templates にも settle を適用する
 
 出典: kuu.mbt 全コードレビュー 2026-08-16 (領域別8並列)
+
+## 追記 (2026-08-16 その3): 残タスク一覧に無かった raw 一致 3 箇所 — 全コードレビューで検出・解消
+
+上の「残り」節に**載っていなかった** raw 一致箇所が 3 つ見つかった (kuu.mbt 全コードレビュー
+C4 / C-3 / B4)。いずれも 2 段ルックアップ (DR-136 §6) を通らず、記号入りの宣言綴りで書いた
+参照が無言で消える形だった。
+
+- **alias target (C4)**: `src/internal/engine/lowering.mbt` の `find_elem` / `find_command`、
+  および `src/kuu/help.mbt` の 3 箇所 (`find_option` + command alias 判定 2 箇所)。
+  実測: `{"name":"socket-ttl"}` (内部 name は id 軸写像後の `socket_ttl`) へ
+  `{"alias":"socket-ttl","short":"t"}` を張ると、**definition-error も出さずに `-t` が消え**、
+  `-t 30` が `unexpected token` で落ちる。engine 側と help 側の両方を `resolve_id_reference`
+  へ載せ替えて解消
+- **link の multiple 横断ガード (C-3)**: 同ファイル `link_path_crosses_multiple` の root 解決。
+  raw 綴りで書いた link が Unsupported ガードを**迂回**して素通りしていた。同じ載せ替えで解消
+- **`definitions.templates` への settle 未適用 (B4)**: `settle_name_axes` が templates に
+  届かず、inline seq と ref template で結果キーが割れる (別項で対応)
+
+**教訓**: この issue の「残り」節は *当時把握していた* 箇所の一覧であって、raw 一致の**全数**では
+なかった。同型の穴が他にも残っている可能性があるので、`== name` / `.name ==` の直接比較を
+grep して棚卸しするのが再発防止になる。

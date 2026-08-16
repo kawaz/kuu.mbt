@@ -308,11 +308,18 @@ fn is_group_declaration(element : @engine.ElementDef) -> Bool {
 // ── alias merging (DR-113 §4.4) ──────────────────────────────────────────────
 
 ///|
+/// alias の target は**参照識別子 (id) 軸**の参照 (DR-046 §1 / DR-136 §6)。raw 一致だけだと
+/// 記号入りの宣言綴りで書いた alias が引けず、help 面から無言で消える (engine 側の
+/// `find_elem` / `find_command` と同じ 2 段ルックアップへ揃える)。
 fn find_option(definition : @engine.Definition, name : String) -> Bool {
+  let canonical : Array[@engine.ElementDef] = []
   for element in definition.options {
-    if !element.is_alias && element.name == name {
-      return true
+    if !element.is_alias {
+      canonical.push(element)
     }
+  }
+  if @engine.resolve_id_reference(canonical, name, fn(e) { e.name }) is Some(_) {
+    return true
   }
   false
 }
@@ -382,13 +389,13 @@ fn command_alias_map(
   let output : Map[String, Array[String]] = Map([])
   for a in definition.aliases {
     // command alias: target が def.commands にあり、`name` が明示されているもののみ。
-    let mut is_command = false
-    for c in definition.commands {
-      if c.name == a.target {
-        is_command = true
-        break
-      }
-    }
+    // command alias の target も id 軸 (CMDID-Q1=a)。
+    let is_command = @engine.resolve_id_reference(
+        definition.commands,
+        a.target,
+        fn(c) { c.name },
+      )
+      is Some(_)
     if !is_command {
       continue
     }
@@ -417,13 +424,13 @@ fn command_alias_map(
 fn alias_command_names(definition : @engine.Definition) -> Array[String] {
   let output : Array[String] = []
   for a in definition.aliases {
-    let mut is_command = false
-    for c in definition.commands {
-      if c.name == a.target {
-        is_command = true
-        break
-      }
-    }
+    // command alias の target も id 軸 (CMDID-Q1=a)。
+    let is_command = @engine.resolve_id_reference(
+        definition.commands,
+        a.target,
+        fn(c) { c.name },
+      )
+      is Some(_)
     if !is_command {
       continue
     }
