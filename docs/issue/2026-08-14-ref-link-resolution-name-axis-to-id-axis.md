@@ -131,3 +131,28 @@ DR-134 の command 値担体 (`value:` / `default:` を持つ command) を link 
 共通 resolver へ載せ替えた際の設計判断ではなく、載せ替え前からの候補列の範囲がそのまま
 残っている状態である。command を候補に加えるべきか (= command 値担体への link を
 許すか) は spec 側の規定が要るので、ここでは現状を記録するに留める。
+
+## 追記 (2026-08-16 その3): kuu.mbt 全コードレビュー由来の未記録の穴 3 件 (C4/C-3/B4)
+
+統合レビュー報告 (kuu.mbt 全コードレビュー 2026-08-16、領域別8並列) の P1「id/name軸解決の一元化漏れ (DR-136 §6) — 3領域で同型」にて、本 issue の残タスク一覧に載っていない未記録の穴が3件見つかった。いずれも `resolve_id_reference` を通らない raw一致箇所が残存している例。
+
+### C4 (Critical, help/completion + lowering): alias target の解決が raw 一致のみ
+
+- 場所: src/kuu/help.mbt:311, 386, 421 + src/internal/engine/lowering.mbt:3883-3905
+- alias target の解決が raw一致のみ (DR-136 §6の2段ルックアップ未適用)
+- 記号入りnameの要素へのaliasがdefinition-errorも出さず無言消滅 (実測)
+- id軸化のregression。`resolve_id_reference` を適用し、engine+help両面同時に直す必要がある
+
+### C-3 (lowering): `link_path_crosses_multiple` の root 解決が raw 一致のみ
+
+- 場所: src/internal/engine/lowering.mbt:2633
+- `link_path_crosses_multiple` の root解決がraw一致のみ — raw綴りのlinkがmultiple横断Unsupportedガードを迂回 (実測)
+- C4と同根 (resolve_id_reference未使用)。C4と同じ載せ替え作業に含めて対処するのが効率的
+
+### B4 (wire_decode/front_door): templates への settle 未適用
+
+- 場所: src/kuu/front_door.mbt:169
+- `settle_name_axes` が `definitions.templates` に届かず、inline seq と ref template で結果キーが割れる (実測 `file_path` vs `file path`、DR-136 §4 / DR-078 §1 パリティ違反)
+- 対処方針: templates にも settle を適用する
+
+出典: kuu.mbt 全コードレビュー 2026-08-16 (領域別8並列)
