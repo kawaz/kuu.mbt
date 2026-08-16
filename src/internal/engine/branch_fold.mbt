@@ -315,7 +315,10 @@ fn branch_fold_reject(
                 "the supplied writes do not complete any declared value variant",
               ),
             )
-          _ => return None
+          // 生存枝あり / 書き込み無し: このセルは確定相の管轄 (DR-138 §2)。
+          // 単相セル向けの以降の枝ローカル fold は適用せず、次の値残余セルの検査へ進む
+          // (ここで関数ごと return すると同居する他セルの失敗検査が漏れる)。
+          _ => continue
         }
       }
       None => ()
