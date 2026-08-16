@@ -539,3 +539,94 @@ test "cull_union_cell: 並行着地・未完成淘汰・後勝ち・tie・書き
     _ => abort("expected an unregistered cell fn to surface as a write failure")
   }
 }
+
+///|
+/// 保証 (DR-138 §6b、UC-Q4): union 宣言セルへの cell fn は特別扱いしない。
+///
+/// 1. **発火ごとに 1 回だけ実行**する — 枝ごとの再実行をしない (DR-114 の一回実行不変条件)。
+///    純粋な fn だと観測値が同じになるため conformance では検出できない性質なので、
+///    実行回数そのものを数える resident でここに固定する。
+/// 2. **`ctx.old` はその時点のセルの観測値** — 逐次 淘汰 + 後勝ちの勝ち値で常に一意、
+///    成立値が無ければ null。枝別の old は fn に見せない。
+/// 3. 産出 Value は通常の書き込みとして**適合枝へ並行着地**する。
+test "cull_union_cell: cell fn は発火ごとに 1 回実行し old は時点観測値 (DR-138 §6b)" {
+  let calls : Array[@abi.Value?] = []
+  let registry = fold_test_registry()
+  // 呼ばれるたびに ctx.old を記録し、old+1 (old が無ければ 0) を返す観測用 resident。
+  guard registry.register_cell_fn(
+      @extension.cell_fn_descriptor(
+        "test/count-old",
+        [],
+        @extension.CellFnOutput::Value,
+        @extension.Total,
+        observes=["old"],
+        run=fn(_args, ctx) {
+          let old = ctx.old()
+          calls.push(old)
+          let next = match old {
+            Some(@abi.Number(n)) => n + 1.0
+            _ => 0.0
+          }
+          Ok(@extension.FnOutput::Value(@abi.Number(next)))
+        },
+      ),
+    )
+    is Ok(_) else {
+    abort("duplicate test/count-old cell fn")
+  }
+  // [number, string] の union — 枝が 2 つあるので、枝ごと再実行なら 1 発火で 2 回走る。
+  let members : Array[@abi.ValueType] = [
+    @abi.ValueType::Number,
+    @abi.ValueType::String,
+  ]
+  let invoke = {
+    ..fold_test_binding(@abi.Invoke({ name: "test/count-old", args: [] })),
+    at_pos: Some(1),
+  }
+  match cull_union_cell("cell", members, [invoke], registry) {
+    Winner(candidate) => assert_eq(candidate.value, @abi.Number(0.0))
+    _ => abort("expected the fn output to seat the number branch")
+  }
+  // 1 発火 = 1 回実行 (枝数 2 でも 2 回にならない)。
+  assert_eq(calls.length(), 1)
+  // 着地前の時点観測値は null (成立値なし)。
+  assert_eq(calls[0], None)
+
+  // 逐次: set(5) の後に発火すると old は 5 (number 枝が後勝ちの勝ち値)、産出は 6。
+  calls.clear()
+  let set5 = {
+    ..@abi.Binding::new("cell", @abi.Number(5.0), @abi.Cli, at_pos=Some(1)),
+    op: @abi.Set,
+  }
+  let bump = {
+    ..fold_test_binding(@abi.Invoke({ name: "test/count-old", args: [] })),
+    at_pos: Some(2),
+  }
+  match cull_union_cell("cell", members, [set5, bump], registry) {
+    Winner(candidate) => assert_eq(candidate.value, @abi.Number(6.0))
+    _ => abort("expected the incremented value to win")
+  }
+  assert_eq(calls.length(), 1)
+  assert_eq(calls[0], Some(@abi.Number(5.0)))
+
+  // DR-138 §6: 書き込み自体の失敗は淘汰に吸わせず書き込み時に裁く。fn 本体の失敗は
+  // 単相セルと同じ Error 観測になる (union に入れた途端に黙って消える非対称を作らない)。
+  match
+    cull_union_cell(
+      "cell",
+      members,
+      [
+        {
+          ..fold_test_binding(@abi.Invoke({ name: "test/fail-run", args: [] })),
+          at_pos: Some(1),
+        },
+      ],
+      registry,
+    ) {
+    WriteFailed(reason, _, pos) => {
+      assert_eq(reason, "test-failure")
+      assert_eq(pos, 1)
+    }
+    _ => abort("a failing cell fn must surface as a write-time failure")
+  }
+}

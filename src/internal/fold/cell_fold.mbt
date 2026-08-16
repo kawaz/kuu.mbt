@@ -923,6 +923,38 @@ fn union_observed_value(
 }
 
 ///|
+/// DR-138 §6b-1: **その時点のセルの観測値** — それまでの書き込みに淘汰 + 後勝ちを逐次適用した
+/// 勝ち値であり、常に一意。成立値が無い時点 (全枝未完成 / 未着地) は `null` (DR-130 §1 の
+/// 「値の無さは null」と一貫)。候補集合は内部表現なので、fn へ枝別の old を見せることはない。
+fn momentary_observed(
+  key : String,
+  members : Array[@abi.ValueType],
+  seats : Array[CellSeats],
+  landed : Array[Bool],
+  last_seq : Array[Int],
+  registry : @extension.Registry,
+) -> @abi.Value? {
+  let mut best : @abi.Value? = None
+  let mut best_seq = -1
+  for index, variant in members {
+    if !landed[index] {
+      continue
+    }
+    match seats[index].value_at(key, []) {
+      // 完成していない枝は「成立値」ではない (§1 の完成判定)。
+      Ok(value) =>
+        if @extension.value_completes(value, variant, registry) &&
+          last_seq[index] > best_seq {
+          best_seq = last_seq[index]
+          best = Some(union_observed_value(value, variant))
+        }
+      Err(_) => ()
+    }
+  }
+  best
+}
+
+///|
 /// DR-138 §2 の union 枝並行構築。各効果を適合する全 variant の独立 CellSeats へ流し、
 /// 未完成枝を除いて最終着地通番で裁定する。非適合はその枝へ着地しないだけである。
 pub fn cull_union_cell(
@@ -971,14 +1003,32 @@ pub fn cull_union_cell(
         }
       _ => ()
     }
+    // DR-138 §6b-3: fn は**発火ごとに 1 回だけ**実行し、産出 Value は通常の書き込みとして
+    // 適合枝へ並行着地する (§2-1)。枝ごとの再実行はしない — 非決定 fn や外部状態を読む fn で
+    // 値と ledger が枝数だけ割れるし、DR-114 の一回実行不変条件にも反する。
+    // `ctx.old` は §6b-1 の時点観測値 (逐次 淘汰 + 後勝ちの勝ち値、無ければ null)。
+    let whole_cell_transition = if binding.value_residual.length() == 0 {
+      fold_seat_effect(
+        binding,
+        momentary_observed(key, members, seats, landed, last_seq, registry),
+        key,
+        registry,
+      )
+    } else {
+      (NoChange, false)
+    }
+    // DR-138 §6: 書き込み自体の失敗は淘汰に吸わせず書き込み時 (parse 時) に裁く。
+    // fn 本体 / observes 解決の失敗は、単相セルの枝ローカル fold が同じ綴りを Error に
+    // するのと同一観測でなければならない — union に入れた途端に黙って消える非対称を
+    // 作らない。fn は 1 回しか実行しないので、失敗も 1 回だけ観測される。
+    match whole_cell_transition.0 {
+      FnFailed({ reason, message, .. }) =>
+        return WriteFailed(reason, message, pos)
+      _ => ()
+    }
     for index, variant in members {
       if binding.value_residual.length() == 0 {
-        let (transition, _) = fold_seat_effect(
-          binding,
-          seats[index].old(key, None),
-          key,
-          registry,
-        )
+        let (transition, _) = whole_cell_transition
         // 明示 `default` 効果 (op=default、committed=true — DR-045 §2) は下位席の
         // 宣言 default を「完全値 1 発の供給」としてセルへ運ぶ (DR-138 §3)。淘汰の
         // 位相では丸ごと set と同じ着地物になるので、同じ経路で型適合する全枝へ着地する。
