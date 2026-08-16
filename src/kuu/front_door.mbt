@@ -389,15 +389,45 @@ pub fn parse(
       }
     @engine.Failure(failure) => Failure(parse_failure(failure))
     @engine.Ambiguous(ambiguity) => {
-      let interpretations : Array[Interpretation] = []
+      // 消費の or (DR-018 / DR-038 — parse 相の経路分岐) とセル union (DR-138 — 確定相の
+      // 淘汰) は別位相 (DR-138 §8)。消費 ambiguous の各読みの内側でも union セルの確定相は
+      // 独立に回るので、interpretation ごとに淘汰を適用する。生存ゼロの読みは完全経路に
+      // 数えない (§4) ので消費 ambiguous の候補から落ち、tie した読みは各枝へ展開される (§5)。
+      // (勝ち枝 carrier, 実際に発生した効果列) の組で集める。effects は淘汰前の読みのまま
+      // (DR-138 §7 — 観測面は「実際に起きた操作」であって淘汰後の値ではない)。
+      let survivors : Array[(Array[@abi.Binding], Array[@abi.Binding])] = []
       for interpretation in ambiguity.interpretations {
-        interpretations.push({
-          raw: interpretation,
-          effects_: interpretation.binds,
-          firings: deliveries.ledger_for(interpretation.binds),
-        })
+        match cull_union_bindings(ast, interpretation.binds, args.length()) {
+          UnionBindings(culled) =>
+            survivors.push((culled, interpretation.binds))
+          UnionInterpretations(candidates) =>
+            for candidate in candidates {
+              survivors.push((candidate, interpretation.binds))
+            }
+          // 生存ゼロ = この読みは完全経路ではない (DR-138 §4)。他の読みが残るので
+          // 保持された Error は捨てる (DR-037)。
+          UnionIncomplete(_) => ()
+        }
       }
-      Ambiguous({ interpretations, help_entry: ambiguity.help_entry })
+      if survivors.length() == 1 {
+        let (culled, effects) = survivors[0]
+        Success({
+          raw: culled,
+          effects_: effects,
+          firings: deliveries.ledger_for(effects),
+        })
+      } else {
+        let interpretations : Array[Interpretation] = []
+        for survivor in survivors {
+          let (culled, effects) = survivor
+          interpretations.push({
+            raw: { binds: culled },
+            effects_: effects,
+            firings: deliveries.ledger_for(effects),
+          })
+        }
+        Ambiguous({ interpretations, help_entry: ambiguity.help_entry })
+      }
     }
   }
 }
