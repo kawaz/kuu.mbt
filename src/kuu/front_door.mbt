@@ -396,6 +396,8 @@ pub fn parse(
       // (勝ち枝 carrier, 実際に発生した効果列) の組で集める。effects は淘汰前の読みのまま
       // (DR-138 §7 — 観測面は「実際に起きた操作」であって淘汰後の値ではない)。
       let survivors : Array[(Array[@abi.Binding], Array[@abi.Binding])] = []
+      // 全読みが落ちたときにだけ見せる、淘汰由来の保持 Error。
+      let culled_errors : Array[@abi.ParseError] = []
       for interpretation in ambiguity.interpretations {
         match cull_union_bindings(ast, interpretation.binds, args.length()) {
           UnionBindings(culled) =>
@@ -404,12 +406,26 @@ pub fn parse(
             for candidate in candidates {
               survivors.push((candidate, interpretation.binds))
             }
-          // 生存ゼロ = この読みは完全経路ではない (DR-138 §4)。他の読みが残るので
-          // 保持された Error は捨てる (DR-037)。
-          UnionIncomplete(_) => ()
+          // 生存ゼロ = この読みは完全経路ではない (DR-138 §4)。他の読みが残るなら
+          // 保持された Error は捨てる (DR-037) が、全読みが落ちたときは**唯一の手掛かり**
+          // なので下の救済で見せる。
+          UnionIncomplete(cell_errors) =>
+            for pe in cell_errors {
+              culled_errors.push(pe)
+            }
         }
       }
-      if survivors.length() == 1 {
+      // 全読みが淘汰で落ちた = 完全経路ゼロ。interpretations 0 件の Ambiguous は
+      // DR-053 §3 (ambiguous は 2 本以上) の形を満たさず、DR-138 §4 は「生存ゼロは
+      // 完全経路の不成立」= Failure と定める。保持した incomplete_value を見せて落とす。
+      if survivors.length() == 0 {
+        Failure({
+          errors: culled_errors,
+          fired_action: None,
+          help_entry: None,
+          tried_triggers: [],
+        })
+      } else if survivors.length() == 1 {
         let (culled, effects) = survivors[0]
         Success({
           raw: culled,
