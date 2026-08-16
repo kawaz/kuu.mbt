@@ -1600,7 +1600,15 @@ fn eval_greedy_with_downstream(
 ) -> Unit {
   match node {
     CommandSatisfied(trigger, name, ordinal, child) =>
-      if pos < ctx.toks.length() && ctx.toks[pos] == trigger {
+      // 一度この scope から入場した宣言のトリガは、同じ読みの中で**再び材料にならない**
+      // (同ファイル完了面の同条件と同じ規則 — KNest が選択済み宣言を記録するので
+      // `command_scope_selected` で判定できる)。command scope の結果キーは 1 つの器で
+      // あり、同一宣言の 2 回目の入場は着地先を持たない — 許すと同一 scope path・
+      // 同一 ordinal のマーカーが並び、occurrence を区別できない読みが完全経路として
+      // 数えられてしまう (issue dup-raw-command-ordinal-marker-occurrence-gap)。
+      if pos < ctx.toks.length() &&
+        ctx.toks[pos] == trigger &&
+        !command_scope_selected(acc, [name], ordinal) {
         let start = acc.length()
         for
           branch in eval_scope_with_downstream(
@@ -3034,7 +3042,15 @@ fn step_greedy(
 ) -> Unit {
   match g {
     CommandSatisfied(trigger, name, ordinal, child) =>
-      if pos < ctx.toks.length() && ctx.toks[pos] == trigger {
+      // 一度この scope から入場した宣言のトリガは、同じ読みの中で**再び材料にならない**
+      // (同ファイル完了面の同条件と同じ規則 — KNest が選択済み宣言を記録するので
+      // `command_scope_selected` で判定できる)。command scope の結果キーは 1 つの器で
+      // あり、同一宣言の 2 回目の入場は着地先を持たない — 許すと同一 scope path・
+      // 同一 ordinal のマーカーが並び、occurrence を区別できない読みが完全経路として
+      // 数えられてしまう (issue dup-raw-command-ordinal-marker-occurrence-gap)。
+      if pos < ctx.toks.length() &&
+        ctx.toks[pos] == trigger &&
+        !command_scope_selected(acc, [name], ordinal) {
         let kk = KNest(
           name,
           ordinal,
