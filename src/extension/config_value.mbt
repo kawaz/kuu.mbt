@@ -4,7 +4,9 @@
 /// JSON-standard string form of a config number (DR-050 §4 stringification). An integer-valued
 /// double renders without a fractional part (1.0 → "1"); otherwise the decimal form (1.5 → "1.5").
 fn num_to_string(d : Double) -> String {
-  let i = d.to_int()
+  // `is_integer` と同じ理由で Int64 経由 — 32-bit 飽和だと 2^31 以上の整数値が
+  // 小数形で綴られ、config 由来の値だけ表記が変わる非対称になる。
+  let i = d.to_int64()
   if i.to_double() == d {
     i.to_string()
   } else {

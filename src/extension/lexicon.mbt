@@ -657,12 +657,31 @@ fn round_double_by_mode(d : Double, mode : @abi.RoundMode) -> Double {
 }
 
 ///|
+/// 指数の桁を Int へ。**飽和**する — 指数は外部入力で桁数に上限が無く、32-bit で
+/// 巻き上がると (a) 符号が反転して巨大な 0 埋め文字列の materialize に化ける
+/// (`1e2147483648` は wrap 後 exp=-2147483648 で約 2GB) (b) `1e4294967296` は exp=0 へ
+/// 巻き上がって値 1 として誤受理される、という 2 つの実害が出る。
+///
+/// 飽和は観測を変えない: binary64 の指数域 (~±308) も Int64 の桁数 (19) も遥かに超えた
+/// 領域なので、上限に張り付いた後の結果は飽和前と同じ (±inf / 0 / 範囲外 reject)。
+/// 上限は「桁ずらしの materialize が現実的な大きさに収まる」ことと「仮数側の桁で相殺されて
+/// 通常域へ戻る余地を残す」ことの両立で決める — CLI トークンに 100 万桁の仮数は入らない。
+const EXPONENT_MAGNITUDE_CAP : Int = 1_000_000
+
+///|
 fn digits_to_int(s : String) -> Int {
   let mut acc = 0
   for c in s {
+    if acc > EXPONENT_MAGNITUDE_CAP {
+      return EXPONENT_MAGNITUDE_CAP
+    }
     acc = acc * 10 + (c.to_int() - 48)
   }
-  acc
+  if acc > EXPONENT_MAGNITUDE_CAP {
+    EXPONENT_MAGNITUDE_CAP
+  } else {
+    acc
+  }
 }
 
 ///|
@@ -1093,5 +1112,8 @@ fn lower_code(c : Char) -> Int {
 /// a JSON-由来 native number is already binary64, so this seat判定 is binary64-based — the
 /// non-transit requirement applies to String源 only, handled by `parse_int_value`).
 fn is_integer(d : Double) -> Bool {
-  d.to_int().to_double() == d
+  // 判定は Int64 経由で行う — `to_int()` (32-bit) は 2^31 で飽和するため、2^31 以上の
+  // 整数値が非整数と誤判定され、config の native int や hex int の受理域がそこで切れる
+  // (DR-075 は binary64 が正確に表せる整数域 ±2^53 を保証する)。
+  d.to_int64().to_double() == d
 }
