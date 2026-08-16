@@ -861,3 +861,104 @@ test "dd decodes in both placements with the '--' name default (DR-064 §2/§5)"
     }
   }
 }
+
+///|
+/// DR-049 §3 の auto_env gate は「`env:` を明示しない**値セル持ち要素**」。`values` 糖衣が作る
+/// `Enum` body も 1 個のスカラ値セルを持つ (DESIGN §5.3: `values` は or の value-enum 形の
+/// ショートハンド) ので、単相 `Cell` と同じく env 席が立つ。構造子 (`Or` / `Group`) は単一の値
+/// スロットを持たないので立たない。
+test "env_auto covers Enum (values sugar) bodies, not just Cell (DR-049 §3)" {
+  let src =
+    #|{"config":{"env_prefix":"MYAPP","env_auto":true},"options":[{"name":"mode","values":["a","b"],"long":true}]}
+  let ast = match parse_definition(@json.parse(src)) {
+    Ok(ast) => ast
+    Err(_) => {
+      fail("definition was rejected")
+      return
+    }
+  }
+  let sources = value_sources(env=env_from_map({ "MYAPP_MODE": "a" }))
+  match test_resolve(ast, [], sources~) {
+    Success(binds) =>
+      assert_eq(
+        output(ast, binds).result,
+        @abi.Object([("mode", @abi.Scalar(@abi.String("a")))]),
+      )
+    Failure(_) => fail("the values-sugar option did not take its env seat")
+  }
+}
+
+///|
+/// DESIGN §7.2「子要素は親の config を継承、上書き可能。**子要素は command scope に限らない**」:
+/// 解決済み scope config は構造子 (named group / named seq / structural or) の配下の子要素にも
+/// 届く。DR-049 §3「スコープパスはフル修飾。衝突回避を優先し」に従い、結果スコープを 1 段作る
+/// 要素名が auto_env のスコープパスへ積まれる (無名の透過 carrier は積まない)。
+test "scope config reaches structural children with a fully qualified env path (DESIGN §7.2 / DR-049 §3)" {
+  let cases : Array[(String, String, Array[String])] = [
+    (
+      "named positional group",
+      (
+        #|{"config":{"env_prefix":"MYAPP","env_auto":true},"positionals":[{"name":"g","positionals":[{"name":"inner","type":"string"}]}]}
+      ),
+      ["MYAPP_G_INNER"],
+    ),
+    (
+      "named option seq",
+      (
+        #|{"config":{"env_prefix":"MYAPP","env_auto":true},"options":[{"name":"o","long":true,"seq":[{"name":"inner","type":"string"}]}]}
+      ),
+      ["MYAPP_O_INNER"],
+    ),
+    (
+      "named structural or",
+      (
+        #|{"config":{"env_prefix":"MYAPP","env_auto":true},"options":[{"name":"o","long":true,"or":[{"name":"inner","type":"string"}]}]}
+      ),
+      ["MYAPP_O_INNER"],
+    ),
+  ]
+  for case in cases {
+    let (label, src, expected) = case
+    let obj = match @json.parse(src).j_obj() {
+      Some(x) => x
+      None => {
+        fail(label + ": source is not an object")
+        return
+      }
+    }
+    let def = dec_definition(obj)
+    let found : Array[String] = []
+    for e in def.options {
+      collect_child_env_names(e, found)
+    }
+    for e in def.positionals {
+      collect_child_env_names(e, found)
+    }
+    assert_eq(found, expected)
+  }
+}
+
+///|
+/// 構造子配下の子要素だけの env 名を集める (構造子そのものは値セルを持たないので env 席が無い)。
+fn collect_child_env_names(
+  e : @engine.ElementDef,
+  out : Array[String],
+) -> Unit {
+  match e.body {
+    Group(items) =>
+      for item in items {
+        for name in item.env {
+          out.push(name)
+        }
+      }
+    Or(branches) =>
+      for branch in branches {
+        for item in branch.items {
+          for name in item.env {
+            out.push(name)
+          }
+        }
+      }
+    _ => ()
+  }
+}

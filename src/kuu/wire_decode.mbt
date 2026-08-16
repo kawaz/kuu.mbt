@@ -1620,7 +1620,14 @@ fn dec_template_body(
   match o.get("or") {
     Some(orj) => {
       allowed_keys(o, ["or"], "template body (or)")
-      match dec_or_structural(orj, shadows, extensions) {
+      match
+        dec_or_structural(
+          orj,
+          shadows,
+          extensions,
+          default_scope_config(),
+          [],
+        ) {
         Some(branches) => {
           let nodes : Array[@engine.Node] = []
           for br in branches {
@@ -1815,6 +1822,8 @@ fn dec_seq_structural(
   j : Json,
   shadows : Map[String, TypeShadow],
   extensions : @node.Registry,
+  config : ScopeConfig,
+  scope_path : Array[String],
 ) -> Array[@engine.ElementDef] raise DecodeSkip {
   let values = match j.j_arr() {
     Some(items) => items
@@ -1822,7 +1831,7 @@ fn dec_seq_structural(
   }
   let items : Array[@engine.ElementDef] = []
   for value in values {
-    items.push(dec_or_leaf(value, shadows, extensions~))
+    items.push(dec_or_leaf(value, shadows, extensions~, config~, scope_path~))
   }
   items
 }
@@ -1832,6 +1841,8 @@ fn dec_or_structural(
   j : Json,
   shadows : Map[String, TypeShadow],
   extensions : @node.Registry,
+  config : ScopeConfig,
+  scope_path : Array[String],
 ) -> Array[@engine.OrBranch]? raise DecodeSkip {
   let a = match j.j_arr() {
     Some(x) => x
@@ -1875,7 +1886,7 @@ fn dec_or_structural(
         }
         let its : Array[@engine.ElementDef] = []
         for ij in sa {
-          its.push(dec_or_leaf(ij, shadows, extensions~))
+          its.push(dec_or_leaf(ij, shadows, extensions~, config~, scope_path~))
         }
         its
       }
@@ -1887,9 +1898,9 @@ fn dec_or_structural(
         // 構造子として読む — `dec_positional` が name / export_key 付きの構造子を扱う唯一の
         // 経路で、透過段を挟んだ入れ子 (`{name, export_key:null, or:[...]}`) はこの形。
         if has_key(bo, "or") || has_key(bo, "positionals") {
-          [dec_positional(e, shadows, extensions~)]
+          [dec_positional(e, shadows, extensions~, config~, scope_path~)]
         } else {
-          [dec_or_leaf(e, shadows, extensions~)]
+          [dec_or_leaf(e, shadows, extensions~, config~, scope_path~)]
         }
     }
     branches.push({ id, items })
@@ -1911,6 +1922,21 @@ fn dec_or_structural(
 /// `default_fn:` は child wire 語彙に含まれない。遅延 invocation を子へ追加する判断は別途必要で、
 /// decode だけ通して黙って捨てない。
 fn dec_or_leaf(
+  j : Json,
+  shadows : Map[String, TypeShadow],
+  extensions? : @node.Registry = canonical_registry(),
+  config? : ScopeConfig = default_scope_config(),
+  scope_path? : Array[String] = [],
+) -> @engine.ElementDef raise DecodeSkip {
+  apply_scope_config(
+    dec_or_leaf_body(j, shadows, extensions~),
+    config,
+    scope_path,
+  )
+}
+
+///|
+fn dec_or_leaf_body(
   j : Json,
   shadows : Map[String, TypeShadow],
   extensions? : @node.Registry = canonical_registry(),
@@ -2046,10 +2072,30 @@ fn is_help_group_declaration(o : Map[String, Json]) -> Bool {
 }
 
 ///|
+/// DR-014 / DESIGN §7.2「子要素は親の config を継承、上書き可能。子要素は command scope に
+/// 限らない」: 要素自身の `config` を継承済み `config` の上にマージし、決まった値を自分と
+/// (`dec_option_body` の再帰を通して) 配下の構造子すべてへ焼き込む。
 fn dec_option(
   j : Json,
   shadows : Map[String, TypeShadow],
   extensions? : @node.Registry = canonical_registry(),
+  config? : ScopeConfig = default_scope_config(),
+  scope_path? : Array[String] = [],
+) -> DElem raise DecodeSkip {
+  let elem_config = element_scope_config(j, config, "option")
+  match dec_option_body(j, shadows, extensions~, elem_config, scope_path) {
+    DOpt(e) => DOpt(apply_scope_config(e, elem_config, scope_path))
+    DAlias(a) => DAlias(a)
+  }
+}
+
+///|
+fn dec_option_body(
+  j : Json,
+  shadows : Map[String, TypeShadow],
+  extensions? : @node.Registry = canonical_registry(),
+  config : ScopeConfig,
+  scope_path : Array[String],
 ) -> DElem raise DecodeSkip {
   let o = match j.j_obj() {
     Some(x) => x
@@ -2139,7 +2185,14 @@ fn dec_option(
   // 作らない透過 carrier として `name=""` を保持する一方、通常 option と value-enum `or` は
   // 引き続き name 必須である。
   let structural_or = match o.get("or") {
-    Some(orj) => dec_or_structural(orj, shadows, extensions)
+    Some(orj) =>
+      dec_or_structural(
+        orj,
+        shadows,
+        extensions,
+        config,
+        nested_scope_path(scope_path, jf_str(o, "name").unwrap_or("")),
+      )
     None => None
   }
   let structural = structural_or is Some(_) || has_key(o, "seq")
@@ -2487,7 +2540,16 @@ fn dec_option(
       hidden~,
       completer~,
       body=match o.get("seq") {
-        Some(seq) => Group(dec_seq_structural(seq, shadows, extensions))
+        Some(seq) =>
+          Group(
+            dec_seq_structural(
+              seq,
+              shadows,
+              extensions,
+              config,
+              nested_scope_path(scope_path, name),
+            ),
+          )
         None =>
           match structural_or {
             Some(branches) => Or(branches)
@@ -2508,10 +2570,29 @@ fn dec_option(
 }
 
 ///|
+/// DESIGN §7.2 の子要素 config 継承、positional 版 (`dec_option` と対称)。
 fn dec_positional(
   j : Json,
   shadows : Map[String, TypeShadow],
   extensions? : @node.Registry = canonical_registry(),
+  config? : ScopeConfig = default_scope_config(),
+  scope_path? : Array[String] = [],
+) -> @engine.ElementDef raise DecodeSkip {
+  let elem_config = element_scope_config(j, config, "positional")
+  apply_scope_config(
+    dec_positional_body(j, shadows, extensions~, elem_config, scope_path),
+    elem_config,
+    scope_path,
+  )
+}
+
+///|
+fn dec_positional_body(
+  j : Json,
+  shadows : Map[String, TypeShadow],
+  extensions? : @node.Registry = canonical_registry(),
+  config : ScopeConfig,
+  scope_path : Array[String],
 ) -> @engine.ElementDef raise DecodeSkip {
   let o = match j.j_obj() {
     Some(x) => x
@@ -2544,7 +2625,9 @@ fn dec_positional(
   // positionals — that's an option-only constraint-declaration sugar, §5.3).
   match o.get("positionals") {
     Some(pj) =>
-      return dec_positional_group(o, pj, shadows, extensions, owned.repeat)
+      return dec_positional_group(
+        o, pj, shadows, extensions, owned.repeat, config, scope_path,
+      )
     None => ()
   }
   match o.get("seq") {
@@ -2574,7 +2657,15 @@ fn dec_positional(
           collector=owned.collector,
           export_~,
         ),
-        body: Group(dec_seq_structural(sj, shadows, extensions)),
+        body: Group(
+          dec_seq_structural(
+            sj,
+            shadows,
+            extensions,
+            config,
+            nested_scope_path(scope_path, name),
+          ),
+        ),
       }
     }
     None => ()
@@ -2607,7 +2698,14 @@ fn dec_positional(
   }
   match o.get("or") {
     Some(orj) =>
-      match dec_or_structural(orj, shadows, extensions) {
+      match
+        dec_or_structural(
+          orj,
+          shadows,
+          extensions,
+          config,
+          nested_scope_path(scope_path, jf_str(o, "name").unwrap_or("")),
+        ) {
         Some(branches) => {
           // DESIGN §2.3 / DR-025: `name` を持つ positional の or も 1 段の結果スコープを作る
           // (option 直下の or と対称)。旧実装はここで無条件に `pos("")` へ潰しており、
@@ -2885,6 +2983,8 @@ fn dec_positional_group(
   shadows : Map[String, TypeShadow],
   extensions : @node.Registry,
   repeat : @abi.RepeatSpec?,
+  config : ScopeConfig,
+  scope_path : Array[String],
 ) -> @engine.ElementDef raise DecodeSkip {
   let name = match jf_str(o, "name") {
     Some(s) => s
@@ -2897,7 +2997,15 @@ fn dec_positional_group(
   }
   let items : Array[@engine.ElementDef] = []
   for ij in inner_arr {
-    items.push(dec_positional(ij, shadows, extensions~))
+    items.push(
+      dec_positional(
+        ij,
+        shadows,
+        extensions~,
+        config~,
+        scope_path=nested_scope_path(scope_path, name),
+      ),
+    )
   }
   {
     ..pos(
@@ -3066,6 +3174,72 @@ fn auto_env_name(
 }
 
 ///|
+/// DR-014 / DESIGN §7.2「個々の `options` / `positionals` 要素自身も `config` オブジェクトを持て、
+/// その要素だけスコープの値を上書きできる」: 要素の生 JSON から自分の `config` を読み、継承済み
+/// `parent` の上に `dec_scope_config` でマージする (階層マージのロジックを要素レベルへ 1 段延長する
+/// だけで、別実装は持たない)。`config` を持たない要素は `parent` の恒等射。
+fn element_scope_config(
+  j : Json,
+  parent : ScopeConfig,
+  what : String,
+) -> ScopeConfig raise DecodeSkip {
+  match j.j_obj() {
+    Some(o) =>
+      match o.get("config") {
+        Some(cj) =>
+          match cj.j_obj() {
+            Some(co) => dec_scope_config(co, parent)
+            None => raise DecodeSkip(what + " config is not an object")
+          }
+        None => parent
+      }
+    None => parent
+  }
+}
+
+///|
+/// DR-049 §3「スコープパスはフル修飾。衝突回避を優先し」: 結果スコープを 1 段作る要素
+/// (named group / named seq / named or) の下では、その要素名を auto_env のスコープパスへ積む。
+/// 無名の透過 carrier (`name` が `""` の structural or / seq) は結果スコープを作らないので
+/// パスも伸びない。
+fn nested_scope_path(scope_path : Array[String], name : String) -> Array[String] {
+  if name == "" {
+    scope_path
+  } else {
+    let out : Array[String] = []
+    for s in scope_path {
+      out.push(s)
+    }
+    out.push(name)
+    out
+  }
+}
+
+///|
+/// 解決済み scope config を 1 要素へ焼き込む — option 表面 config (DR-096 の軸別キー) の
+/// 5 フィールドと env 軸 (DR-049 §3/§4) の 2 効果。トップレベル配列の要素にも構造子配下の
+/// 子要素にも同じものを適用する (DESIGN §7.2 の『子要素』は command scope に限らない)。
+fn apply_scope_config(
+  e : @engine.ElementDef,
+  config : ScopeConfig,
+  scope_path : Array[String],
+) -> @engine.ElementDef {
+  apply_env_config(
+    {
+      ..e,
+      long_prefix: config.long_prefix,
+      short_prefix: config.short_prefix,
+      long_eq_sep: config.long_eq_sep,
+      short_combine: config.short_combine,
+      short_attached_value: config.short_attached_value,
+    },
+    config.env_prefix,
+    config.auto_env,
+    scope_path,
+  )
+}
+
+///|
 /// DR-049 §3/§4: applies THIS scope's resolved `env_prefix`/`auto_env` to one option/positional
 /// element. Two independent effects (§4「明示 env: が auto_env に優先する」means these are mutually
 /// exclusive per element, not layered):
@@ -3075,9 +3249,12 @@ fn auto_env_name(
 ///   を省く" — the element is left byte-for-byte unchanged, preserving every pre-issue fixture that
 ///   declares `env:` with no scope config at all).
 /// - no explicit `env:` + `auto_env: true` (§3): derives the full name via `auto_env_name` — gated to
-///   `Cell` bodies only ("値セル持ち要素", DESIGN §7.2 line 842 — a `Or`/`Group`/`Enum` wrapper
-///   has no single value slot for a scalar env lookup to bind to, matcher/leaf-level auto_env is not
-///   specified anywhere and would be an invented extension).
+///   **値セル持ち要素** (DR-049 §3), i.e. `Cell` and `Enum` bodies. `Enum` is the `values` 糖衣
+///   (DESIGN §5.3: `values` は or の value-enum 形のショートハンド) and holds exactly one scalar
+///   value cell, so it binds an env lookup the same way `Cell` does. `Or` / `Group` are structural
+///   carriers with no single value slot and stay excluded. 無名要素 (positional exact 等、`name`
+///   が `""`) も除外する — §3 の導出は `UPPER(name)` を末尾 segment に要求するので、名前の無い
+///   要素からは env 名が導出できない (prefix だけの `MYAPP_` は名前ではない)。
 fn apply_env_config(
   e : @engine.ElementDef,
   env_prefix : String,
@@ -3094,7 +3271,7 @@ fn apply_env_config(
       }
       { ..e, env: prefixed }
     }
-  } else if auto_env && e.body is Cell {
+  } else if auto_env && e.name != "" && (e.body is Cell || e.body is Enum(_)) {
     { ..e, env: [auto_env_name(env_prefix, scope_path, e.name)] }
   } else {
     e
@@ -3234,45 +3411,11 @@ fn dec_definition(
         None => raise DecodeSkip("options is not an array")
       }
       for oj in a {
-        match dec_option(oj, shadows, extensions~) {
-          DOpt(e) => {
-            // codex 節目レビュー Major 1 (DR-049 §4「その要素の config で env_prefix:"" を上書きする
-            // (DR-014 の階層継承で要素単位の上書きが可能)」/ DESIGN §7.2「子要素は親の config を
-            // 継承、上書き可能」の『子要素』は command scope に限らない): `dec_option` は要素の生
-            // JSON を `allowed_keys` 済み `Map[String, Json]` として保持しないので、要素単位の
-            // `config` はここ (呼び出し元) で `oj` を直接再読して取り出す — `dec_scope_config` を
-            // このスコープの `config` を親として要素の `config` に適用すれば、既存の階層マージ
-            // ロジックをそのまま要素レベルへ 1 段延長できる (別実装を持たない)。
-            let elem_config = match oj.j_obj() {
-              Some(oo) =>
-                match oo.get("config") {
-                  Some(ecj) => {
-                    let eco = match ecj.j_obj() {
-                      Some(x) => x
-                      None => raise DecodeSkip("option config is not an object")
-                    }
-                    dec_scope_config(eco, config)
-                  }
-                  None => config
-                }
-              None => config // 到達不能 (dec_option が既に object であることを検証済み)
-            }
-            options.push(
-              apply_env_config(
-                {
-                  ..e,
-                  long_prefix: elem_config.long_prefix,
-                  short_prefix: elem_config.short_prefix,
-                  long_eq_sep: elem_config.long_eq_sep,
-                  short_combine: elem_config.short_combine,
-                  short_attached_value: elem_config.short_attached_value,
-                },
-                elem_config.env_prefix,
-                elem_config.auto_env,
-                scope_path,
-              ),
-            )
-          }
+        // 要素単位の `config` override と配下構造子への焼き込みは `dec_option` が引き受ける
+        // (DESIGN §7.2 の『子要素』は command scope に限らない — 構造子配下の子要素も同じ
+        // 継承を受ける必要があるので、階層マージは decode の再帰と同じ経路を通す)。
+        match dec_option(oj, shadows, extensions~, config~, scope_path~) {
+          DOpt(e) => options.push(e)
           DAlias(al) => aliases.push(al)
         }
       }
@@ -3286,36 +3429,8 @@ fn dec_definition(
         None => raise DecodeSkip("positionals is not an array")
       }
       for pj in a {
-        let e = dec_positional(pj, shadows, extensions~)
-        // Major 1 と同じ要素単位 override、positional 版 (DESIGN §7.2「子要素」の対称範囲)。
-        let elem_config = match pj.j_obj() {
-          Some(po) =>
-            match po.get("config") {
-              Some(ecj) => {
-                let eco = match ecj.j_obj() {
-                  Some(x) => x
-                  None => raise DecodeSkip("positional config is not an object")
-                }
-                dec_scope_config(eco, config)
-              }
-              None => config
-            }
-          None => config // 到達不能 (dec_positional が既に object であることを検証済み)
-        }
         positionals.push(
-          apply_env_config(
-            {
-              ..e,
-              long_prefix: elem_config.long_prefix,
-              short_prefix: elem_config.short_prefix,
-              long_eq_sep: elem_config.long_eq_sep,
-              short_combine: elem_config.short_combine,
-              short_attached_value: elem_config.short_attached_value,
-            },
-            elem_config.env_prefix,
-            elem_config.auto_env,
-            scope_path,
-          ),
+          dec_positional(pj, shadows, extensions~, config~, scope_path~),
         )
       }
     }
