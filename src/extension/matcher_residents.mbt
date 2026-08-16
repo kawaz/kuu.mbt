@@ -730,24 +730,27 @@ fn walk_short(
         } else {
           @abi.Binding::new(e.name, @abi.Bool(true), @abi.Cli)
         }
+        // 経路化は複数 binding を返しうる (tuple scope link では器の shape seed が先頭に
+        // 積まれる)。`[0]` で先頭だけ取ると seed が presence を押しのけ、flag / count の
+        // presence 効果が脱落する — eq / short_val 側は配列をそのまま流しており非対称だった。
         let routed_presence = route_entry_bindings(
-            e.name,
-            e.link_target,
-            e.link_target_scope,
-            e.link_target_tuple_arities,
-            e.link_target_selections,
-            e.link_target_observation,
-            e.link_target_residual,
-            e.link_additional_levels,
-            [presence],
-          )[0]
+          e.name,
+          e.link_target,
+          e.link_target_scope,
+          e.link_target_tuple_arities,
+          e.link_target_selections,
+          e.link_target_observation,
+          e.link_target_residual,
+          e.link_additional_levels,
+          [presence],
+        )
         if combine || i + 1 == body.length() {
           walk_short(
             entries,
             combine,
             body,
             i + 1,
-            acc + ([routed_presence] + dm),
+            acc + (routed_presence + dm),
             ctx,
             pos,
           )
