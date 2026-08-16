@@ -341,6 +341,18 @@ fn CellFnDescriptor::parameter_value(
   index : Int,
   args : Array[String],
 ) -> Result[String, FnReason] {
+  // 末尾 `ZeroOrOne` パラメータは未充足でも invocation として妥当なので、`args[index]` が
+  // 範囲外になりうる。公開 ABI (外部 resident が任意の descriptor を持ち込める) なので
+  // abort ではなく Err で返す — builtin では発現しないが、境界を落とすのは呼び手の権利ではない。
+  if index >= args.length() {
+    return Err(
+      self.invalid_argument(
+        "observes template references parameter '" +
+        parameter.name +
+        "' but the invocation supplies no argument at that position",
+      ),
+    )
+  }
   match parameter.repetition {
     Once | ZeroOrOne => Ok(args[index])
     OneOrMore =>

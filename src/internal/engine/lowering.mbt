@@ -632,7 +632,11 @@ fn normalize_surface(def : Definition, extensions : Registry) -> Unit {
   }
   i = 0
   while i < def.positionals.length() {
-    def.positionals[i] = normalize_dd_name(def.positionals[i])
+    let normalized = normalize_dd_name(def.positionals[i])
+    def.positionals[i] = {
+      ..normalized,
+      default_values: composite_default_values(normalized),
+    }
     i = i + 1
   }
   for c in def.commands {
@@ -680,26 +684,8 @@ fn normalize_option(
         Some(value) => Some([value])
         None => None
       }
-    } else if !e.multiple && e.repeat is None && e.separator is None {
-      // DR-137/138: tuple (および tuple を葉に含む union) の JSON array default は、
-      // scalar セルへの「複合値 1 個」であり accumulator の複数 piece ではない。
-      // wire decode が一様配列へ展開した値を 1 値へ戻す。tuple を含まない宣言は
-      // 従来の複数 piece 経路のまま (DR-138 §9 — 単相セル / 非 tuple union の既存規定は無傷)。
-      match e.default_values {
-        Some(values) if values.length() != 1 =>
-          match e.ty.output_type() {
-            Some(declared) =>
-              if value_type_contains_tuple(declared) {
-                Some([@abi.Value::Array(values)])
-              } else {
-                Some(values)
-              }
-            None => Some(values)
-          }
-        supplied => supplied
-      }
     } else {
-      e.default_values
+      composite_default_values(e)
     }
     let default_fn2 = match e.default_fn {
       Some(call) => Some(call)
@@ -5234,6 +5220,33 @@ fn empty_target_is_container_capable(e : ElementDef) -> Bool {
 /// 宣言が tuple を (union の葉として、直接に) 含むか。tuple の JSON array default だけを
 /// 「複合値 1 個」へ戻すための判定 — 入れ子 union は葉集合へ平坦化して読む (DR-138 §1)。
 /// array / map / record の中身は別の器であり、その内側の tuple はセル値の形を変えない。
+/// DR-137/138: tuple (および tuple を葉に含む union) の JSON array default は、scalar セルへの
+/// 「複合値 1 個」であり accumulator の複数 piece ではない。wire decode が一様配列へ展開した値を
+/// 1 値へ戻す。tuple を含まない宣言は従来の複数 piece 経路のまま (DR-138 §9 — 単相セル /
+/// 非 tuple union の既存規定は無傷)。反復宣言子を持つ要素は piece 列が正なので対象外。
+///
+/// option / positional の**両方**が通る (option 側だけに掛けると、同じ tuple 宣言でも
+/// positional で書いた途端に default が invalid-range で誤爆する非対称になる)。
+fn composite_default_values(e : ElementDef) -> Array[Value]? {
+  if e.multiple || e.repeat is Some(_) || e.separator is Some(_) {
+    return e.default_values
+  }
+  match e.default_values {
+    Some(values) if values.length() != 1 =>
+      match e.ty.output_type() {
+        Some(declared) =>
+          if value_type_contains_tuple(declared) {
+            Some([@abi.Value::Array(values)])
+          } else {
+            Some(values)
+          }
+        None => Some(values)
+      }
+    supplied => supplied
+  }
+}
+
+///|
 fn value_type_contains_tuple(declared : ValueType) -> Bool {
   match declared {
     Tuple(_) => true
