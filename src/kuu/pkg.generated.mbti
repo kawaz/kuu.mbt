@@ -33,9 +33,13 @@ pub fn env_from_map(Map[String, String]) -> (String) -> String?
 
 pub fn fixture_color_type() -> &@extension.TypeExt
 
+pub fn fixture_deep_shape_type() -> &@extension.TypeExt
+
 pub fn fixture_int_range_type() -> &@extension.TypeExt
 
 pub fn fixture_json_type() -> &@extension.TypeExt
+
+pub fn fixture_nested_type() -> &@extension.TypeExt
 
 pub fn fixture_pair_type() -> &@extension.TypeExt
 

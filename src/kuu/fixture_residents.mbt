@@ -270,11 +270,49 @@ impl @extension.TypeExt for FixturePairType with fn output_type(_self) {
 
 ///|
 impl @extension.TypeExt for FixturePairType with fn parse_token(_self, token) {
-  Err({
-    disposition: @abi.ValueSpaceMiss,
-    reason: "not_a_pair",
-    message: "value \"\{token}\" is not a pair",
-  })
+  fn reject() -> Result[@abi.Value, @abi.TypeParseFail] {
+    Err({
+      disposition: @abi.ValueSpaceMiss,
+      reason: "not_a_pair",
+      message: "value \"\{token}\" is not a pair (A,B / A, / ,B)",
+    })
+  }
+
+  // fixture/int_range と同型の表層規則 — 最初の `,` で 1 回だけ分割し `A,B` / `A,` / `,B`
+  // の 3 形のみを決定的に受理する (バックトラックなし)。
+  let chars = token.to_array()
+  let mut split = -1
+  for index in 0..<chars.length() {
+    if chars[index] == ',' {
+      split = index
+      break
+    }
+  }
+  if split < 0 {
+    return reject()
+  }
+  let head = token[0:split].to_owned()
+  let tail = token[split + 1:].to_owned()
+  if head.length() == 0 && tail.length() == 0 {
+    return reject()
+  }
+  // 部分形は当該座を null とする長さ 2 の array を産出する (`5,` -> [5, null])。
+  // tuple の null 座は値空間の正常な住人であり、乖離 Error にならない (DR-137 §5 (c))。
+  // 完成判定は確定相の関心 (DR-138 §1 / §4)。
+  let items : Array[@abi.Value] = [@abi.Null, @abi.Null]
+  if head.length() > 0 {
+    match @extension.int_type().parse_token(head) {
+      Ok(value) => items[0] = value
+      Err(_) => return reject()
+    }
+  }
+  if tail.length() > 0 {
+    match @extension.int_type().parse_token(tail) {
+      Ok(value) => items[1] = value
+      Err(_) => return reject()
+    }
+  }
+  Ok(@abi.Array(items))
 }
 
 ///|
@@ -288,6 +326,111 @@ impl @extension.TypeExt for FixturePairType with fn default_seat_resolver(
 ///|
 pub fn fixture_pair_type() -> &@extension.TypeExt {
   FixturePairType::{  } as &@extension.TypeExt
+}
+
+///|
+/// DR-138 §1 `fixture/nested`: nested-union pin resident. `out` is
+/// [[tuple [fixture/int_range, int], bool], string] — a union whose variant is itself a
+/// union. Nested unions read as the flattened set of leaf variants (DR-138 §1: structural
+/// typing does not preserve variant identity in the value, so the nesting has no
+/// observation). The string form is not accepted (link-path pin only).
+priv struct FixtureNestedType {}
+
+///|
+impl @extension.TypeExt for FixtureNestedType with fn name(_self) {
+  "fixture/nested"
+}
+
+///|
+impl @extension.TypeExt for FixtureNestedType with fn has_value_slot(_self) {
+  true
+}
+
+///|
+impl @extension.TypeExt for FixtureNestedType with fn output_type(_self) {
+  Some(
+    @abi.ValueType::Union([
+      @abi.ValueType::Union([
+        @abi.ValueType::Tuple(["fixture/int_range", "int"]),
+        @abi.ValueType::Bool,
+      ]),
+      @abi.ValueType::String,
+    ]),
+  )
+}
+
+///|
+impl @extension.TypeExt for FixtureNestedType with fn parse_token(_self, token) {
+  Err({
+    disposition: @abi.ValueSpaceMiss,
+    reason: "not_nested",
+    message: "value \"\{token}\" is not a nested value",
+  })
+}
+
+///|
+impl @extension.TypeExt for FixtureNestedType with fn default_seat_resolver(
+  _self,
+  ctx,
+) {
+  ctx.declared()
+}
+
+///|
+pub fn fixture_nested_type() -> &@extension.TypeExt {
+  FixtureNestedType::{  } as &@extension.TypeExt
+}
+
+///|
+/// DR-138 §5 `fixture/deep_shape`: the nested counterpart of `fixture/shape`. The shared
+/// field `a` is itself a record-producing type (`fixture/int_range`), so the tie
+/// interpretations carry a nested null-fill difference ({a:{start,end:null}} vs
+/// {a:{...},b:null}, DR-130 §4.1 / §4.2 追補). The string form is not accepted.
+priv struct FixtureDeepShapeType {}
+
+///|
+impl @extension.TypeExt for FixtureDeepShapeType with fn name(_self) {
+  "fixture/deep_shape"
+}
+
+///|
+impl @extension.TypeExt for FixtureDeepShapeType with fn has_value_slot(_self) {
+  true
+}
+
+///|
+impl @extension.TypeExt for FixtureDeepShapeType with fn output_type(_self) {
+  Some(
+    @abi.ValueType::Union([
+      @abi.ValueType::Record([("a", "fixture/int_range")]),
+      @abi.ValueType::Record([("a", "fixture/int_range"), ("b", "int")]),
+    ]),
+  )
+}
+
+///|
+impl @extension.TypeExt for FixtureDeepShapeType with fn parse_token(
+  _self,
+  token,
+) {
+  Err({
+    disposition: @abi.ValueSpaceMiss,
+    reason: "not_a_deep_shape",
+    message: "value \"\{token}\" is not a deep shape",
+  })
+}
+
+///|
+impl @extension.TypeExt for FixtureDeepShapeType with fn default_seat_resolver(
+  _self,
+  ctx,
+) {
+  ctx.declared()
+}
+
+///|
+pub fn fixture_deep_shape_type() -> &@extension.TypeExt {
+  FixtureDeepShapeType::{  } as &@extension.TypeExt
 }
 
 ///|
@@ -309,5 +452,11 @@ pub fn install_conformance_fixture_residents(registry : @node.Registry) -> Unit 
   }
   guard registry.register_type(fixture_pair_type()) else {
     abort("duplicate fixture type resident name: fixture/pair")
+  }
+  guard registry.register_type(fixture_nested_type()) else {
+    abort("duplicate fixture type resident name: fixture/nested")
+  }
+  guard registry.register_type(fixture_deep_shape_type()) else {
+    abort("duplicate fixture type resident name: fixture/deep_shape")
   }
 }
