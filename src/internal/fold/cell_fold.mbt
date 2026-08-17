@@ -1084,9 +1084,19 @@ pub fn cull_union_cell(
                 last_seq[index] = seq
                 last_pos[index] = pos
               }
+              // SeatFault は「この枝の宣言形にその座が無い」= 当該枝へ着地しないだけ
+              // (DR-138 §2 — 非適合は Reject も Error も出さない)。単相セルの枝ローカル
+              // fold では宣言が 1 つしか無いので同じ fault が解決失敗になるが、ここでは
+              // 枝選別そのものであり、黙って落とすのが正しい。
               Err(_) => ()
             }
-          ToDefault | ToEmpty | NoChange | FnMissing(_) | FnFailed(_) => ()
+          // DR-138 §6: 書き込み自体の失敗は淘汰に吸わせず書き込み時に裁く。fn が**実行され
+          // て失敗した**のは型非適合 (= 着地しない) とは別位相で、丸ごと書き経路が 20 行上で
+          // WriteFailed を返すのと同一観測でなければならない — union に入れた途端に黙って
+          // 消える非対称を作らない。
+          FnFailed({ reason, message, .. }) =>
+            return WriteFailed(reason, message, pos)
+          ToDefault | ToEmpty | NoChange | FnMissing(_) => ()
         }
       }
     }

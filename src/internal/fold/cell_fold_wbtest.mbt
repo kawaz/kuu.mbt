@@ -688,3 +688,50 @@ test "cull_union_cell: 位置なし書き込みは最深位置に参加しない
   )
   assert_true(mixed is Incomplete(3))
 }
+
+///|
+/// 保証 (DR-138 §6 / §2 の別位相): union 宣言セルの **値残余座**への書き込みでも、
+///
+/// - **fn が実行されて失敗した**のは書き込み自体の失敗 → `WriteFailed` で書き込み時に裁く。
+///   丸ごと書き経路が同じ綴りを WriteFailed にするのと同一観測でなければならず、union に
+///   入れた途端に黙って消える非対称を作らない (旧実装はここだけ黙殺していた)
+/// - **SeatFault** (座がその枝の宣言形に無い) は型非適合と同じ「当該枝へ着地しないだけ」
+///   (§2 — 非適合は Reject も Error も出さない) なので、黙って落とすのが正しい。
+///   両者を混同すると枝選別そのものが失敗に化ける
+test "cull_union_cell: 値残余座でも fn の失敗は WriteFailed、SeatFault は非着地 (DR-138 §6/§2)" {
+  let registry = fold_test_registry()
+  let color : Array[@abi.ValueType] = [
+    @abi.ValueType::Tuple(["int", "int", "int"]),
+    @abi.ValueType::String,
+  ]
+
+  // 値残余座への Invoke で fn が Reject → 淘汰に吸わせず WriteFailed。
+  match
+    cull_union_cell(
+      "cell",
+      color,
+      [
+        {
+          ..fold_test_binding(@abi.Invoke({ name: "test/fail-run", args: [] })),
+          value_residual: [@abi.ObservationIndex(0)],
+        },
+      ],
+      registry,
+    ) {
+    WriteFailed(reason, _, _) => assert_eq(reason, "test-failure")
+    _ =>
+      abort("expected a failing cell fn on a value-space seat to surface as a write failure")
+  }
+
+  // string 枝には index 座が無い (SeatFault) が、それは非着地であって失敗ではない —
+  // tuple 枝だけが着地し、未完成なので Incomplete に落ちる (WriteFailed にはならない)。
+  assert_true(
+    cull_union_cell(
+      "cell",
+      color,
+      [cull_test_write(@abi.Number(0.0), [@abi.ObservationIndex(0)], 2)],
+      registry,
+    )
+    is Incomplete(2),
+  )
+}
