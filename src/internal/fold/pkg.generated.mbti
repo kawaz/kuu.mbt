@@ -7,6 +7,10 @@ import {
 }
 
 // Values
+pub fn cull_union_cell(String, Array[@abi.ValueType], Array[@abi.Binding], @extension.Registry, default_fall? : @abi.Value?) -> UnionCulling
+
+pub fn declared_type_at(@abi.ValueType?, ArrayView[@abi.ObservationSegment], @extension.Registry) -> @abi.ValueType?
+
 pub fn firing_cell_key(Array[String], String) -> String
 
 pub fn fold_seat_effect(@abi.Binding, @abi.Value?, String, @extension.Registry) -> (SeatTransition, Bool)
@@ -20,6 +24,8 @@ pub fn residual_terminal_structural(@abi.ValueType?, ArrayView[@abi.ObservationS
 pub fn seat_after(SeatTransition, @abi.Value?) -> SeatState?
 
 pub fn seat_fault_message(SeatFault) -> String
+
+pub fn union_leaf_variants(Array[@abi.ValueType]) -> Array[@abi.ValueType]
 
 // Errors
 
@@ -83,6 +89,21 @@ pub(all) enum SeatTransition {
   NoChange
   FnMissing(String)
   FnFailed(@extension.FnReason)
+}
+
+pub(all) struct UnionCandidate {
+  variant_index : Int
+  value : @abi.Value
+  last_seq : Int
+  last_pos : Int
+}
+
+pub(all) enum UnionCulling {
+  NoWrites
+  Incomplete(Int)
+  Winner(UnionCandidate)
+  Tie(Array[UnionCandidate])
+  WriteFailed(String, String, Int)
 }
 
 // Type aliases

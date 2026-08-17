@@ -11,8 +11,8 @@ set positional-arguments
 
 # `moon info` の対象パッケージ / その生成物。CI の「Check public interface drift」job と
 # 同一の集合を保つ (片方だけ増やすと drift 検査に穴が空く)。
-mbti_packages := "src/abi src/extension src/internal/engine src/kuu-node src/builtins src/kuu"
-mbti_files := "src/abi/pkg.generated.mbti src/extension/pkg.generated.mbti src/internal/engine/pkg.generated.mbti src/kuu-node/pkg.generated.mbti src/builtins/pkg.generated.mbti src/kuu/pkg.generated.mbti"
+mbti_packages := "src/abi src/extension src/internal/engine src/internal/fold src/kuu-node src/builtins src/kuu"
+mbti_files := "src/abi/pkg.generated.mbti src/extension/pkg.generated.mbti src/internal/engine/pkg.generated.mbti src/internal/fold/pkg.generated.mbti src/kuu-node/pkg.generated.mbti src/builtins/pkg.generated.mbti src/kuu/pkg.generated.mbti"
 
 # default: lint + test
 default: lint test
