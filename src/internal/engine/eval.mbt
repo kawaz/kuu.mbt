@@ -2305,37 +2305,6 @@ fn req_arg_eval(
 }
 
 ///|
-/// One Set-effect binding per split piece (spec DR-034 + DR-045). `piece_filters` runs per PIECE (not
-/// once over the whole raw token) — DESIGN §6.2's pieceProcessor applies piece_filters AFTER the
-/// separator split, one piece at a time (this is what distinguishes `per-piece-trim.json` from a
-/// "trim the whole raw string first" misreading). AFTER piece_filters, each piece goes through its
-/// OWN type parse (issue 2026-07-09-separator-non-string-type-parse-gap 段2 — DESIGN §6.2's
-/// pieceProcessor: separator → piece_filters → parse → value_filters (each piece) → once the value
-/// is committed, final_filters (non-accum element) or, after accumulation, accum_filters (accum
-/// element); a piece's
-/// type is independent of whether it came via separator, `element_head`'s pre-段2 "always String"
-/// shortcut was the bug this closes). A piece_filters reject OR a type-parse failure on ANY piece
-/// fails the WHOLE binding (`Err` short-circuits) — same all-or-nothing contract a single-piece
-/// value primitive has; the two failure kinds stay distinct (`Filter` vs `Parse`, mirrored from
-/// the scalar value-primitive arms' own filter/type-parse split).
-/// `pos` (issue 2026-07-09-accum-entity-filters-wiring): every split piece is attributed to the
-/// SAME args token position — a piece is not itself a token, so there is no finer-grained position
-/// to give it (CONFORMANCE §3's piece-attribution regulation attributes per-piece failures to the
-/// whole token they came from, per `multiple-parse/filters-each.json::separator-piece-rejects-whole`
-/// and `separator-typed.json::option-separator-piece-parse-rejected`).
-/// `merge` (DR-080 波及節): whether `name`'s element declared `accumulator: "merge"` — the marker
-/// vocabulary (`classify_merge_piece`) only applies to a merge-declared element's pieces (DR-080
-/// §1 "マーカー語彙は accumulator=merge を宣言した要素の CLI 発火 piece 列にのみ適用"). When false,
-/// every piece is treated as a plain add (`Add(part)`, no classification) — degenerates to the
-/// pre-DR-080 behavior exactly (no piece is ever `-`/`@`-prefixed specially for append etc).
-/// `sep` is `String?`, not `String` (codex Medium 追従): `None` = no declared separator, DR-034
-/// §6.3's degenerate form — `tok` itself is the ONE piece (`[tok]`), never split. A non-merge
-/// element with no separator never reaches this function at all (`value_prim`'s routing still
-/// gates on `separator is Some(_) || merge`); a MERGE element with no separator DOES reach here
-/// now, precisely so its single-piece operand still runs through `classify_merge_piece` (a bare
-/// `--fields -a` needs to recognize `-a` as a remove marker even with no comma to split on).
-
-///|
 /// Prepend the `{}` presence marker to each Accept.
 fn mark_scope(
   name : String,

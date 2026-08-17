@@ -1674,21 +1674,36 @@ test "installer order invariance over the fixture corpus (DR-042 §5)" {
 /// 同じ不正値が option や入れ子では素通りしていた。
 test "repeat min > max is a definition error wherever it is declared (DR-054 §1/§4)" {
   let cases : Array[(String, String)] = [
-    ("toplevel positional", (
-      #|{"positionals":[{"name":"a","type":"string","repeat":{"min":3,"max":1}}]}
-    )),
-    ("toplevel option", (
-      #|{"options":[{"name":"a","type":"string","long":true,"repeat":{"min":3,"max":1}}]}
-    )),
-    ("named group child", (
-      #|{"positionals":[{"name":"g","positionals":[{"name":"a","type":"string","repeat":{"min":3,"max":1}}]}]}
-    )),
-    ("or branch leaf", (
-      #|{"options":[{"name":"o","long":true,"or":[{"name":"a","type":"string","repeat":{"min":3,"max":1}},{"name":"b","type":"string"}]}]}
-    )),
-    ("option under a command", (
-      #|{"commands":[{"name":"c","options":[{"name":"a","type":"string","long":true,"repeat":{"min":3,"max":1}}]}]}
-    )),
+    (
+      "toplevel positional",
+      (
+        #|{"positionals":[{"name":"a","type":"string","repeat":{"min":3,"max":1}}]}
+      ),
+    ),
+    (
+      "toplevel option",
+      (
+        #|{"options":[{"name":"a","type":"string","long":true,"repeat":{"min":3,"max":1}}]}
+      ),
+    ),
+    (
+      "named group child",
+      (
+        #|{"positionals":[{"name":"g","positionals":[{"name":"a","type":"string","repeat":{"min":3,"max":1}}]}]}
+      ),
+    ),
+    (
+      "or branch leaf",
+      (
+        #|{"options":[{"name":"o","long":true,"or":[{"name":"a","type":"string","repeat":{"min":3,"max":1}},{"name":"b","type":"string"}]}]}
+      ),
+    ),
+    (
+      "option under a command",
+      (
+        #|{"commands":[{"name":"c","options":[{"name":"a","type":"string","long":true,"repeat":{"min":3,"max":1}}]}]}
+      ),
+    ),
   ]
   for case in cases {
     let (label, src) = case

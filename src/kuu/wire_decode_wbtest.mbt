@@ -821,18 +821,30 @@ test "dec_or_leaf rejects unopened structural child value-source keys" {
 /// `-x` を positional へ raw 消費させることを実行結果で確認する。
 test "dd decodes in both placements with the '--' name default (DR-064 §2/§5)" {
   let defs : Array[(String, String)] = [
-    ("options + explicit name", (
-      #|{"positionals":[{"name":"p","type":"string"}],"options":[{"name":"--","type":"dd"}]}
-    )),
-    ("options + name omitted", (
-      #|{"positionals":[{"name":"p","type":"string"}],"options":[{"type":"dd"}]}
-    )),
-    ("positionals + explicit name", (
-      #|{"positionals":[{"name":"--","type":"dd"},{"name":"p","type":"string"}],"options":[]}
-    )),
-    ("positionals + name omitted", (
-      #|{"positionals":[{"type":"dd"},{"name":"p","type":"string"}],"options":[]}
-    )),
+    (
+      "options + explicit name",
+      (
+        #|{"positionals":[{"name":"p","type":"string"}],"options":[{"name":"--","type":"dd"}]}
+      ),
+    ),
+    (
+      "options + name omitted",
+      (
+        #|{"positionals":[{"name":"p","type":"string"}],"options":[{"type":"dd"}]}
+      ),
+    ),
+    (
+      "positionals + explicit name",
+      (
+        #|{"positionals":[{"name":"--","type":"dd"},{"name":"p","type":"string"}],"options":[]}
+      ),
+    ),
+    (
+      "positionals + name omitted",
+      (
+        #|{"positionals":[{"type":"dd"},{"name":"p","type":"string"}],"options":[]}
+      ),
+    ),
   ]
   for entry in defs {
     let (label, src) = entry
@@ -940,10 +952,7 @@ test "scope config reaches structural children with a fully qualified env path (
 
 ///|
 /// 構造子配下の子要素だけの env 名を集める (構造子そのものは値セルを持たないので env 席が無い)。
-fn collect_child_env_names(
-  e : @engine.ElementDef,
-  out : Array[String],
-) -> Unit {
+fn collect_child_env_names(e : @engine.ElementDef, out : Array[String]) -> Unit {
   match e.body {
     Group(items) =>
       for item in items {

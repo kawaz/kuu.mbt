@@ -214,7 +214,11 @@ fn branch_fold_cell_failure(
 ) -> ParseError {
   {
     element: key,
-    args_pos: if deepest_pos >= 0 { deepest_pos } else { consumed_pos },
+    args_pos: if deepest_pos >= 0 {
+      deepest_pos
+    } else {
+      consumed_pos
+    },
     kind: Parse,
     reason,
     message,

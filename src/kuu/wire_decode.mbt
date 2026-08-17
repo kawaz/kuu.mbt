@@ -1621,13 +1621,7 @@ fn dec_template_body(
     Some(orj) => {
       allowed_keys(o, ["or"], "template body (or)")
       match
-        dec_or_structural(
-          orj,
-          shadows,
-          extensions,
-          default_scope_config(),
-          [],
-        ) {
+        dec_or_structural(orj, shadows, extensions, default_scope_config(), []) {
         Some(branches) => {
           let nodes : Array[@engine.Node] = []
           for br in branches {
@@ -2626,7 +2620,13 @@ fn dec_positional_body(
   match o.get("positionals") {
     Some(pj) =>
       return dec_positional_group(
-        o, pj, shadows, extensions, owned.repeat, config, scope_path,
+        o,
+        pj,
+        shadows,
+        extensions,
+        owned.repeat,
+        config,
+        scope_path,
       )
     None => ()
   }
@@ -3202,7 +3202,10 @@ fn element_scope_config(
 /// (named group / named seq / named or) の下では、その要素名を auto_env のスコープパスへ積む。
 /// 無名の透過 carrier (`name` が `""` の structural or / seq) は結果スコープを作らないので
 /// パスも伸びない。
-fn nested_scope_path(scope_path : Array[String], name : String) -> Array[String] {
+fn nested_scope_path(
+  scope_path : Array[String],
+  name : String,
+) -> Array[String] {
   if name == "" {
     scope_path
   } else {

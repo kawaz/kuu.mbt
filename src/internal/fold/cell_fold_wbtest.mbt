@@ -664,10 +664,9 @@ test "cull_union_cell: 位置なし書き込みは最深位置に参加しない
     color,
     [
       cull_test_write_unpositioned(@abi.Number(0.0), [@abi.ObservationIndex(0)]),
-      cull_test_write_unpositioned(
-        @abi.Number(255.0),
-        [@abi.ObservationIndex(1)],
-      ),
+      cull_test_write_unpositioned(@abi.Number(255.0), [
+        @abi.ObservationIndex(1),
+      ]),
     ],
     registry,
   )
@@ -679,10 +678,9 @@ test "cull_union_cell: 位置なし書き込みは最深位置に参加しない
     color,
     [
       cull_test_write(@abi.Number(0.0), [@abi.ObservationIndex(0)], 3),
-      cull_test_write_unpositioned(
-        @abi.Number(255.0),
-        [@abi.ObservationIndex(1)],
-      ),
+      cull_test_write_unpositioned(@abi.Number(255.0), [
+        @abi.ObservationIndex(1),
+      ]),
     ],
     registry,
   )
@@ -720,7 +718,9 @@ test "cull_union_cell: 値残余座でも fn の失敗は WriteFailed、SeatFaul
     ) {
     WriteFailed(reason, _, _) => assert_eq(reason, "test-failure")
     _ =>
-      abort("expected a failing cell fn on a value-space seat to surface as a write failure")
+      abort(
+        "expected a failing cell fn on a value-space seat to surface as a write failure",
+      )
   }
 
   // string 枝には index 座が無い (SeatFault) が、それは非着地であって失敗ではない —

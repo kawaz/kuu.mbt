@@ -1,4 +1,4 @@
-// firing_record.mbt — DR-114 §6.1「fn は発火時に 1 回」の配達席。
+// firing_record.mbt — DR-138 §6b-3「fn は発火ごとに 1 回だけ実行」の配達席。
 //
 // 勝ち枝確定後の 1 回の fold 実行 (値残余セル分は DR-127 §4.2 の枝ローカル fold の枝内実行結果を
 // そのまま引き継ぐ) が、発火 1 件ごとの結果を FiringRecord として記録し、effects 射影

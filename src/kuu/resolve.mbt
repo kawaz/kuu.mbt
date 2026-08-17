@@ -3393,12 +3393,6 @@ fn apply_requires_filter_with_export(
 // ── value-source ladder (slice `poc/installer.mbt`'s resolve_scope / resolve_scope_config) ───
 
 ///|
-/// A @abi.Value rendered as its comparison string (constraint value matching: integers print without
-/// the trailing `.0`). The resolve layer owns the result-object rendering; this is also the
-/// RequiresIf comparison form (moved here from eval.mbt, MDR-002 §3 table — this is resolve.mbt's
-/// canonical home; eval.mbt's `@engine.element_value` calls this file's copy, same package).
-
-///|
 /// A DR-066 ladder-fill Error: `element`/`args_pos` locate it like any @abi.ParseError; `at_pos` is the
 /// caller-supplied final position (env/config seat errors are not read at a token position — they
 /// surface after the path completed, the same conceptual point `eval_constraints` evaluates at, so
@@ -5416,5 +5410,3 @@ fn union_write_failure(
     path: seat.path,
   }
 }
-
-///|

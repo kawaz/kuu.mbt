@@ -1,4 +1,4 @@
-// installer.mbt — builtin parse_definition as a chain of installers (DR-042).
+// lowering.mbt — builtin parse_definition as a chain of installers (DR-042).
 //
 // UsefulAST (ElementDef / Definition / …) → AtomicAST (Scope / Node / Entity / …) を組み立てる lowering 層。
 // 各 installer は special vocab (long / short / env / dd / ...) を所有し、apply 時に (1) その vocab を
@@ -1117,22 +1117,6 @@ fn child_head(e : ElementDef) -> Node {
 }
 
 ///|
-/// positional face の lowering。repeat 要素 (DR-043) は Ref 再帰: template
-/// `name = Seq([head, Opt(Ref(name))])` を registry に登録し、spine には `min-1` mandatory + Ref
-/// (min >= 1 のみ — `Ref` 自体は必ず >= 1 head を消費する構造で「0 でもよい」を表現できない、
-/// `consume_head` に「0 なら silent stop」の分岐が無いため)。`min:0` の UNBOUNDED は代わりに
-/// `Many(head)` を直接積む (下記詳細)。bounded (max 有限) は Ref 再帰なしで BoundedTail に落ちる
-/// (LOWERING §B.8、min:0 は budget=max の BoundedTail が最初から正しく扱う)。dd 要素は spine に
-/// 載せない。
-///
-/// MDR-002 §CPS 規約: repeat はここでスパイン形 (positional の Ref / BoundedTail / ScopeNode /
-/// **Many**) にのみ正規化し、Or/Seq/Rooted 内部への埋め込みは生成しない (取り分選好の局所化を避け
-/// るため)。`Many` は `Ref`/`BoundedTail` と対称な取り分選好 (既定 greedy = 長い方から試す、
-/// `lazy:true` で反転 = 短い方から試す、`has_full_k` で pruning) を scope_consume 側に持つ spine 形
-/// (eval.mbt の `Many(inner, is_lazy) =>` アーム、"parity with Ref/BoundedTail 取り分選好 spec
-/// DR-043")。輪郭は fixtures/path-search/ambiguous-receptacles.json が固定する。
-
-///|
 /// DR-043 repeat lowering for a single positional `head` node, shared by `Cell` (head =
 /// `element_head(e)`) and `Or` (head = `Or(branch_node...)`, issue
 /// 2026-07-09-positional-or-repeat-lowering-gap: Or used to push `Or(nodes)` directly and
@@ -1221,6 +1205,20 @@ fn lower_repeat_head(
 }
 
 ///|
+/// positional face の lowering。repeat 要素 (DR-043) は Ref 再帰: template
+/// `name = Seq([head, Opt(Ref(name))])` を registry に登録し、spine には `min-1` mandatory + Ref
+/// (min >= 1 のみ — `Ref` 自体は必ず >= 1 head を消費する構造で「0 でもよい」を表現できない、
+/// `consume_head` に「0 なら silent stop」の分岐が無いため)。`min:0` の UNBOUNDED は代わりに
+/// `Many(head)` を直接積む (下記詳細)。bounded (max 有限) は Ref 再帰なしで BoundedTail に落ちる
+/// (LOWERING §B.8、min:0 は budget=max の BoundedTail が最初から正しく扱う)。dd 要素は spine に
+/// 載せない。
+///
+/// MDR-002 §CPS 規約: repeat はここでスパイン形 (positional の Ref / BoundedTail / ScopeNode /
+/// **Many**) にのみ正規化し、Or/Seq/Rooted 内部への埋め込みは生成しない (取り分選好の局所化を避け
+/// るため)。`Many` は `Ref`/`BoundedTail` と対称な取り分選好 (既定 greedy = 長い方から試す、
+/// `lazy:true` で反転 = 短い方から試す、`has_full_k` で pruning) を scope_consume 側に持つ spine 形
+/// (eval.mbt の `Many(inner, is_lazy) =>` アーム、"parity with Ref/BoundedTail 取り分選好 spec
+/// DR-043")。輪郭は fixtures/path-search/ambiguous-receptacles.json が固定する。
 fn lower_positional(
   def : Definition,
   registry : Map[String, Node],

@@ -3220,11 +3220,6 @@ test "DR-047 §5 end-to-end: fired_action (help) survives the post-filter @engin
   }
 }
 
-// ── DR-096 §3.3 (kawaz 裁定 2026-07-12): long_prefix / long_eq_sep decode (scope-level, team-lead
-// 裁定 2026-07-11: 正本は definition/scope の wire キー — 要素単位は未規定語彙のため不受理) ──────
-
-// ── issue scope-config-object-gap: DR-014 full 7-key config object + 階層継承 ─────
-
 ///|
 /// 保証 (issue type-none-support, DR-089 §2/§3): JSON fixture 上で `type` を省略した option が
 /// none として decode され、消費 0 の純トリガとして発火・resolve を通り、シンプルモードの結果には
@@ -3232,8 +3227,6 @@ test "DR-047 §5 end-to-end: fired_action (help) survives the post-filter @engin
 /// effects にも現れない (team-lead 裁定 2026-07-11: 観測は ParserContext/explains 層の管掌、値
 /// 空間なしの set エントリを発明しない — 内部表現は `flag_bare_true_variant` 再利用の @abi.Set +
 /// @abi.Bool(true) placeholder のままだが、`OutputView.effects` が none cell を除外する)。
-
-///|
 test "DR-089 end-to-end: an omitted-type option decodes to none, fires as a pure trigger, absent from result" {
   let src =
     #|{

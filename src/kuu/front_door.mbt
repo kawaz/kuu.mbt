@@ -978,8 +978,6 @@ fn projected_effect(
 }
 
 ///|
-
-///|
 /// 匿名 leaf (= 結果キー軸へ自分の綴りを供給しない子) の value binding は `key = ""` で立つ。
 /// この空キーは `is_sentinel` が構造 sentinel (`[]` / `{}`) と一緒に拾う鍵空間なので、effects
 /// 射影の sentinel gate がそのまま落とすと **匿名 leaf がセルへ書いた効果が観測から消える**。
