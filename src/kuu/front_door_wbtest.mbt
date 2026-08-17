@@ -718,7 +718,7 @@ test "front_door: 利用者が渡した tty 観測 bool が builtin/tty の defa
 /// 保証 (issue front-door-resolve-ref-repeat-row-drop, K カテゴリ調査 2026-07-16): a ref-template
 /// accum entity (`or` 枝 = seq(r,g,b) / string(colorname)、`multiple:"append"` + repeat) wraps its
 /// own row bindings one scope level deeper than its declaring scope (`ref_row_head`/`@engine.Scoped(e.name,
-/// ...)`, installer.mbt DR-078 §1) — `front_door.resolve` (= `resolve_scope_tree`) used to filter
+/// ...)`, lowering.mbt DR-078 §1) — `front_door.resolve` (= `resolve_scope_tree`) used to filter
 /// "this scope's own bindings" by an EXACT scope-path match, which silently dropped that one-level-
 /// deeper wrap (it is neither an exact-path binding nor a genuine `@engine.CommandSatisfied` command child)。
 /// `output.result` は fired ref+repeat cell の row を落とさず描画する。`kawaz/kuu` fixture

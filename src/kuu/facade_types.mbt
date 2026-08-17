@@ -38,7 +38,7 @@ pub struct Candidate {
 
 ///|
 /// CLI bindings produced by parse before value-source resolution.
-/// `firings` (DR-114 §6.1) is the parse-phase fold's per-firing execution ledger — a side payload
+/// `firings` (DR-138 §6b-3) is the parse-phase fold's per-firing execution ledger — a side payload
 /// outside the bindings' Eq/identity; `effects()`/`resolve()` consume it so a cell fn runs once.
 pub struct ParsedBindings {
   priv raw : Array[@abi.Binding]

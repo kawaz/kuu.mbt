@@ -90,9 +90,8 @@ fn decompose_words(
     Some(n) => if n < 0 || n > len { len } else { n }
   }
   let args_before : Array[String] = []
-  // 上限は min(effective, len) — effective==len でも 1..len の写しでよい
-  let end_before = if effective > len { len } else { effective }
-  for i = 1; i < end_before; i = i + 1 {
+  // `effective` は直上で [0, len] にクランプ済みなので、そのまま上限に使える。
+  for i = 1; i < effective; i = i + 1 {
     args_before.push(words[i])
   }
   let cursor_word : String = if effective < len { words[effective] } else { "" }

@@ -4,23 +4,13 @@
 // export-key collision detection (DR-073). node/value 依存のみ; eval からは経路確定後の後処理
 // として呼ばれる (MDR-002 §3 table).
 //
-// Ported from slice `poc/result.mbt` (full file) and the value-ladder portion of slice
-// `poc/installer.mbt` (`resolve_scope` / `resolve_scope_config` / `@extension.value_str` — NOT the lowering,
-// which stays installer.mbt's job).
-//
-// `@extension.value_str` used to live in eval.mbt for the RequiresIf constraint comparison — this is its
-// canonical home per the MDR-002 §3 module table; eval.mbt now calls this file's copy (single
-// package, no import needed across files).
-//
-// DR-074/075 update over the slice: env's string→@abi.Value conversion goes through the canonical
-// lexers (`@builtins.parse_number` / `parse_int_value` / `parse_bool`, value.mbt) instead of slice's
-// `env_value` which silently fell back to `@abi.String(s)` on a parse failure — a badly-typed env value
-// is now a DR-066 Error (reason `not_a_number` / `not_an_integer` / `not_a_bool`), never a
-// wrong-typed cell. `resolve_scope` / `resolve_scope_config` return `Result[.., @abi.ParseError]`
-// accordingly (slice's config-less `resolve_scope` could not error; it now can, from a bad env
-// value).
+// env の string→@abi.Value 変換は canonical な lexer (`@builtins.parse_number` /
+// `parse_int_value` / `parse_bool`、value.mbt) を通る (DR-074 / DR-075)。型の合わない env 値は
+// DR-066 の Error (reason `not_a_number` / `not_an_integer` / `not_a_bool`) になり、
+// 誤った型の値がセルに座ることは無い — したがって `resolve_scope_tree_with_export` /
+// `resolve_scope_config_with_export` は `Result[.., @abi.ParseError]` を返す。
 
-// ── result value + builder (slice `poc/result.mbt`) ──────────────────────────────────────────
+// ── result value + builder ───────────────────────────────────────────────────────────────────
 
 ///|
 fn str_contains(xs : Array[String], v : String) -> Bool {
@@ -51,7 +41,7 @@ fn is_sentinel(k : String) -> Bool {
 /// `resolve_scope_tree` が path 単位でしか sentinel を保存しない (each path=[] の here 抽出は
 /// `path_eq(b.scope, path)` に限定) 制約を補うための merge。**accum entity scope**
 /// (`@engine.Scoped(name, ...)` node、command でない = `resolve_scope_tree` の再帰対象外) 下の
-/// sentinel (`#row`/`#fire`、`installer.mbt` の `ref_row_head` / `inst_long` が発火時に付与) は
+/// sentinel (`#row`/`#fire`、`lowering.mbt` の `ref_row_head` / `inst_long` が発火時に付与) は
 /// `resolve_scope_tree` からは「path として枚挙されない」ため resolve 結果から落ちる — この
 /// 落ちた sentinel を元の CLI 生 binds から拾って resolve 済み binds に merge する。同一
 /// (key, scope) の sentinel が既に resolve 済み binds に居るなら skip (path=[] scope=[] の
@@ -993,9 +983,9 @@ fn build_result(
   types? : Array[TypeSeat] = [],
 ) -> @abi.ResultValue {
   // ROW-GROUP (DR-078 §1 ref テンプレ result 写像, issue 2026-07-09-ref-template-result-shape):
-  // a "#row" sentinel at this level (installer.mbt's `ref_row_head`) marks one repetition's row
+  // a "#row" sentinel at this level (lowering.mbt's `ref_row_head`) marks one repetition's row
   // boundary for a ref-template repeat cell — build one row (recursive build_result over that
-  // row's own flat leaf bindings) per "#row"-delimited run。"#fire" (installer.mbt's `inst_long`,
+  // row's own flat leaf bindings) per "#row"-delimited run。"#fire" (lowering.mbt's `inst_long`,
   // option repeat only) marks the start of ONE firing's contribution; multiple 無しの再発火は
   // セル丸ごと上書きなので (DR-034 の axis 分離、last-wins-repeat-rows.json), only the bindings
   // AFTER THE LAST "#fire" survive — with no "#fire" at all (a positional fires its repeat
@@ -1142,7 +1132,7 @@ fn build_result(
       // like `empty` (locks the ladder, `resolve_entity_raw`'s accum branch already rewrote this
       // binding's `source` to `@abi.Default` before it reached here, so the tag comes out right without
       // a default-specific branch on the source side). `update` never reaches this match —
-      // `installer.mbt`'s `collect_unsupported_accum_update` rejects a `multiple` element's
+      // `lowering.mbt`'s `collect_unsupported_accum_update` rejects a `multiple` element's
       // `update` variant at `parse_definition` time (static definition-error, not a runtime fold
       // check), so no @engine.Scope carrying this combination is ever built for `resolve`/`build_result`
       // to see.
@@ -2757,7 +2747,7 @@ fn eval_requires(
 /// Whether `sc.greedy` enters a genuine command scope named `name` (a `@engine.CommandSatisfied` node) — used by
 /// `resolve_scope_tree`'s pass-through below to tell a real child COMMAND scope apart from a
 /// ref-template accum entity's own one-level-deeper binding wrap (`ref_row_head`/`@engine.Scoped(e.name,
-/// ...)`, installer.mbt DR-078 §1). Only a `@engine.CommandSatisfied` name is a scope `resolve_scope_tree` should
+/// ...)`, lowering.mbt DR-078 §1). Only a `@engine.CommandSatisfied` name is a scope `resolve_scope_tree` should
 /// recurse the ladder into; anything else sharing the same "one level deeper" shape is CLI-origin
 /// material that must be passed through untouched instead.
 fn is_cmdsat_child(sc : @engine.Scope, name : String) -> Bool {
@@ -3070,7 +3060,7 @@ fn resolve_scope_tree_with_export_impl(
   // DR-078 §1 pass-through (issue front-door-resolve-ref-repeat-row-drop, K カテゴリ: front_door
   // 経由の repeat rows 行集約欠落): a ref-template accum entity (e.g. an `or`/`seq` ref option
   // with `repeat`/`multiple`) wraps its OWN row/fire bindings one scope level deeper than its
-  // declaring scope (`ref_row_head`/`@engine.Scoped(e.name, ...)`, installer.mbt) — `colorname`/`r`/`g`/
+  // declaring scope (`ref_row_head`/`@engine.Scoped(e.name, ...)`, lowering.mbt) — `colorname`/`r`/`g`/
   // `b`/`#row`/`#fire` all land at `scope = path + [e.name]`, never at `scope == path` itself. The
   // `here` filter above (exact `path_eq` match) therefore never sees them, and they are NOT a
   // genuine command-scope child either (`is_cmdsat_child` below rules that out) — without this
@@ -3282,7 +3272,7 @@ fn apply_requires_filter_with_export(
   tty : (String) -> Bool?,
   ek : @engine.ExportScopeMap,
   extensions : @node.Registry,
-  // DR-114 §6.1: parse_tree が配達した経路ごとの FiringRecord 台帳。候補経路の resolve も
+  // DR-138 §6b-3: parse_tree が配達した経路ごとの FiringRecord 台帳。候補経路の resolve も
   // record を消費して cell fn を再実行しない (経路の binds 構造等価で自分の ledger を引く)。
   firings? : @fold.FiringDeliveries,
 ) -> @engine.Outcome {
@@ -3390,7 +3380,7 @@ fn apply_requires_filter_with_export(
   }
 }
 
-// ── value-source ladder (slice `poc/installer.mbt`'s resolve_scope / resolve_scope_config) ───
+// ── value-source ladder (`resolve_scope_tree_with_export` / `resolve_scope_config_with_export`) ───
 
 ///|
 /// A DR-066 ladder-fill Error: `element`/`args_pos` locate it like any @abi.ParseError; `at_pos` is the
@@ -3697,7 +3687,7 @@ fn resolve_entity_raw(
   // `default`/`unset` need CLI-seat-level interpretation here (this loop), unlike the scalar
   // branch's full fold this stays a THIN pass — only `committed` tracking + 1 rewrite, the actual
   // clear-and-reaccumulate logic stays in build_result:
-  // - `update`: NEVER reaches this loop — `installer.mbt`'s `collect_unsupported_accum_update`
+  // - `update`: NEVER reaches this loop — `lowering.mbt`'s `collect_unsupported_accum_update`
   //   rejects a `multiple` element's `update` variant at `parse_definition` time (静的
   //   definition-error, DR-077 §2 の「transform でない・存在しない → definition-error」ファミリの
   //   3例目)。old = the cell's current value, which for an accum cell is the accumulated array
@@ -3771,7 +3761,7 @@ fn resolve_entity_raw(
   // last-winner (carrier の単一 `source` タグ) なので shadow を張らない (= None へ戻す)。
   let mut seat_shadow : @abi.ResultValue? = None
   let mut committed_now = false
-  // DR-114 §6.1: parse 相 fold の実行記録 (FiringRecord) の出現順カーソル。record 対象 binding
+  // DR-138 §6b-3: parse 相 fold の実行記録 (FiringRecord) の出現順カーソル。record 対象 binding
   // (`records_firing`) をこのセルの効果列順にカウントし、対応する record を引く。
   let firing_cursor = @fold.FiringCursor::new()
   for b in cli {
@@ -3831,7 +3821,7 @@ fn resolve_entity_raw(
         } else {
           None
         }
-        // DR-114 §6.1: parse 相 fold の実行記録があり、自席で計算した old と一致するなら fn を
+        // DR-138 §6b-3: parse 相 fold の実行記録があり、自席で計算した old と一致するなら fn を
         // 再実行しない (record の消費)。不一致 (parse/resolve に別の値源を渡した契約違反、または
         // ladder closure の縮退) は従来どおり再実行する — 未供給・不整合経路の現行挙動を
         // この値比較 gate が構造的に保つ。
@@ -4007,7 +3997,7 @@ fn resolve_entity_raw(
       // (「上位ラダー席まで解決した現在値」) であり、ここは effect mode (「発火直前の cell 値」)。
       // 下の `default_seat` が ladder を引くのは `default` 効果が明示発火した場合に限る (DR-081 §2)。
       let old = seats.old(e.name, default_scalar(e))
-      // DR-114 §6.1: record 消費 gate は値残余分岐と同じ (old 一致時のみ fn を再実行しない)。
+      // DR-138 §6b-3: record 消費 gate は値残余分岐と同じ (old 一致時のみ fn を再実行しない)。
       let (transition, _) = match firing_record {
         Some(record) if record.old_used == old =>
           (record.transition, record.old_consulted)
@@ -4429,7 +4419,7 @@ fn resolve_ladder_below_cli(
 ///|
 /// parse 相 fold (DR-127 §4.2 の枝ローカル fold / 裁定後の 1 回 fold) が明示 `default` 効果の
 /// 落ち先 (DR-081 §2 の書き換え済み default) を引くための ladder closure
-/// (`@engine.parse_tree` の `ladder?`、DR-114 §6.1 の一本化)。resolve 相の
+/// (`@engine.parse_tree` の `ladder?`、DR-138 §6b-3 の一本化)。resolve 相の
 /// `resolve_scope_config_with_export` と同じ素材 — config_file セルの cli > env > default 解決 →
 /// provider 読み → `resolve_ladder_below_cli` — を対象セルの scope についてだけ再現する。
 /// parse と resolve に同じ `ValueSources` を渡す契約 (facade doc) の下で両相の落ち先が一致する。

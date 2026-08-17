@@ -309,7 +309,7 @@ pub(all) struct ElementDef {
   // config (child key present → override, absent → 親の値を引き継ぐ — DESIGN §7.2「子要素は親の config を
   // 継承、上書き可能」), and bakes the resolved 7-key tuple onto every option/positional ElementDef
   // that scope owns (same "decode-time bake, no Definition-level config carrier" pattern DR-091 §3
-  // established for the original 2-field minimal implementation — installer.mbt itself never reads
+  // established for the original 2-field minimal implementation — lowering.mbt itself never reads
   // `config`, only these per-element fields). `long_prefix` (既定 `"--"`): the string `inst_long`
   // prepends to this element's own long spellings when building each trigger (`e.long_prefix + l`,
   // replacing the old hardcoded `"--" + l`) — every OTHER element in the same `Definition` keeps its

@@ -3,8 +3,9 @@
 // 効果列から「今この座に何が座っているか」を求める計算は、DR-045 の効果語彙・DR-114 §7 の
 // `ctx.old` 規範・DR-131 §7 の Sentinel 語彙が一体で決める 1 つの意味論であり、消費者は 3 つ:
 // `src/kuu/front_door.mbt` の effects 射影 (`projected_effect`)、`src/kuu/resolve.mbt` の
-// CLI seat 解決 (`resolve_entity_raw` の scalar fold)、`src/internal/engine/eval.mbt` の
-// 枝ローカル効果列 fold (DR-127 §4.2、裁定前の枝内解決可否判定)。複合値と vivify (DR-127 §3)
+// CLI seat 解決 (`resolve_entity_raw` の scalar fold) と union 淘汰 (`cull_union_bindings`)、
+// `src/internal/engine/branch_fold.mbt` の枝ローカル効果列 fold (DR-127 §4.2、裁定前の枝内
+// 解決可否判定)。複合値と vivify (DR-127 §3)
 // が絡むと独立実装は答えがずれ、conformance は effects と result の両方を pin しているため
 // 「両方が同時に間違っている」ずれを検出できない — だから 3 者が本モジュールの 1 つの fold を
 // 呼ぶ。engine (kuu パッケージの下流) からも呼べるよう、置き場は internal 共有パッケージで、
@@ -128,9 +129,11 @@ pub fn seat_after(
 /// `effect_cell_key` = scope path + `#` + 宣言名、`resolve_entity_raw` の CLI seat は
 /// 1 セルしか畳まないので宣言名そのもの)。
 ///
-/// 読み書きの口は `value_at` / `set_at` の 2 つだけである。**座そのものは空 segment 列という
-/// 特例**で、値空間 (DR-127 §2.2) へ降りる部分更新は同じ口に segment 列を渡した形になる —
-/// 降下の計算を 1 箇所へ集めておくと、vivify (DR-127 §3) を足すときに触る場所が 1 つで済む。
+/// **座そのものは空 segment 列という特例**で、値空間 (DR-127 §2.2) へ降りる部分更新は
+/// 読み書きの口に segment 列を渡した形になる — 降下の計算を集めておくと、vivify (DR-127 §3)
+/// を足すときに触る場所が限られる。口は素の `value_at` / `set_at` と、宣言型を伴う
+/// `value_at_declared` / `set_at_declared` (値残余の実運用はこちら)、および `old` / `put` /
+/// `resolved_residual` である。
 pub struct CellSeats {
   states : Map[String, SeatState]
 }

@@ -103,7 +103,7 @@ fn in_complete(ctx : Ctx) -> Bool {
 /// (`is_pattern=false`, same test `DdSatisfied` itself uses) or a compiled-regex unanchored search
 /// (`is_pattern=true`, `filters.mbt`'s `compile_regex`/`execute` — the SAME host-dialect compile
 /// path DR-085's `regex_match` filter uses, per DR-090 §2 "照合方言は host 実装準拠"). A pattern
-/// that fails to compile is treated as never-matching here (defensive — `installer.mbt`'s
+/// that fails to compile is treated as never-matching here (defensive — `lowering.mbt`'s
 /// `collect_invalid_dd_pattern` rejects an uncompilable `match` at definition time, so this arm
 /// should not actually see one in practice).
 fn dd_match_token(spelling : String, is_pattern : Bool, token : String) -> Bool {
@@ -2723,7 +2723,7 @@ fn is_zero_token_marker(node : Node) -> Bool {
 ///|
 /// DR-086 cut (issue values-decode-support、team-lead 裁定 2026-07-10「性質ベースの判定、
 /// lowering の生成 shape 追加で漏れないように」): greedy 衛星 `g` が「trigger を Exact 消費した
-/// 直後、値を1つ以上消費しうる継続」を持つ main entry (installer.mbt の `value_prim`/
+/// 直後、値を1つ以上消費しうる継続」を持つ main entry (lowering.mbt の `value_prim`/
 /// `enum_value_node` 由来) なら trigger 文字列を返す。具体的な値消費 shape
 /// (string resident/number resident/float resident/int resident/bool resident/separated resident/Or/...) を列挙する代わりに「継続の先頭要素が
 /// 0-token マーカーでない」という消極的な性質で判定する — lowering に新しい値消費 shape が
@@ -2744,7 +2744,7 @@ fn value_slot_trigger(g : Node) -> String? {
 
 ///|
 /// DR-086 cut: `value_slot_trigger` の対極 (fallback 側候補) — greedy 衛星 `g` が「trigger を
-/// Exact 消費した直後、0-token マーカーのみが (1個以上) 続く」形 (installer.mbt の
+/// Exact 消費した直後、0-token マーカーのみが (1個以上) 続く」形 (lowering.mbt の
 /// Set/Default/Unset/Empty variant lowering、fail_action 付き Set variant の
 /// `Bind, failure resident` 2連続を含む) なら trigger 文字列を返す。
 fn zero_arg_variant_trigger(g : Node) -> String? {
@@ -2808,7 +2808,7 @@ fn scope_step(
   // そちらだけを採用し、0引数 variant へ backtrack しない (DR-086 §1)。lowering 構造
   // (`build.greedy` に積む Node の個数・形) は一切変えず、ここ (経路探索へ投入する直前) でのみ
   // 読みを間引く — DR-086 §3「経路空間に投入される読みの数を減らす局所規則」の位置づけそのもの、
-  // node.mbt/installer.mbt には手を入れない (lowering query fixture への影響回避、team-lead
+  // node.mbt/lowering.mbt には手を入れない (lowering query fixture への影響回避、team-lead
   // 裁定 2026-07-10)。
   //   1st pass: 値スロット候補を先に評価し、Accept があった trigger を cut_triggers に記録する
   //   (Reject = Accept 0 の場合は記録しない — DR-086 §1「食えない場合は従来どおり引数なし枝が
@@ -2921,7 +2921,7 @@ fn scope_step(
 /// DR-104 §2/§3 origin fixup (complete 専用): the boundary Pending a bare `Exact` node builds
 /// (eval's `Exact` arm) has no way to see what follows it in the OWNING Seq, so it falls back to
 /// `origin = spelling` (e.g. `--port`). When that `Exact` is actually an option satellite's head
-/// (`Seq([Exact(trigger), tail, ..])`, installer.mbt's `inst_long` main-entry / variant-entry
+/// (`Seq([Exact(trigger), tail, ..])`, lowering.mbt's `inst_long` main-entry / variant-entry
 /// shapes), the real origin is the element name `tail` carries — `number resident`/`string resident`/etc.'s own
 /// name field for a value-typed main entry, `Bind`/`effect resident`'s name field for a variant entry
 /// (`--secret`/`--no-color`-style), or a `Scoped` wrap's label for a ref/repeat entry. Mirrors
@@ -3190,7 +3190,7 @@ fn step_greedy(
 }
 
 ///|
-/// Detect a `Seq([..prefix.., GreedyRepeat(tail)])` satellite shape (installer.mbt's option
+/// Detect a `Seq([..prefix.., GreedyRepeat(tail)])` satellite shape (lowering.mbt's option
 /// repeat lowering, DR-078 §1) — the prefix (trigger + any 0-token markers) evaluates plainly;
 /// `tail` needs `step_greedy_repeat`'s `sc`-aware treatment instead.
 fn greedy_repeat_split(g : Node) -> (Node, Node)? {
@@ -3494,7 +3494,7 @@ fn scope_consume(
     other =>
       // any other node as a positional item: consume it (codex 節目レビュー指摘3、issue
       // 2026-07-09-ref-template-result-shape: a ref element's mandatory-head-unrolled slot
-      // (installer.mbt's `ref_row_head`, `min > 1` positional repeat) is a COMPOUND node
+      // (lowering.mbt's `ref_row_head`, `min > 1` positional repeat) is a COMPOUND node
       // (Scoped/Seq/Or wrapping the referenced template's leaves) placed directly on the spine —
       // plain off-spine `eval` has no `Scope`, so it could never apply 先食い (DR-041 §4) to a
       // nested leaf. `consume_compound` (eval.mbt, shared with `consume_head`'s own catch-all)
@@ -3806,7 +3806,7 @@ fn consume_head(
 
 ///|
 /// Suppression-aware descent through the Or/Seq/Scoped/Ref/Bind shapes a `ref` element's
-/// template is built from (installer.mbt's `dec_template_body`/`ref_row_head`) — mirrors `eval`'s
+/// template is built from (`dec_template_body` は wire_decode.mbt、`ref_row_head` は lowering.mbt) — mirrors `eval`'s
 /// own Or/Seq combinators exactly, substituting `consume_head` (which DOES check `suppressed`)
 /// for `eval` at every primitive leaf. Any OTHER node shape (not expected inside a template body)
 /// falls back to plain `eval` — a terminal case, not mutual recursion with `consume_head`'s
@@ -4291,7 +4291,7 @@ fn scope_consume_rep(
         []
       }
     // codex 節目レビュー指摘3 (issue 2026-07-09-ref-template-result-shape): a ref element's
-    // UNBOUNDED min:0 repeat lowers to `Many(head, lazy)` (installer.mbt's `lower_repeat_head`) —
+    // UNBOUNDED min:0 repeat lowers to `Many(head, lazy)` (lowering.mbt's `lower_repeat_head`) —
     // `head` here is a COMPOUND node (Scoped/Seq/Or, `ref_row_head`'s wrap), never a bare
     // primitive. This catch-all used to degrade to plain off-spine `eval`, which has no `Scope`
     // and so could never apply 先食い (DR-041 §4) to a nested leaf (e.g. a sibling trigger, or a
@@ -4963,7 +4963,7 @@ pub fn parse_tree(
   defs? : Map[String, Node] = Map([]),
   faildef? : FailDef = WithHeld,
   extensions? : Registry = Registry::new(),
-  // DR-114 §6.1 の一本化 (W2-9 findings「実行一本化の設計」): `ladder` は明示 `default` 効果の
+  // DR-138 §6b-3 の一本化 (W2-9 findings「実行一本化の設計」): `ladder` は明示 `default` 効果の
   // 落ち先 (DR-081 §2 の書き換え済み default) を parse 相 fold へ供給する closure (呼び手 =
   // front_door が値源 provider で実装する)。`firings` は勝ち経路 (dedup 後の完全経路) ごとの
   // FiringRecord 台帳の配達口 — 値残余セル分は枝ローカル fold の枝内実行結果を引き継ぎ、
@@ -5005,7 +5005,7 @@ pub fn parse_tree(
   // 落ちる理由は token 残余として既に観測されている。
   let mut seat_decls : Map[String, Array[SeatDecl]]? = None
   // 完全枝ごとの枝ローカル fold の実行記録 (folded と並走)。勝ち枝の ledger は裁定後に
-  // firings へ配達され、値残余セルの fn を再実行しない (DR-114 §6.1)。
+  // firings へ配達され、値残余セルの fn を再実行しない (DR-138 §6b-3)。
   let branch_ledgers : Array[@fold.FiringLedger?] = []
   let branches = {
     let folded : Array[Branch] = []
@@ -5247,7 +5247,7 @@ pub fn parse_tree(
     errors2.push(e)
   }
   let errors = errors2
-  // DR-114 §6.1: 勝ち候補ごとの FiringRecord 台帳を配達する。値残余セル分は枝ローカル fold の
+  // DR-138 §6b-3: 勝ち候補ごとの FiringRecord 台帳を配達する。値残余セル分は枝ローカル fold の
   // 枝内実行結果 (branch_ledgers) を引き継ぎ、値残余の無い Invoke セルは裁定後のこの 1 回の
   // fold (`branch_fold_plain_records`) で実行・記録する。
   match firings {

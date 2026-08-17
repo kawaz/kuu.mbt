@@ -141,7 +141,7 @@ fn help_meta_from_object(o : Map[String, Json]) -> @abi.HelpMetaDeclaration {
     render_effective: None,
     value_structure_style: jf_str(o, "help_value_structure_style"),
     // DR-117 §2.6: `insert_form` の生値を carry — 検査 (enum / type / 食い違い) は
-    // `collect_completion_script_errors` (builtins/installer.mbt) が行う。ここは decode-time の
+    // `collect_completion_script_errors` (lowering.mbt) が行う。ここは decode-time の
     // 型不一致 (非 string) だけ弾き、それ以外は生文字列を通す (help_on_failure と同型)。
     completion_insert_form_declared: match o.get("insert_form") {
       Some(v) => v.j_str()
@@ -561,7 +561,7 @@ fn dd_marker(
 /// nameless exact-match leaf (`{"exact": "init"}`, DR-063 A.1 裸文字列→exact 正規化 / DR-018 配置で
 /// 役割決定 — dec_positional の裸 `"exact"` 分岐から作る)。`is_dd`/`dd_marker` と同じ carrier
 /// パターン — `name` が trigger 綴りを運び (`is_exact` の doc comment 参照)、`@engine.element_head`
-/// (installer.mbt) が `@engine.Exact(name)` へ直接 lower する (value_prim/entity 経路を通らない、
+/// (lowering.mbt) が `@engine.Exact(name)` へ直接 lower する (value_prim/entity 経路を通らない、
 /// `ensure_entities` が is_dd と同じガードでスキップする)。`ty: @builtins.none_type()` は値空間を持たない照合消費
 /// (dd_marker の `ty: @builtins.string_type()` と違うのは、dd が「捨てるが型タグは要る」旧経路の名残であるのに対し
 /// exact literal は値スロット自体が最初から無いため — DR-089 §2「type 省略 = none の糖衣」と同じ既定
@@ -796,25 +796,17 @@ fn jf_str(o : Map[String, Json], key : String) -> String? {
 }
 
 ///|
-/// DR-067 §2 name/id 構文制約 (codex 節目レビュー指摘1, issue 2026-07-09-ref-template-result-shape):
-/// `#` を含む name/id はユーザ定義で禁止 — repeat lowering の内部 template キー
-/// (`e.name + "#cons"`, installer.mbt `lower_repeat_head`)・`next_or_branch_id`'s 自動採番
-/// ("#0"/"#1"/…)・resolve.mbt の row/fire sentinel ("#row"/"#fire") が共有する予約名前空間
-/// (DR-046 §4)。id 未指定なら name が id を兼ねる (DR-046 §2) ため name にも同じ制約が及ぶ — ここを
-/// enforce しないと `{"name": "src#cons"}` のような wire がその内部キーと衝突しうる。既存の decode
-/// error と同じ語彙 (`raise DecodeSkip`) で reject する。呼び出し側は name/id を読んだ「その場」で
-/// これを通す (missing チェックの直後、他フィールドの decode より前 — 診断が name/id の妥当性で早期
-/// に止まるようにする)。
-/// DR-046 §1/§2: 明示 `id` を読む。未宣言なら `None` — その要素の参照識別子は name が供給する
-/// (`@engine.ElementDef::reference_identifier`)。予約名前空間の検査は name と同じ (DR-067 §2 は
-/// name/id の両方を縛る)。
 /// DR-136 §1/§2: wire の綴り軸 `trigger_name`。明示値には写像を掛けない (§3) — 未指定なら
-/// `trigger_spelling()` が name から供給する。
+/// `trigger_spelling()` が name から供給する。予約名前空間の検査は掛けない (綴り軸は内部の
+/// `#` キー空間と衝突しない)。
 fn dec_trigger_name(o : Map[String, Json]) -> String? {
   jf_str(o, "trigger_name")
 }
 
 ///|
+/// DR-046 §1/§2: 明示 `id` を読む。未宣言なら `None` — その要素の参照識別子は name が供給する
+/// (`@engine.ElementDef::reference_identifier`)。予約名前空間の検査は name と同じ (DR-067 §2 は
+/// name/id の両方を縛る)。
 fn dec_reference_id(
   o : Map[String, Json],
   what : String,
@@ -829,6 +821,15 @@ fn dec_reference_id(
 }
 
 ///|
+/// DR-067 §2 name/id 構文制約 (codex 節目レビュー指摘1, issue 2026-07-09-ref-template-result-shape):
+/// `#` を含む name/id はユーザ定義で禁止 — repeat lowering の内部 template キー
+/// (`e.name + "#cons"`, lowering.mbt `lower_repeat_head`)・`next_or_branch_id`'s 自動採番
+/// ("#0"/"#1"/…)・resolve.mbt の row/fire sentinel ("#row"/"#fire") が共有する予約名前空間
+/// (DR-046 §4)。id 未指定なら name が id を兼ねる (DR-046 §2) ため name にも同じ制約が及ぶ — ここを
+/// enforce しないと `{"name": "src#cons"}` のような wire がその内部キーと衝突しうる。既存の decode
+/// error と同じ語彙 (`raise DecodeSkip`) で reject する。呼び出し側は name/id を読んだ「その場」で
+/// これを通す (missing チェックの直後、他フィールドの decode より前 — 診断が name/id の妥当性で早期
+/// に止まるようにする)。
 fn check_reserved_name(name : String, what : String) -> Unit raise DecodeSkip {
   if name.contains("#") {
     raise DecodeSkip(
@@ -899,7 +900,7 @@ fn json_to_value(j : Json) -> @abi.Value raise DecodeSkip {
 /// JSON scalar lifts to a single-piece array (`[v]`), a JSON array decodes elementwise (one @abi.Value
 /// per already-split piece, DR-083 §2). Which shape is STRUCTURALLY legal for a given element
 /// (scalar element ⇒ length must end up 1) is a definition-time check, NOT a decode-time gate —
-/// `collect_scalar_array_default` (installer.mbt) is the one that rejects a >1-length default on a
+/// `collect_scalar_array_default` (lowering.mbt) is the one that rejects a >1-length default on a
 /// non-accum element; this decoder accepts either JSON shape unconditionally.
 fn json_to_default_values(j : Json) -> Array[@abi.Value] raise DecodeSkip {
   match j.j_arr() {
@@ -1379,7 +1380,7 @@ fn dec_types(
       }
       "tty" | "builtin/tty" => {
         // DR-099 §3: `tty_stream` は必須 (未指定は definition-error kind=invalid-range —
-        // `collect_tty_stream_missing`, installer.mbt が別途検査する。decode 自体は DecodeSkip に
+        // `collect_tty_stream_missing`, lowering.mbt が別途検査する。decode 自体は DecodeSkip に
         // せず None のまま素通しする、definition-error という別チャンネルで表現する規約は
         // int_parser 等の decode-time DecodeSkip とは異なる、DR-098 の同型検査の踏襲)。
         // DR-129 §2: config キーは `tty_stream` のみ。
@@ -1574,7 +1575,7 @@ fn dec_help_single_from_object(
 ///|
 /// DR-078 §1 `definitions.templates`: name → shared consumption-grammar `@engine.Node`, decoded straight
 /// into the `registry` a `ref` element's head resolves against (`@engine.ElementDef.ref_target`/`@engine.element_head`,
-/// installer.mbt — this decode is the ONLY missing piece, the runtime side was already complete).
+/// lowering.mbt — this decode is the ONLY missing piece, the runtime side was already complete).
 /// Mutates `registry` in place (same map `dec_fixture` later threads into `parse_definition`) rather
 /// than returning a fresh map — `registry` also receives `parse_definition`'s OWN repeat-recursion
 /// entries later (`init_sb`), so it has to be the single shared mutable instance throughout, not a
@@ -1602,7 +1603,7 @@ fn dec_templates(
 /// One `definitions.templates` entry's body (DR-078 §1 "値は要素定義と同じ構造記法 (or / seq /
 /// 裸文字列等、LOWERING §A 群の糖衣がそのまま効く)"). Three shapes, mirroring `dec_or_structural`'s
 /// own branch-shape handling (§1's example is literally an `or` of a `seq` branch + a bare-leaf
-/// branch — this reuses that SAME decoder + `@engine.or_branch_node`, installer.mbt, rather than
+/// branch — this reuses that SAME decoder + `@engine.or_branch_node`, lowering.mbt, rather than
 /// duplicating the or/seq/leaf grammar a second time):
 ///   `{"or": [...]}`   — structural or (DR-055 value-enum `or` form is rejected: a template's
 ///                       job is a shared CONSUMPTION grammar, not a constraint-declaration sugar)
@@ -1843,9 +1844,9 @@ fn dec_or_structural(
     None => raise DecodeSkip("or is not an array")
   }
   // MDR-004 §2: 二形の判別。`seq` / `type` に加えて **入れ子の `or`** も structural の印である
-  // — value-enum の枝は literal 値 (裸文字列 / `{"value": ...}`) しか採らないので、`or` を
-  // 持つ枝は消費文法側にしかない。これが無いと「枝がさらに structural or」という形
-  // (透過段を挟んだ入れ子) が value-enum と誤判定され、name 必須の経路へ落ちる。
+  // — value-enum の枝が採るのは `{"exact": ...}` (+ `id` / `requires`) だけなので (`dec_or` の
+  // allowed_keys)、`or` を持つ枝は消費文法側にしかない。これが無いと「枝がさらに structural or」
+  // という形 (透過段を挟んだ入れ子) が value-enum と誤判定され、name 必須の経路へ落ちる。
   let mut structural = false
   for e in a {
     match e.j_obj() {
@@ -2296,6 +2297,11 @@ fn dec_option_body(
         None,
       )
     "config_file" =>
+      // `owned.config_file` は ConfigInstaller が当該 assembly に登録されている時だけ立つ。
+      // installer ゼロの assembly (DR-070 §1 の「純構文正規化は installer 以前に常に適用」、
+      // fixtures/lowering/baseline/no-installers.json が固定する断面) では false のままなので、
+      // else 側は死枝ではなく「config_file installer が居ない assembly」の経路 — `dec_ty` が
+      // config_file を未登録の値型として UnknownVocab で報告する fail-closed の形になる。
       if owned.config_file {
         (
           @builtins.string_type(),
@@ -2363,7 +2369,7 @@ fn dec_option_body(
     allow_base_prefix=base_prefix_from_shadow,
   )
   // DR-071 §1 / kawaz 裁定 2026-07-08: decode は wire の bool|array 二形をそのまま `@abi.LongDeclaration` に写す
-  // だけ — 糖衣展開・colon DSL 分類 (variants の分離を含む) は installer.mbt の `resolve_long` が
+  // だけ — 糖衣展開・colon DSL 分類 (variants の分離を含む) は lowering.mbt の `resolve_long` が
   // `normalize_option` から担う (下記 `opt(...)` は `variants` を渡さない = 常に [] のまま宣言層へ)。
   let long_decl = owned.long
   let short = owned.short
@@ -3023,7 +3029,7 @@ fn dec_positional_group(
 /// every scope `config` key, threaded top-down through `dec_definition`/`dec_command`'s recursion —
 /// this IS the "子要素は親の config を継承、上書き可能" hierarchy (DESIGN §7.2), realized as
 /// "each scope merges its own `config` object over the value it received from its parent" rather
-/// than a stored-on-`@engine.Definition` carrier (installer.mbt never reads a `@engine.Definition`-level config; the
+/// than a stored-on-`@engine.Definition` carrier (lowering.mbt never reads a `@engine.Definition`-level config; the
 /// resolved tuple gets baked onto each `@engine.ElementDef` the scope owns, same pattern DR-091 §3 established
 /// for the original 2-field minimal implementation).
 priv struct ScopeConfig {
@@ -3386,7 +3392,8 @@ fn dec_definition(
   // only, 親から引き継がないスコープ config): この呼び出しの `o` (root definition object、または 1つの
   // command の own definition object — `dec_command` が自分の `o` をそのまま渡す) が持つ
   // `config: {long_prefix, long_eq_sep, short_prefix, short_attached_value, short_combine,
-  // env_prefix, auto_env}` (DESIGN §7.2 の wire 形そのもの、DR-096 §1/§2 軸別再編後) を
+  // env_prefix, env_auto}` (DESIGN §7.2 の wire 形そのもの、DR-096 §1/§2 軸別再編 +
+  // DR-100 §1 の `auto_env` → `env_auto` リネーム後) を
   // `parent_config` (呼び出し元から
   // 継承した既解決値) の上に `dec_scope_config` でマージする — 明示したキーだけ上書き、省略した
   // キーは親の値をそのまま継承する (DESIGN §7.2「子要素は親の config を継承、上書き可能」)。

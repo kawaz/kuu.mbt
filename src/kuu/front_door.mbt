@@ -15,9 +15,9 @@
 // match parse_definition(json) {
 //   Ok(ast) =>
 //     match parse(ast, ["--port", "8080"]) {
-//       @engine.Success(binds) => ... // binds : Array[@abi.Binding] (DR-045 の効果列)
-//       @engine.Failure(data) => ... // data.errors : Array[@abi.ParseError] (DR-053 §2)
-//       @engine.Ambiguous(data) => ... // data.interpretations (DR-053 §3)
+//       Success(binds) => ... // binds : ParsedBindings — resolve() に渡す
+//       Failure(f) => ... // f.errors : Array[@abi.ParseError] (DR-053 §2)
+//       Ambiguous(a) => ... // a.interpretations (DR-053 §3)
 //     }
 //   Err(Malformed(reason)) => ... // wire JSON 自体が構文として崩れている
 //   Err(Rejected(errs)) => ... // definition-error (DR-054 §4) の全列挙
@@ -88,7 +88,7 @@ pub struct OutputView {
 ///|
 /// 正面玄関 1: definition の wire JSON (`{options, positionals, commands, definitions?, config?}`)
 /// を受けて AtomicAST を得る (DR-054)。`definitions.types`/`definitions.templates`
-/// (DR-061 §3 / DR-078 §1) の decode、`@builtins.lower_definition` (旧 `parse_definition`、installer.mbt) の
+/// (DR-061 §3 / DR-078 §1) の decode、`@builtins.lower_definition` (旧 `parse_definition`、lowering.mbt) の
 /// 呼び出しまで一気通貫で行う。decode と lowering は同じ `extensions.installers()` を使うため、
 /// 登録住人の所有語彙と実際に適用される installer chain は一致する。canonical assembly は
 /// `canonical_registry()` を既定値として供給し、subset assembly も同じ玄関を利用できる。
@@ -199,7 +199,9 @@ pub fn parse_definition(
 }
 
 ///|
-/// 正面玄関 2: `ast` に対し `args` を parse し、spec 準拠の @engine.Outcome (DR-053) を返す。
+/// 公開玄関 `parse` (正面玄関 2) の実体。`ast` に対し `args` を parse し、spec 準拠の
+/// @engine.Outcome (DR-053) を返す private helper — 公開 API は本関数の結果を `ParsedOutcome`
+/// (`Success(ParsedBindings)` / `Failure(ParseFailure)` / `Ambiguous(ParsedAmbiguity)`) へ包む。
 ///
 /// 内訳 (spec の parse 相の意味論として現われるもの、下 3 段は「相区分」表の parse 相に属する):
 ///
@@ -217,7 +219,7 @@ pub fn parse_definition(
 /// 明示的に相区分しており、玄関 API もこれに従う (kawaz 裁定「迷ったら 2 段案 (相区分に忠実)
 /// に倒す」)。したがって本関数の @engine.Success payload (`Array[@abi.Binding]`) は **CLI 由来の生 binds**
 /// (`@engine.parse_tree` の直接出力、resolve 未適用) であり、`resolve()` に渡してから
-/// `build_result` / `apply_export_keys` で最終 wire 表現を組み立てるのが呼び出し側の責務。
+/// `build_result_export` で最終 wire 表現を組み立てるのが呼び出し側の責務。
 /// **なぜ 1 発 `parse_and_resolve` にしないか**: parse 相の outcome (@engine.Success/@engine.Failure/@engine.Ambiguous
 /// 骨格) だけ欲しい場面 (dogfooding 用の debug、部分的な取扱、fuzz 等) と、完全 wire を組み立て
 /// たい場面 (kuu-cli の JSON 出力) を型で区別する。呼び出し側便宜のラッパーが必要になれば別途足す
@@ -225,21 +227,22 @@ pub fn parse_definition(
 ///
 /// 引数の値源:
 ///
-/// - `env`: DR-050 の env provider に相当する `Map[String, String]` (キー = env var name)。
-///   `apply_requires_filter` 内で `resolve_scope_tree` に渡される。未指定 = 空 Map
+/// - `env`: DR-049 §1 の env provider シグネチャ `(key: String) -> String?` (key = prefix 連結済みの
+///   最終 env 名)。`apply_requires_filter` 内で `resolve_scope_tree` に渡される。未指定 = 常に
+///   `None` を返す no-op provider
 /// - `config`: DR-050 の config provider シグネチャ `(path: String) -> @abi.ConfigVal?`。scope ごとに
 ///   異なる config_file を動的に指す `CfgFiles` ケースも呼び出し元が対応する closure を渡すだけで
 ///   均一に扱われる (単一 @abi.ConfigVal だった旧契約の残存ギャップが解消)。未指定 = 常に `None`
 ///   を返す no-op provider
-/// - `tty`: DR-129 §1 の tty provider (stream 名 → 端末か否かの bool の Map)。未指定 = 空 Map
-///   (提供なし、CONFORMANCE §1)
+/// - `tty`: DR-129 §1 の tty provider シグネチャ `(stream: String) -> Bool?`。未指定 = 常に
+///   `None` を返す no-op provider (提供なし、CONFORMANCE §1)
 fn parse_legacy(
   ast : AtomicAST,
   args : Array[String],
   env? : (String) -> String? = fn(_) { None },
   config? : (String) -> @abi.ConfigVal? = fn(_) { None },
   tty? : (String) -> Bool? = fn(_) { None },
-  // DR-114 §6.1 の一本化: 勝ち経路ごとの FiringRecord 台帳の配達口。渡すと parse 相 fold の
+  // DR-138 §6b-3 の一本化: 勝ち経路ごとの FiringRecord 台帳の配達口。渡すと parse 相 fold の
   // 実行記録が集まり、effects 射影と resolve 相が record の消費者になる (cell fn は発火 1 回)。
   firings? : @fold.FiringDeliveries,
 ) -> @engine.Outcome {
@@ -270,7 +273,8 @@ fn parse_legacy(
 }
 
 ///|
-/// 正面玄関 2 の続き: `parse()` が返した @engine.Outcome の @engine.Success payload (CLI 生 binds) に**値源
+/// 公開玄関 `resolve` の実体 (private helper)。`parse` 相が返した @engine.Success payload
+/// (CLI 生 binds) に**値源
 /// ラダー**を適用し、解決済み binds に置き換えて @engine.Outcome を返す (spec DR-047 §4 / DR-104 §5 の
 /// resolve 相)。`resolve_scope_tree` を root scope (path = []) から呼ぶ — command 木を持つ
 /// scope でも単一 scope でも同一関数で扱える (子 command scope が無ければ再帰しないだけで、
@@ -301,7 +305,7 @@ fn resolve_legacy(
   env? : (String) -> String? = fn(_) { None },
   config? : (String) -> @abi.ConfigVal? = fn(_) { None },
   tty? : (String) -> Bool? = fn(_) { None },
-  // DR-114 §6.1: parse が配達した勝ち経路の FiringRecord 台帳。resolve 相の CLI seat fold が
+  // DR-138 §6b-3: parse が配達した勝ち経路の FiringRecord 台帳。resolve 相の CLI seat fold が
   // 消費者になり、record のある発火の cell fn を再実行しない。
   firings? : @fold.FiringLedger,
 ) -> @engine.Outcome {
@@ -348,7 +352,7 @@ pub fn parse(
   args : Array[String],
   sources? : ValueSources = value_sources(),
 ) -> ParsedOutcome {
-  // DR-114 §6.1: parse 相 fold の実行記録 (FiringRecord) を経路ごとに受け取り、payload の
+  // DR-138 §6b-3: parse 相 fold の実行記録 (FiringRecord) を経路ごとに受け取り、payload の
   // side payload として運ぶ (Binding / 経路 identity には参加しない)。
   let deliveries = @fold.FiringDeliveries::new()
   match
@@ -515,7 +519,8 @@ pub fn resolve_interpretation(
 
 ///|
 /// 正面玄関 3: `ast` に対し `args_before` (+ optional `args_after`) の補完候補集合を得る
-/// (DR-060 + DR-104)。低レベル `@engine.complete_tree` (@engine.Node 直渡し、outcome.mbt) への薄いラッパー。
+/// (DR-060 + DR-104)。低レベル `@engine.complete_tree_sourced` (@engine.Node 直渡し、outcome.mbt) への
+/// 薄いラッパー (候補だけを取り出して source を落とす)。
 /// `word_before`/`word_after` は DR-104 §1 が v1 未実装のまま予約する語彙で、参照実装は
 /// パラメータを持たない (本関数も同様)。
 pub fn complete(
@@ -839,7 +844,7 @@ fn projected_effect(
   defaults : Array[DefaultSeat],
   types : Array[TypeSeat],
   extensions : @node.Registry,
-  // DR-114 §6.1: parse 相 fold の実行記録。ある場合は cell fn を再実行せず、記録された遷移と
+  // DR-138 §6b-3: parse 相 fold の実行記録。ある場合は cell fn を再実行せず、記録された遷移と
   // 解決済み観測アドレスを消費する (観測は best-effort なので gate なしの無条件消費 — record の
   // 実行こそが「発火時の 1 回」の実体)。record が無い発火 (fold の保守的スキップ等) は従来
   // どおりこの場で実行する。
@@ -1017,7 +1022,7 @@ fn project_effects(
   collect_default_seats(ast.root, [], binds, default_seats)
   let type_seats : Array[TypeSeat] = []
   collect_type_seats(ast.root, [], binds, type_seats)
-  // DR-114 §6.1: record の出現順カーソル。スキップされる binding も (record 対象なら) カーソルを
+  // DR-138 §6b-3: record の出現順カーソル。スキップされる binding も (record 対象なら) カーソルを
   // 通してから落とす — 位置ずれ防止 (`FiringCursor` doc comment)。
   let firing_cursor = @fold.FiringCursor::new()
   for binding in binds {

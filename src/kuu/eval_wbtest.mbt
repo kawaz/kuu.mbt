@@ -1554,7 +1554,7 @@ test "REGRESSION scope_consume_rep @engine.Many(float resident) respects 先食�
 ///|
 /// REGRESSION (codex 節目レビュー指摘3, issue 2026-07-09-ref-template-result-shape): the SAME
 /// suppression gap as the `@engine.Many(@builtins.float_arg(...))` test just above, but for a `ref` element's
-/// UNBOUNDED `min:0` repeat — installer.mbt's `lower_repeat_head` lowers that shape to
+/// UNBOUNDED `min:0` repeat — lowering.mbt's `lower_repeat_head` lowers that shape to
 /// `@engine.Many(head, lazy)` where `head` is `ref_row_head`'s wrap (`@engine.Scoped(name, @engine.Seq([@engine.Bind("#row",_),
 /// Ref(target)]))`), a COMPOUND node, never a bare primitive. `scope_consume_rep`'s catch-all used
 /// to degrade to plain off-spine `eval` for any non-primitive `inner` — which has no `@engine.Scope` and so
@@ -1889,7 +1889,7 @@ test "@engine.IndexedRepeat greedy-max backtracks for a following mandatory posi
 
 ///|
 /// 保証 (issue 2026-07-13-positional-group-trailing-missing-operand): `budget=Some(0)` (a bounded
-/// `repeat:{min:1,max:1}` spec lowers to this, installer.mbt's Group case) never over-consumes,
+/// `repeat:{min:1,max:1}` spec lowers to this, lowering.mbt's Group case) never over-consumes,
 /// so the backtrack path is not needed. Same shape as the unbounded test (permissive head `@builtins.string_arg("x")` immediately
 /// followed by a mandatory `tail`) but with the budget field set and an args sized to exactly
 /// `min + tail's own 1 token = 2`: exactly 1 rep is taken (not greedy-max over everything), so
@@ -1972,7 +1972,7 @@ test "@engine.IndexedRepeat budget=Some(1): consumes up to min+budget=2 reps, le
 /// 保証 (issue 2026-07-09-positional-or-repeat-lowering-gap の slice-equivalent 確認): 手組み
 /// `@engine.Many(@engine.Or([@engine.Seq(rgb), @builtins.string_arg(name)]))` は元々 (installer 経由の wire lowering ギャップとは独立に)
 /// 両 or 枝が並列に反復できる — evaluator 自体 (@engine.Many の取り分選好、@engine.Or の全枝保持) には問題が無く、
-/// ギャップは installer.mbt の `lower_positional` Or ケースが `elem_repeat` を無視していたことに
+/// ギャップは lowering.mbt の `lower_positional` Or ケースが `elem_repeat` を無視していたことに
 /// 限定される (installer_wbtest.mbt の対応する wire テストと対で、evaluator 層 / installer 層のどちら
 /// が壊れていたかを切り分ける)。
 test "DR-043 × DR-038: hand-built @engine.Many(@engine.Or(seq-rgb, string-name)) lets both or-branches repeat" {

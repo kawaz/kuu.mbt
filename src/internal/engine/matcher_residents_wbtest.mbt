@@ -119,7 +119,7 @@ test "eq-split long option resolves, errors, and 素通し" {
 /// value through the canonical bool vocab (true/false/1/0/""，case-insensitive). An unrecognized
 /// token (`yes` etc., canonical-外) is a recognized-invalid Held with reason `not_a_bool` (DR-066 v1 has no bool
 /// reason yet, docs/issue/2026-07-07-bool-invalid-reason-vocab-gap.md) — not a silent 素通し. A
-/// PRESENCE-only `flag_type()` entry never fires here at all (no eq-split registration, installer.mbt
+/// PRESENCE-only `flag_type()` entry never fires here at all (no eq-split registration, lowering.mbt
 /// `inst_long`; `flag_type()`'s own arm in `run_eq_split` returns `[]` unconditionally).
 test "eq-split long option: bool canonical vocab, ci, and unrecognized-token Error" {
   let long = eq_split("--", [

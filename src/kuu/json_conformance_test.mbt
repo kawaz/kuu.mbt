@@ -3377,7 +3377,7 @@ test "DR-092 end-to-end: a non-integer float CLI value round-trips via shortest 
 
 ///|
 /// 保証 (end-to-end, DR-049 §4 HOME motivating case の完全版): `HOME` (env_prefix opt-out) の値を
-/// 実際の env lookup → parse → result まで通す。auto_env:true 下で `port` は自動導出
+/// 実際の env lookup → parse → result まで通す。`env_auto:true` 下で `port` は自動導出
 /// (`MYAPP_PORT`) された env 名で環境変数を読み、`home_dir` は opt-out した生の `HOME` を読む —
 /// 同じスコープに両方の挙動が共存することを実行結果で固定する。
 test "DR-049 §4 end-to-end: an element's env_prefix:\"\" opt-out reads the raw env var name, alongside a sibling's prefixed auto_env" {

@@ -49,7 +49,7 @@ fn filter_non_empty(
 /// arg is a filter-definition error surfaced as an Err with the `filter_rejected` fallback reason
 /// (caught at filter-run time, same as any other filter-definition-bug path — no separate
 /// definition-time arg-arity check exists yet for filter DSL args, unlike `update`'s transform-name
-/// check in installer.mbt's `classify_long_spelling`). The two ordinary Validate rejects — below
+/// check in lowering.mbt's `classify_long_spelling`). The two ordinary Validate rejects — below
 /// `min` / above `max` — carry the descriptor's declared reasons (DR-095 §3): `too_small` /
 /// `too_large` respectively.
 fn filter_in_range(
@@ -146,7 +146,7 @@ fn filter_increment(
 /// = partial match (DR-085 §1 — this filter never injects an implicit `^`/`$`; a caller wanting a
 /// full match writes the anchors into the pattern itself, matching general regex-engine convention).
 /// Compile failure (malformed pattern — a filter-DEFINITION bug, DR-085 §1 / DR-082 §3 belongs to
-/// definition-error's kind=invalid-argument, not this runtime reason vocabulary — `installer.mbt`'s
+/// definition-error's kind=invalid-argument, not this runtime reason vocabulary — `lowering.mbt`'s
 /// `collect_invalid_regex_pattern` already gates it at definition time, so this arm is defensive/
 /// unreachable in a correctly-defined filter chain) and match failure (a valid pattern simply not
 /// matching this input — the ordinary Validate reject) are two DISTINCT `Err`s per DR-085 §1
@@ -277,7 +277,7 @@ fn array_filter_unique(
 /// transforms it. `min`/`max` parsed via `parse_number` (same canonical DR-074 §1 lexicon
 /// `filter_in_range` uses) — a malformed arg is a filter-definition-bug path (`filter_rejected`
 /// fallback, same posture `filter_in_range`'s own arg-parse arms use), NOT one of this descriptor's
-/// declared reasons (`installer.mbt`'s `collect_invalid_numeric_filter_args`, DR-082 §3, catches a
+/// declared reasons (`lowering.mbt`'s `collect_invalid_numeric_filter_args`, DR-082 §3, catches a
 /// non-numeric/wrong-arity `length_range` at definition time — this runtime arm is defensive).
 /// DR-105 §5 明確化 note (a) (codex #3 反映): `length_range`'s bound is non-negative-integer-only
 /// (unlike `in_range`'s canonical number) — `collect_invalid_numeric_filter_args` gates this at
@@ -371,7 +371,7 @@ pub fn parse_filter_shorthand(s : String) -> @abi.FnInvocation {
 ///|
 /// Compile a MoonBit core `string.Regex`, converting the raise signature into an Option —
 /// the same host-dialect compile path the engine's dd `match` uses (DR-085/DR-090 §2
-/// "照合方言は host 実装準拠"; definition-time validation in `installer.mbt` and the runtime
+/// "照合方言は host 実装準拠"; definition-time validation in `lowering.mbt` and the runtime
 /// `regex_match` filter share THIS compile so both see the same dialect).
 fn compile_regex(pattern : String) -> @string.Regex? {
   Some(@string.Regex::Regex(pattern)) catch {

@@ -119,7 +119,7 @@ pub(all) struct HelpMetaDeclaration {
   // 宣言層 inert として運ぶ。None = wire に宣言なし、Some(v) = wire 上の生値 (未検証)。
   // enum 検査 (`"space"` / `"eq"` 以外は invalid-range)、非 completion_script type への宣言
   // (invalid-range)、複数入口間の明示値食い違い (invalid-range) は `collect_completion_script_errors`
-  // (builtins/installer.mbt) が判定する — decode-time は生文字列を運ぶだけ。help_on_failure と
+  // (lowering.mbt) が判定する — decode-time は生文字列を運ぶだけ。help_on_failure と
   // 同型の「宣言そのものを保持して installer 検査に委ねる」pattern。lowering 産物 (Entity / Scope) には
   // 搬送しない — 応答 policy 段 (completion_query) が declaration snapshot から `completion_insert_form`
   // (definition-wide reconciled value、LoweredDefinition / AtomicAST に carry) を読む。

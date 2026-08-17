@@ -737,7 +737,7 @@ test "resolve_scope: tty 型要素は宣言 default と異なる観測値でも�
 /// どの fixture でも直接検証されていない軸: tty-ladder.json の null-observation-uses-default case は
 /// 必ず明示 default (`use_color` の `default: true`) を宣言しているため、「宣言 default も無い」は
 /// fixture から見えない。@engine.ElementDef→@engine.Entity 構築時に is_tty 要素へ @builtins.bool_type() の暗黙 default:false を注入
-/// しないための `ensure_entity` 側の除外分岐 (installer.mbt) は installer_wbtest.mbt が別途固定する。
+/// しないための `ensure_entity` 側の除外分岐 (lowering.mbt) は installer_wbtest.mbt が別途固定する。
 test "resolve_scope: tty 型要素は観測も宣言 default も無ければ absent (DR-099 §2)" {
   let use_color = ent(
     "use_color",
@@ -1286,7 +1286,7 @@ fn ceff(key : String, transform : String) -> @abi.Binding {
 ///|
 /// 保証: DR-077 §1 ledger 挙動 — 3 つの `update(increment)` effect が同じ key で連続すると、
 /// resolve_entity の cli seat fold は old=default(0)→1→2→3 と連鎖計算する (`-vvv` の実機シナリオ)。
-/// count の default:0 preset (installer.mbt ensure_entity, DR-077 §3) が fold の起点になることも
+/// count の default:0 preset (lowering.mbt ensure_entity, DR-077 §3) が fold の起点になることも
 /// 同時に固定する。
 test "resolve_scope: 3 chained update(increment) effects ledger old=0→1→2→3" {
   let verbose = ent(
@@ -1314,7 +1314,7 @@ test "resolve_scope: 3 chained update(increment) effects ledger old=0→1→2→
 ///|
 /// 保証: DR-077 §1 — `update` effect が無指定の default (`e.default_value` が None) セルに対して
 /// 発火すると、"old ?? default" (DR-077 §2) は default 不在時のフォールバック (bare zero) を使う。
-/// count は常に default:0 を preset する (installer.mbt) ので実運用でこの分岐に落ちることは無いが、
+/// count は常に default:0 を preset する (lowering.mbt) ので実運用でこの分岐に落ちることは無いが、
 /// 低レベル resolve_scope の契約としては独立に固定しておく (defensive のさらに一段防御)。
 test "resolve_scope: update(increment) with no declared default falls back to a bare zero" {
   let n = ent("n", @builtins.number_type()) // no default_value

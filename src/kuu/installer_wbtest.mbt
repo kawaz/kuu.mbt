@@ -71,7 +71,7 @@ fn el(
   tty_stream? : String? = None,
   is_dd? : Bool = false,
   // issue 2026-07-15-audit-node-nodashstr-deprmark-variants 副次発見: positional-face nameless
-  // exact-match leaf marker (installer.mbt's `@engine.ElementDef.is_exact` doc comment) — exposed here so
+  // exact-match leaf marker (lowering.mbt's `@engine.ElementDef.is_exact` doc comment) — exposed here so
   // lowering wbtest cases can exercise it without hand-writing a full @engine.ElementDef literal, same
   // rationale as `is_dd` above.
   is_exact? : Bool = false,
@@ -369,7 +369,7 @@ test "long installer: a deprecated flag's @abi.Set-variant satellite carries a d
 /// `Enum` main entry (`@builtins.enum_value_node`-shaped satellite) never got it, so a deprecated
 /// enum-constrained option silently warned NOTHING. DR-058 §2's warning contract is 値構造非依存 (it
 /// fires because the ELEMENT is deprecated, not because of what shape its value slot has) — this
-/// locks the Enum arm now routes through the shared `with_depr` funnel (installer.mbt's `inst_long`)
+/// locks the Enum arm now routes through the shared `with_depr` funnel (lowering.mbt's `inst_long`)
 /// alongside Cell.
 test "long installer: a deprecated Enum (values-constrained) main entry carries a deprecation resident warning marker (codex レビュー Major 2, DR-058 §2)" {
   let def : @engine.Definition = {
@@ -813,7 +813,7 @@ test "ensure_entity_body: an is_exact leaf nested inside Group creates no phanto
 
 ///|
 /// 保証: `multiple:true` + collector 宣言 (@engine.ElementDef) は accum cell の @engine.Entity へそのまま写る
-/// (`ensure_entity` の write-through、installer.mbt) — collector 自体を解釈・変換する installer は
+/// (`ensure_entity` の write-through、lowering.mbt) — collector 自体を解釈・変換する installer は
 /// 無く、宣言をそのまま @engine.Entity.collector に通す (DR-036 の decode/実体 lookup の「実体」側)。
 test "multiple installer: a declared collector rides straight through to @engine.Entity.collector" {
   let def : @engine.Definition = {
@@ -1113,7 +1113,7 @@ test "parse_definition enumerates all def-errors (no first-error 打ち切り, D
 /// 保証 (DR-078 §1「解決順は DR-032 のまま: スコープ内 → definitions (templates)」/ DR-054
 /// absent-ref): `ref_target` の解決先が registry のどこにも無い場合、`parse_definition` は
 /// `@abi.AbsentRef` を definition-error として列挙する。ランタイム側の `check_elem_absent_ref`
-/// (installer.mbt) は本 issue 以前から実装済みだったが、decode 層 (`ref` キー) が無かったため
+/// (lowering.mbt) は本 issue 以前から実装済みだったが、decode 層 (`ref` キー) が無かったため
 /// この分岐は未踏だった — decode 配線後の疎通確認として、registry を意図的に空のまま
 /// (`Map::new()`) `parse_definition` へ渡し、absent-ref が正しく検出されることを固定する。
 test "parse_definition: a ref target absent from registry is @abi.AbsentRef (DR-078 §1 / DR-054)" {
@@ -1440,7 +1440,7 @@ test "@engine.classify_long_spelling: the 4 outcomes on representative spellings
   }
   // (2) @engine.Variant with an EMPTY prefix (`:set:true`, DR-076 §4): the element's own bare-degenerate
   // main entry — trigger is `own_name` verbatim (NOT "-"+own_name — that would be a bogus extra
-  // spelling installer.mbt never intended, since it always does `"--" + v.trigger`).
+  // spelling lowering.mbt never intended, since it always does `"--" + v.trigger`).
   match
     @engine.classify_long_spelling(
       ":set:true",
@@ -1581,7 +1581,7 @@ test "parse_definition: an unrecognized effect word in long is a DR-054 unknown-
 
 ///|
 /// DR-011 明確化 (kawaz 裁定 2026-07-08): alias `long_override` (DR-057 §3 差分上書き) is the SAME
-/// colon DSL canonical `long` uses (`@engine.classify_long_spelling` shared, installer.mbt comment "二経路が
+/// colon DSL canonical `long` uses (`@engine.classify_long_spelling` shared, lowering.mbt comment "二経路が
 /// drift しないよう分類器を共用") — the 明確化 applies wherever the DSL appears, not just canonical
 /// `long`. A colon-less `long_override` spelling must be an `unknown-vocab` definition-error too,
 /// caught by `collect_invalid_alias_long_override` BEFORE `desugar_aliases` ever runs (so the invalid
@@ -1796,7 +1796,7 @@ test "copy_global_into: two same-name different-trigger globals (declared indepe
 /// `:update:<name>` の `<name>` を filters registry へ実際に `@engine.lookup_filter` する (旧実装は
 /// `parts[2] == "increment"` のハードコード allowlist だった — 節目レビューで指摘され registry
 /// lookup ベースへ置換)。registry に存在しない名前 (`bogus`) は `None` の分岐で `@engine.Invalid` へ倒し
-/// (installer.mbt コメント参照)、既存の push_invalid_long/collect_invalid_long_dsl 機構にそのまま
+/// (lowering.mbt コメント参照)、既存の push_invalid_long/collect_invalid_long_dsl 機構にそのまま
 /// 合流して DR-054 definition-error (`@abi.UnknownVocab`) になる。新しい definition-error チェックを
 /// 増やさず既存機構に相乗りする設計判断の固定。「不在」ケース (次の wbtest の「存在するが
 /// signature 不適合」ケースと対)。
@@ -1828,7 +1828,7 @@ test "DR-077 §2: an unrecognized update transform name is a DR-054 unknown-voca
 /// `T→T raise` の validator なので `update` (DR-077 §1 `cell = f(old)`、旧値から新値を計算する
 /// transform を要求) には使えない。前の wbtest (`bogus` = 不在) と対で「存在するが signature 不適合」
 /// ケースを分離 pin する — どちらも現行 `@abi.DefErrorKind` (DR-054) に signature 専用の細分 kind が無い
-/// ため同じ `@abi.UnknownVocab` に倒れる (installer.mbt の `@engine.classify_long_spelling` doc comment 参照、
+/// ため同じ `@abi.UnknownVocab` に倒れる (lowering.mbt の `@engine.classify_long_spelling` doc comment 参照、
 /// 実装の裁量として報告済み)。
 test "DR-077 §2: a registered but Validate-signature filter is also a DR-054 unknown-vocab definition-error" {
   let def : @engine.Definition = {
@@ -1923,7 +1923,7 @@ test "DR-077 end-to-end: parse_definition → parse → resolve_scope ledgers -v
 ///|
 /// 保証: DR-043「repeat の対象要素は形を問わない」は ref head だけでなく **Or (構造 or) head にも
 /// 一様に適用される** — `lower_positional` の Or ケースは以前 `elem_repeat(e)` を一切見ず常に
-/// `@engine.Or(nodes)` を単発で積んでいた (installer.mbt 旧コメント「repeat との組合せは対象 fixture に無いので
+/// `@engine.Or(nodes)` を単発で積んでいた (lowering.mbt 旧コメント「repeat との組合せは対象 fixture に無いので
 /// 未対応」)。`{name:"hlcolors", repeat:{min:1}, or:[{seq:rgb 3数値}, {type:"string", name:"colorname"}]}`
 /// で `["red","blue"]` (2 文字列) が unexpected-token になっていたのがこのギャップの症状。
 /// `lower_repeat_head(e, @engine.Or(nodes), registry, out)` へ配線し、hand-built `@engine.Many(@engine.Or(...))` (slice 相当)
@@ -2189,7 +2189,7 @@ test "value-present-ladder-gap: requires targeting a non-flag with no env value 
 /// 充足と判定する (issue resolve-first-constraint-pipeline Phase 1 — もはや自前ミニラダーを持たず、
 /// 本物の resolve を読むだけ)。`c` は CLI/env 未指定のまま、config_file 要素 `cfg` に宣言 default
 /// ("/app.toml") を持たせて Phase 1 (config_file 自身のパス解決) を成立させ、provider がそのパスで
-/// `{c: true}` を返す。config seat は `installer.mbt` の `has_cf` 規約通り、scope に
+/// `{c: true}` を返す。config seat は `lowering.mbt` の `has_cf` 規約通り、scope に
 /// `is_config_file` 要素が 1 つでもあれば (自身が config_file の要素を除く) 全 value cell に同型で
 /// 付与される (DR-050 §3)。
 test "requires targeting a config-sourced bool survives the filter" {
@@ -2428,7 +2428,7 @@ test "existing CLI-committed bool target still survives without config_obj" {
 }
 
 // ── codex Medium 追従 (issue merge-no-separator-marker-gap): separator 無し merge 宣言の
-// end-to-end 固定。resolve_wbtest.mbt の合成 @engine.Entity テストは eval.mbt/installer.mbt の value_prim
+// end-to-end 固定。resolve_wbtest.mbt の合成 @engine.Entity テストは eval.mbt/lowering.mbt の value_prim
 // ルーティングを一切通らない (@abi.Binding を手組みするため) — この gap は「実 CLI args → parse_legacy() →
 // resolve_scope」の一気通貫でしか顕在化しなかった (`el()` の `separator: None` 固定と組み合わせて
 // merge 宣言だけ足すことで、正に「separator 未宣言」の形が作れる)。 ─────────────────────────
@@ -3139,7 +3139,7 @@ test "DR-089: a none-typed element declaring env/config_key is a definition-erro
 /// 結果、あるいは definitions.types 経由で `tty_stream` を書き忘れた shadow) は definition-error
 /// (kind=invalid-range) — fixture (`definition-error/tty-stream-missing.json`) は JSON decode 経由
 /// (bare/explicit_ns の 2 spelling) をまとめて検査するのに対し、ここでは `collect_tty_stream_missing`
-/// (installer.mbt) を @engine.ElementDef 直叩きで単体固定する (decode 層を経由しない、より狭い axis)。
+/// (lowering.mbt) を @engine.ElementDef 直叩きで単体固定する (decode 層を経由しない、より狭い axis)。
 test "DR-099 §3/§7: an option selecting builtin/tty without tty_stream is a definition-error" {
   let use_color = el(
     "use_color",
@@ -3196,7 +3196,7 @@ test "DR-099 §3/§7: a positional selecting builtin/tty without tty_stream is a
 }
 
 ///|
-/// DR-099 §2: `ensure_entity` (installer.mbt) は is_tty 要素を @builtins.bool_type() の暗黙 default:false プリセット
+/// DR-099 §2: `ensure_entity` (lowering.mbt) は is_tty 要素を @builtins.bool_type() の暗黙 default:false プリセット
 /// (LOWERING §A.5 / DR-051 §2、上の flag テストが固定するのと同じ機構) から除外する — 除外しないと
 /// 「宣言 default 無し」という状態が `ensure_entity` の時点で消え、`resolve.mbt` の tty 観測解決が
 /// なし時に absent へ落ちる余地を失う (常に false が浮かび上がってしまう)。ここでは `parse_definition`
@@ -4380,10 +4380,10 @@ test "front_door.output: export_key rename を result に適用する (DR-052 §
 // ── moved whitebox coverage from the conformance runner ────────────────
 
 ///|
-/// issue group-inner-bool-default-false-duplicate-top-level: `ensure_entity` (installer.mbt) の
+/// issue group-inner-bool-default-false-duplicate-top-level: `ensure_entity` (lowering.mbt) の
 /// 暗黙 default:false 注入は flag preset (`type:"flag"`、@builtins.flag_type()) 固有であり、plain bool
 /// (`type:"bool"`、@builtins.bool_type()) は未発火なら他の値型と同様 absent (`@engine.Entity.default_values == None`,
-/// DR-099 §2 の `?? absent` 終端)。`normalize_option` (installer.mbt) が @builtins.flag_type()→@builtins.bool_type() の書き換え
+/// DR-099 §2 の `?? absent` 終端)。`normalize_option` (lowering.mbt) が @builtins.flag_type()→@builtins.bool_type() の書き換え
 /// と同じ場所で default:false を前倒し確定させるため、`ensure_entity` 到達時点では両者とも
 /// 同じ bool resident でも default_values が食い違うことを @engine.Entity レベルで直接
 /// 検査する — `fixtures/value-typing/{or-leaf-factory-config,positional-group-factory-config}.json`

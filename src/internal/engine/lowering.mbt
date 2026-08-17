@@ -1496,7 +1496,7 @@ fn ensure_entities(
 /// entity's `ensure_entity` (add-if-absent already returns early once ANY entity with that name
 /// exists). Guarding HERE (single entry point every recursive path funnels through) closes both the
 /// top-level and the nested cases with one check, and any future `ElementBody` arm added to this match
-/// picks up the guard automatically (installer.mbt's `ElementDef.is_exact` doc comment: "value_prim/
+/// picks up the guard automatically (lowering.mbt's `ElementDef.is_exact` doc comment: "value_prim/
 /// entity 経路を一切通らない" is the invariant this enforces).
 fn ensure_entity_body(
   build : InstallOutput,
@@ -1534,7 +1534,7 @@ fn ensure_entity_body(
     Cell => {
       // DR-078 §1 result 写像 (issue 2026-07-09-ref-template-result-shape): a `ref` element is
       // ALSO a structural dispatcher with no scalar/array value of its own — its "value" is a
-      // name-scoped projection of the REFERENCED template's own leaves (installer.mbt's
+      // name-scoped projection of the REFERENCED template's own leaves (lowering.mbt's
       // `ref_row_head` / `lower_positional`/`inst_long`'s `Scoped` wrap), never a flat binding on
       // `e.name` itself. Registering an entity here is (a) dead for the value-source-ladder side
       // (nothing ever binds flatly to `e.name`, so `resolve_entity` always seats `Ok([])` and
@@ -3703,8 +3703,11 @@ fn inst_constraint(
         resolve_id_reference(constraint_candidates, target, fn(candidate) {
           candidate.name
         }) {
-        // このスコープに居ない参照は書かれたまま渡す — lexical 連鎖の外側は
-        // global copy として降りてくるか、absent-ref 検査が別途拾う。
+        // このスコープに居ない参照は書かれたまま渡す — lexical 連鎖の外側の要素は
+        // global copy として当スコープへ降りてくるので、その時に解決される。
+        // 注意: requires / conflicts_with の**不在 target を静的に拾う検査は無い**
+        // (`check_elem_absent_ref` が見るのは `ref_target` だけ、`check_element_absent_link`
+        // は `link` だけ)。解決できない target は制約評価まで書かれたまま運ばれる。
         None => out.push(target)
         Some(declaration) => out.push(declaration.name)
       }
@@ -4377,7 +4380,7 @@ fn push_invalid_long(
 
 ///|
 /// DR-011 明確化 (kawaz 裁定 2026-07-08): alias `long_override` (DR-057 §3 差分上書き) は canonical
-/// 側の `long` と同じ colon DSL を共用する (`classify_long_spelling`、installer.mbt:1497 のコメント
+/// 側の `long` と同じ colon DSL を共用する (`classify_long_spelling`、lowering.mbt:1497 のコメント
 /// 「二経路が drift しないよう分類器を共用」参照) — 明確化はこの DSL が現れる**全ての場所**に一様に効く
 /// 規則なので、colon-less / 語彙外 effect は canonical 側 (`push_invalid_long`) と同じく `unknown-vocab`
 /// (DR-054) に落とす。canonical 側と別関数にしているのは、target canonical 要素の `ty` を

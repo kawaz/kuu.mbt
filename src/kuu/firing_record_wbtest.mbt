@@ -1,4 +1,4 @@
-// firing_record_wbtest.mbt — DR-114 §6.1「cell fn は発火時に 1 回」の一本化 (FiringRecord) の pin。
+// firing_record_wbtest.mbt — DR-138 §6b-3「fn は発火ごとに 1 回だけ実行」の一本化 (FiringRecord) の pin。
 //
 // 3 実行経路 (effects 射影 / 枝ローカル fold / resolve 相 CLI seat) が同じ発火を独立実行していた
 // 旧構造では、実行回数カウンタは経路数ぶん増え、非決定 fn は経路ごとに別の値を観測した。
@@ -61,7 +61,7 @@ fn firing_counter_registry(
 }
 
 ///|
-test "DR-114 §6.1: 値残余の無いセルの fn は発火 1 回 — 3 経路が record を消費する" {
+test "DR-138 §6b-3: 値残余の無いセルの fn は発火 1 回 — 3 経路が record を消費する" {
   let counter : Ref[Int] = { val: 0 }
   // 呼ぶたびに 10, 20, 30... を返す = 再実行があれば経路間で観測値がずれる非決定 fn。
   let registry = firing_counter_registry("tick", counter, fn(n, _) {
@@ -91,7 +91,7 @@ test "DR-114 §6.1: 値残余の無いセルの fn は発火 1 回 — 3 経路�
 }
 
 ///|
-test "DR-114 §6.1 × DR-131 §1.1: Value(null) の record は set(null) 観測とラダー開放へ一度だけ配達される" {
+test "DR-138 §6b-3 × DR-131 §1.1: Value(null) の record は set(null) 観測とラダー開放へ一度だけ配達される" {
   let counter : Ref[Int] = { val: 0 }
   let registry = firing_counter_registry("nil-tick", counter, fn(_, _) {
     @abi.Null
@@ -120,7 +120,7 @@ test "DR-114 §6.1 × DR-131 §1.1: Value(null) の record は set(null) 観測�
 }
 
 ///|
-test "DR-114 §6.1: 値残余セルの fn は枝内実行を引き継ぐ — fold の枝選別値と resolve の座値が同一" {
+test "DR-138 §6b-3: 値残余セルの fn は枝内実行を引き継ぐ — fold の枝選別値と resolve の座値が同一" {
   let counter : Ref[Int] = { val: 0 }
   let registry = firing_counter_registry("tock", counter, fn(n, _) {
     @abi.Number(100.0 + n.to_double())
@@ -169,7 +169,7 @@ fn firing_bump_registry(counter : Ref[Int]) -> @node.Registry {
 }
 
 ///|
-test "DR-114 §6.1 × DR-081 §2: parse の env 供給が明示 default 後の old に効く (W2-4 §3.2 の閉じ)" {
+test "DR-138 §6b-3 × DR-081 §2: parse の env 供給が明示 default 後の old に効く (W2-4 §3.2 の閉じ)" {
   let counter : Ref[Int] = { val: 0 }
   let ast = firing_ast(
     (
@@ -199,7 +199,7 @@ test "DR-114 §6.1 × DR-081 §2: parse の env 供給が明示 default 後の o
 }
 
 ///|
-test "DR-114 §6.1 × DR-081 §2: parse の config 供給も明示 default 後の old に効く" {
+test "DR-138 §6b-3 × DR-081 §2: parse の config 供給も明示 default 後の old に効く" {
   let counter : Ref[Int] = { val: 0 }
   let ast = firing_ast(
     (
@@ -233,7 +233,7 @@ test "DR-114 §6.1 × DR-081 §2: parse の config 供給も明示 default 後�
 }
 
 ///|
-test "DR-114 §6.1: parse と resolve の値源が食い違えば record は消費されない (old 一致 gate)" {
+test "DR-138 §6b-3: parse と resolve の値源が食い違えば record は消費されない (old 一致 gate)" {
   let counter : Ref[Int] = { val: 0 }
   let ast = firing_ast(
     (

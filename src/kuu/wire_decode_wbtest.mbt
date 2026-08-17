@@ -411,9 +411,10 @@ test "dec_definition: explicit env: is UNCHANGED when env_prefix is unset (対�
 
 ///|
 /// 保証 (DR-049 §3 名前導出規則、DESIGN §7.2 line 842 の例そのもの): `config: {env_prefix:"MYAPP",
-/// auto_env:true}` 配下の `serve` スコープの `port` (env: 未指定) は decode 時点で
-/// `MYAPP_SERVE_PORT` を自動導出する — scope_path (= `dec_command` が積む command name チェーン)
-/// + env_prefix + name の全連結、UPPER のみ (name は既に snake_case)。
+/// env_auto:true}` (wire キーは DR-100 §1 で `auto_env` から改名) 配下の `serve` スコープの
+/// `port` (env: 未指定) は decode 時点で `MYAPP_SERVE_PORT` を自動導出する — scope_path
+/// (= `dec_command` が積む command name チェーン) + env_prefix + name の全連結、id 軸の写像を
+/// 通してから UPPER (DR-136 §3/§4 の系)。
 test "dec_definition: auto_env derives UPPER(env_prefix)_UPPER(scope_path)_UPPER(name) (DR-049 §3, DESIGN §7.2 example)" {
   let src =
     #|{
@@ -436,7 +437,7 @@ test "dec_definition: auto_env derives UPPER(env_prefix)_UPPER(scope_path)_UPPER
 }
 
 ///|
-/// 対極 (DR-049 §4「明示 env: が auto_env に優先する」): auto_env:true 下でも `env:` を明示した
+/// 対極 (DR-049 §4「明示 env: が auto_env に優先する」): `env_auto:true` 下でも `env:` を明示した
 /// 要素には auto 導出が一切効かない (明示値 + env_prefix 連結のみ、scope_path は不参加) — auto_env
 /// on の scope に混在する明示/暗黙の両方が正しく分岐することを 1 fixture で固定する。
 test "dec_definition: auto_env does NOT override an element's explicit env: (DR-049 §4, 優先関係)" {

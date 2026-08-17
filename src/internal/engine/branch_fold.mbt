@@ -18,7 +18,7 @@
 // 一致するだけで、意味論は DR-127 §4 の範囲に留まるため。
 //
 // 明示 `default` 効果の落ち先 (DR-081 §2 の書き換え済み default) は `ladder` closure が供給する
-// (front_door が parse の値源 provider で実装、DR-114 §6.1 の一本化)。ladder 未供給の呼び出し
+// (front_door が parse の値源 provider で実装、DR-138 §6b-3 の一本化)。ladder 未供給の呼び出し
 // (engine 直呼び) は宣言 default 止まり — その形では record の old が resolve 相と一致せず
 // 消費されないため、fold は枝選別のためだけに走る従来経路になる。
 
@@ -273,7 +273,7 @@ fn scope_matches(binding : Binding, address : Array[String]) -> Bool {
 /// 非 null 値すべて — DR-127 §3.2「保証は値を運んだ経路で変わらない」)。fold が実行しない
 /// もの (畳んでいないセルの fn 等) はここでは判明しないので落とさず、resolve 相が持ち主。
 ///
-/// `ledger` (DR-114 §6.1 の一本化): 枝内で実行した発火の結果を FiringRecord として記録する。
+/// `ledger` (DR-138 §6b-3 の一本化): 枝内で実行した発火の結果を FiringRecord として記録する。
 /// 枝が落ちれば ledger は枝ごと捨てられ、勝ち枝の ledger は裁定後にそのまま配達される —
 /// 値残余セルの fn を勝ち枝で**再実行しない**ための引き継ぎ席。`ladder` は明示 `default`
 /// 効果の落ち先 (DR-081 §2 の書き換え済み default)。未供給 (None) は従来どおり宣言 default
@@ -660,7 +660,7 @@ fn binding_has_plain_invoke(bs : Array[Binding]) -> Bool {
 }
 
 ///|
-/// 裁定後の 1 回の fold (DR-114 §6.1 の一本化): 値残余 binding を持たないセルの Invoke 発火を
+/// 裁定後の 1 回の fold (DR-138 §6b-3 の一本化): 値残余 binding を持たないセルの Invoke 発火を
 /// 勝ち経路上で 1 回実行し、FiringRecord として記録する。値残余セル分は枝ローカル fold
 /// (`branch_fold_reject`) の枝内実行結果が ledger ごと引き継がれるので対象外。枝選別に参加しない
 /// 発火を全枝で実行するのは DR-114 が禁じる方向の悪化なので、per-branch には広げず勝ち経路

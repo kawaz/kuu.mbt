@@ -229,8 +229,9 @@ priv struct SortableCommand {
 /// completion policy が candidate.origin を help の適用済み列へ接続する package 内 carrier。
 /// HelpModel の公開 schema へ canonical identity を複製せず、同じ順序計算の結果を再利用する。
 /// 候補と help entry を突き合わせる面 (DR-115 §2.2 のセクション区分と同じ 3 面)。`origin` は
-/// 要素名なので、同じ scope に同名の option と command が居ると (DR-041 §4 が認める構成) 名前
-/// だけでは誤接続する。面を identity に添えて区別する (CMP-Q1)。
+/// 参照識別子軸 (id) であり (DR-104 §2、TRG-Q1=b)、同じ scope に同じ参照識別子を持つ option と
+/// command が居ると (DR-041 §4 が認める構成) 識別子だけでは誤接続する。面を identity に添えて
+/// 区別する (CMP-Q1)。`completion_query.mbt` の照合も同じ id 軸で書く。
 priv enum CompletionFace {
   CommandFace
   OptionFace

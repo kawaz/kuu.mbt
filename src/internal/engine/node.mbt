@@ -760,7 +760,7 @@ pub(all) enum Constraint {
   /// 型委譲判定を実際にどの cell に対して行うかの候補集合 — 通常要素は `[{name: display, wrapper:
   /// None}]` 自身 (単一候補、既存挙動どおり)。structural or (`Or`、型付き枝、直書き) が required を
   /// 持つ場合は各枝の leaf name (`wrapper: None`、値は親 scope に直接 bind される) の配列: Or
-  /// wrapper 自身 (display) は "no own scalar/array value" (installer.mbt の Or entity 登録コメント
+  /// wrapper 自身 (display) は "no own scalar/array value" (lowering.mbt の Or entity 登録コメント
   /// 参照) で値が committed されることが無く、値は選ばれた枝の leaf entity (num/flag 等) にのみ
   /// commit される。`ref` 経由の structural or (テンプレート先が Or) も同様に leaf name を候補とする
   /// が、この場合は `wrapper: Some(宣言元 ref 要素の name)` — ref 展開が `Scoped(ref要素名, ...)` で
@@ -778,7 +778,7 @@ pub(all) enum Constraint {
   /// `Required` と観測上同じ結果になる (DR-103 §4 の縮退)。`required_group` と `exclusive_group` の
   /// group 名前空間は独立 (DR-103 §3) — 同名文字列を両属性に書いても 2 つの独立述語として評価される。
   /// candidates の候補セル解決 (`RequiredCandidate` の name/wrapper 双方) は `Required` と完全に
-  /// 共有する (`installer.mbt` の `required_candidates` ヘルパー、codex M-2 の再発防止)。
+  /// 共有する (`lowering.mbt` の `required_candidates` ヘルパー、codex M-2 の再発防止)。
   RequiredGroup(String, Array[RequiredCandidate])
 } derive(Eq, Debug)
 
@@ -814,7 +814,7 @@ pub(all) struct Entity {
   accum : &AccumulatorExt? // None = scalar; Some(resident) = resident-owned fold/collect
   // TRANSITIONAL(M5c): flatten/is_multiple_decl stay on Entity until AccumulatorExt owns
   // the per-fire row-boundary policy used by build_result; moving only one would lose DR-084 semantics.
-  // DR-105 §1 flatten dial (append accumulator only, `installer.mbt`'s `ensure_entity` enforces
+  // DR-105 §1 flatten dial (append accumulator only, `lowering.mbt`'s `ensure_entity` enforces
   // this invariant — a non-append accum cell always carries false here, the definition-error gate
   // `collect_flatten_non_append` rejects any other declared combination before lowering runs):
   // whether an array-shaped fire value gets expanded by ONE level into the accumulated array
