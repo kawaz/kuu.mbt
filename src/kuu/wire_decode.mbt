@@ -3548,10 +3548,6 @@ fn settle_element_name_axes(e : @engine.ElementDef) -> @engine.ElementDef {
   if e.is_exact {
     return e
   }
-  // DR-064 §5: dd の name 既定 `--` は軸を確定する前に供給する — 後段で埋めると id 軸が
-  // 空文字のまま確定してしまう。
-  let raw_name = if e.is_dd && e.name == "" { "--" } else { e.name }
-  let base = { ..e, name: raw_name }
   let body = match e.body {
     @engine.ElementBody::Group(items) => {
       let settled : Array[@engine.ElementDef] = []
@@ -3577,7 +3573,7 @@ fn settle_element_name_axes(e : @engine.ElementDef) -> @engine.ElementDef {
   // 方言差し替え (`fixtures/dd/dialect-name.json` の `++`) は literal であって、DR-136 §2 が
   // 綴り軸に載せると列挙した 3 つ (long の基幹綴り / command のトリガ / alias の入口) の
   // どれでもない。exact / values の literal 直値と同じ扱いで写像を通さない。
-  let trigger = if e.is_dd { raw_name } else { base.trigger_spelling() }
+  let trigger = if e.is_dd { e.name } else { e.trigger_spelling() }
   // DR-136 §1/§3: 値プレースホルダ軸のデフォルト供給 (id 系の写像 + ASCII 大文字化)。
   // 明示 `value_name` は無変換でそのまま。
   //
@@ -3592,16 +3588,16 @@ fn settle_element_name_axes(e : @engine.ElementDef) -> @engine.ElementDef {
       } else {
         {
           ..e.help_meta,
-          value_name: Some(@engine.name_axis_value_name(raw_name)),
+          value_name: Some(@engine.name_axis_value_name(e.name)),
         }
       }
   }
   {
-    ..base,
+    ..e,
     help_meta,
     trigger_name: Some(trigger),
-    export_key: settled_export_key(raw_name, e.export_key),
-    name: base.reference_identifier(),
+    export_key: settled_export_key(e.name, e.export_key),
+    name: e.reference_identifier(),
     id: None,
     body,
   }
