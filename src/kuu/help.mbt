@@ -956,9 +956,15 @@ fn help_usage(definition : @engine.Definition) -> HelpUsage {
 }
 
 ///|
+/// DR-053 §4「定義に **help 入口** があれば、その綴り」: 素材は help 入口であって
+/// fail_action 一般ではない。`{"on_failure": true}` を素で立てた `--version` (DR-113 §7.2 /
+/// DESIGN §15.10 の汎用 on_failure) も fail_action=true になるので、それだけを見ると
+/// `--version` が help_entry として載る (実測: 本物の `--help` が併存していても宣言順で
+/// `--version` が勝っていた)。help preset かどうかは HelpMetaDeclaration が carry する
+/// `is_help_preset` で判別する (DR-113 §7.2 が同じ判別のために置いた構造情報)。
 fn help_entry(definition : @engine.Definition) -> String? {
   for option in definition.options {
-    if option.fail_action {
+    if option.fail_action && option.help_meta.is_help_preset {
       let spellings = option_spellings(option)
       if spellings.length() > 0 {
         return Some(spellings[0])

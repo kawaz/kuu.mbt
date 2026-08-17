@@ -137,3 +137,73 @@ test "command aliases are listed on the spelling axis (DR-136 §5)" {
     Failure(_) => ()
   }
 }
+
+///|
+/// DR-053 §4「定義に **help 入口** があれば、その綴り」: help_entry の素材は help 入口であって
+/// fail_action 一般ではない。DR-113 §7.2 / DESIGN §15.10 の汎用 `on_failure: true` を素で立てた
+/// `--version` も fail_action=true になるので、それだけを見ると本物の `--help` が併存していても
+/// 宣言順で `--version` が help_entry に載っていた (実測)。判別は `is_help_preset`。
+test "help_entry is a help entry, not any fail_action (DR-053 §4)" {
+  let cases : Array[(String, String, String?)] = [
+    (
+      "help preset only",
+      (
+        #|{"options":[{"name":"help","type":"help","long":true}]}
+      ),
+      Some("--help"),
+    ),
+    (
+      "generic on_failure only",
+      (
+        #|{"options":[{"name":"version","type":"flag","long":true,"on_failure":true}]}
+      ),
+      None,
+    ),
+    (
+      "generic on_failure declared before the help preset",
+      (
+        #|{"options":[{"name":"version","type":"flag","long":true,"on_failure":true},{"name":"help","type":"help","long":true}]}
+      ),
+      Some("--help"),
+    ),
+  ]
+  for case in cases {
+    let (label, src, expected) = case
+    let ast = match parse_definition(@json.parse(src)) {
+      Ok(ast) => ast
+      Err(_) => {
+        fail(label + ": definition was rejected")
+        return
+      }
+    }
+    match help(ast) {
+      Ok(model) => assert_eq(model.help_entry, expected)
+      Err(_) => fail(label + ": help query failed")
+    }
+  }
+}
+
+///|
+/// CONFORMANCE §2 / DR-053 §4: help_entry は failure / ambiguous の**両方**に載る素材であり、
+/// 由来が消費 ambiguous かセル union の淘汰かで有無が変わるものではない。union 由来の
+/// Failure / Ambiguous だけ `help_entry: None` を固定していた。
+test "union-derived failures still carry help_entry (CONFORMANCE §2)" {
+  let src =
+    #|{"options":[{"name":"help","type":"help","long":true},{"name":"color","type":"fixture/color","long":true},{"name":"r","type":"int","long":true,"link":"color[0]"},{"name":"g","type":"int","long":true,"link":"color[1]"},{"name":"b","type":"int","long":true,"link":"color[2]"}]}
+  let registry = @node.Registry::new()
+  install_canonical(registry)
+  install_conformance_fixture_residents(registry)
+  let ast = match parse_definition(@json.parse(src), extensions=registry) {
+    Ok(ast) => ast
+    Err(_) => {
+      fail("definition was rejected")
+      return
+    }
+  }
+  // r と g だけを供給 = color の値が揃わない (incomplete_value)。淘汰由来の Failure。
+  match parse(ast, ["--r", "0", "--g", "255"]) {
+    Failure(f) => assert_eq(f.help_entry, Some("--help"))
+    Ambiguous(_) => fail("expected a union-incomplete failure")
+    Success(_) => fail("expected a union-incomplete failure")
+  }
+}

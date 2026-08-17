@@ -377,13 +377,23 @@ pub fn parse(
               firings: deliveries.ledger_for(bindings),
             })
           }
-          Ambiguous({ interpretations, help_entry: None })
+          // CONFORMANCE §2 / DR-053 §4: help_entry は failure / ambiguous の**両方**に載る
+          // 素材で、由来が消費 ambiguous かセル union かで有無が変わるものではない。
+          // ambiguous 側は engine と同じ posture (単一の失敗位置が無いので空 errors を渡して
+          // root scope 全体を見る、`find_help_entry` の doc comment)。
+          Ambiguous({
+            interpretations,
+            help_entry: @engine.find_help_entry(@engine.ScopeNode(ast.root), []),
+          })
         }
         UnionIncomplete(cell_errors) =>
           Failure({
             errors: cell_errors,
             fired_action: None,
-            help_entry: None,
+            help_entry: @engine.find_help_entry(
+              @engine.ScopeNode(ast.root),
+              cell_errors,
+            ),
             tried_triggers: [],
           })
       }
@@ -422,7 +432,10 @@ pub fn parse(
         Failure({
           errors: culled_errors,
           fired_action: None,
-          help_entry: None,
+          help_entry: @engine.find_help_entry(
+            @engine.ScopeNode(ast.root),
+            culled_errors,
+          ),
           tried_triggers: [],
         })
       } else if survivors.length() == 1 {
