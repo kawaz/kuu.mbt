@@ -199,6 +199,30 @@ fn branch_fold_failure(
 }
 
 ///|
+/// DR-138 §4 の args_pos 帰属: **当該セルに着地した書き込みのうち argv 位置最深**のものの
+/// operand 位置 (`cull_union_cell` が返す `pos`)。argv 位置を持つ書き込みが 1 つも無ければ
+/// (`pos < 0`) 消費位置 (DR-127 §4.2)。resolve 相の `union_incomplete_error` と同じ規則で、
+/// 相によって帰属規則が割れないようにする — 「効果列の最後の binding の at_pos を優先する」
+/// のは §4 の規定 (最深) とは別物で、位置なしの書き込みが最後に来ると最深が捨てられる。
+fn branch_fold_cell_failure(
+  key : String,
+  deepest_pos : Int,
+  consumed_pos : Int,
+  scope_path : Array[String],
+  reason : String,
+  message : String,
+) -> ParseError {
+  {
+    element: key,
+    args_pos: if deepest_pos >= 0 { deepest_pos } else { consumed_pos },
+    kind: Parse,
+    reason,
+    message,
+    path: scope_path.copy(),
+  }
+}
+
+///|
 fn branch_fold_error(
   binding : Binding,
   consumed_pos : Int,
@@ -324,9 +348,10 @@ fn branch_fold_reject(
           ) {
           @fold.Incomplete(pos) => {
             cell_errors.push(
-              branch_fold_failure(
-                cell_bindings[cell_bindings.length() - 1],
+              branch_fold_cell_failure(
+                key,
                 pos,
+                consumed_pos,
                 decl.scope_path,
                 "incomplete_value",
                 "the values supplied for \{key} do not add up to a complete value",
@@ -338,13 +363,10 @@ fn branch_fold_reject(
           @fold.WriteFailed(reason, message, pos) =>
             return branch_fold_reject_stop(
               cell_errors,
-              branch_fold_failure(
-                cell_bindings[cell_bindings.length() - 1],
-                if pos >= 0 {
-                  pos
-                } else {
-                  consumed_pos
-                },
+              branch_fold_cell_failure(
+                key,
+                pos,
+                consumed_pos,
                 decl.scope_path,
                 reason,
                 message,

@@ -630,3 +630,61 @@ test "cull_union_cell: cell fn は発火ごとに 1 回実行し old は時点�
     _ => abort("a failing cell fn must surface as a write-time failure")
   }
 }
+
+///|
+/// argv 位置を持たない書き込み (値源ラダー / 宣言 default 由来など、`at_pos` が `None`) 用。
+fn cull_test_write_unpositioned(
+  value : @abi.Value,
+  residual : Array[@abi.ObservationSegment],
+) -> @abi.Binding {
+  {
+    ..@abi.Binding::new("cell", value, @abi.Cli),
+    op: @abi.Set,
+    value_residual: residual,
+  }
+}
+
+///|
+/// 保証 (DR-138 §4 の args_pos 帰属): 「当該セルに着地した書き込みのうち **argv 位置最深**の
+/// ものの operand 位置。argv 位置を持たない書き込みしか無い場合は消費位置 (DR-127 §4.2)」。
+/// 後者を呼び出し側が実現できるよう、`at_pos` を持たない書き込みは最深位置の計算に参加せず、
+/// 全部が位置なしなら `Incomplete(-1)` (= argv 位置なし) を返す。旧実装は `None` を `0` に
+/// 読み替えていたため、(a) 位置なしの書き込みが argv 先頭を指し、(b) 呼び出し側の
+/// 「消費位置へ落とす」フォールバックが構造的に到達不能な死枝になっていた。
+test "cull_union_cell: 位置なし書き込みは最深位置に参加しない (DR-138 §4 / DR-127 §4.2)" {
+  let registry = fold_test_registry()
+  let color : Array[@abi.ValueType] = [
+    @abi.ValueType::Tuple(["int", "int", "int"]),
+    @abi.ValueType::String,
+  ]
+
+  // 位置なしの書き込みだけ → 生存ゼロ、かつ argv 位置は無い (-1)。
+  let unpositioned = cull_union_cell(
+    "cell",
+    color,
+    [
+      cull_test_write_unpositioned(@abi.Number(0.0), [@abi.ObservationIndex(0)]),
+      cull_test_write_unpositioned(
+        @abi.Number(255.0),
+        [@abi.ObservationIndex(1)],
+      ),
+    ],
+    registry,
+  )
+  assert_true(unpositioned is Incomplete(-1))
+
+  // 位置つきが 1 つでもあれば、その最深位置が勝つ (位置なしは 0 として混ざらない)。
+  let mixed = cull_union_cell(
+    "cell",
+    color,
+    [
+      cull_test_write(@abi.Number(0.0), [@abi.ObservationIndex(0)], 3),
+      cull_test_write_unpositioned(
+        @abi.Number(255.0),
+        [@abi.ObservationIndex(1)],
+      ),
+    ],
+    registry,
+  )
+  assert_true(mixed is Incomplete(3))
+}

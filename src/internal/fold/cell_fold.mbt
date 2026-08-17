@@ -982,9 +982,15 @@ pub fn cull_union_cell(
       continue
     }
     any_write = true
+    // DR-138 §4 の args_pos 帰属は「当該セルに着地した書き込みのうち **argv 位置最深**のものの
+    // operand 位置。argv 位置を持たない書き込みしか無い場合は消費位置 (DR-127 §4.2)」。
+    // 位置を持たない書き込みは `-1` (= argv 位置なし) として扱い、deepest の計算に参加させない
+    // — 0 に読み替えると (a) 位置なしの書き込みが argv 先頭を指す誤帰属になり、(b) deepest が
+    // -1 のまま残らないので呼び出し側の「消費位置へ落とす」フォールバックが構造的に死ぬ。
+    // `last_pos` (初期値 -1) の意味論とも揃う。
     let pos = match binding.at_pos {
       Some(p) => p
-      None => 0
+      None => -1
     }
     if pos > deepest {
       deepest = pos
