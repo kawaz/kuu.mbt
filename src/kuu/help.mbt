@@ -388,30 +388,42 @@ fn command_alias_map(
 ) -> Map[String, Array[String]] {
   let output : Map[String, Array[String]] = Map([])
   for a in definition.aliases {
-    // command alias: target が def.commands にあり、`name` が明示されているもののみ。
-    // command alias の target も id 軸 (CMDID-Q1=a)。
-    let is_command = @engine.resolve_id_reference(
-        definition.commands,
-        a.target,
-        fn(c) { c.name },
-      )
-      is Some(_)
-    if !is_command {
+    // command alias: target が def.commands にあるもののみ。command alias の target も
+    // id 軸 (CMDID-Q1=a) なので 2 段ルックアップで解決する。
+    let target = match
+      @engine.resolve_id_reference(definition.commands, a.target, fn(c) {
+        c.name
+      }) {
+      Some(c) => c
+      None => continue
+    }
+    // DR-136 §5「alias は綴り軸の別名を追加する入口ノード」— 一覧に出すのは **入口綴り**
+    // (alias ノードの trigger_name、`settle_name_axes` が既定 = alias 名の綴り軸写像で確定
+    // 済み) であって name 軸の値ではない。name 軸を出すと help が `co_x` と表示するのに
+    // 打てるのは `co-x`、という食い違いになる (option 側の `alias_spellings` は綴り軸で、
+    // command 側だけが非対称だった)。
+    let alias_spelling = match a.trigger_name {
+      Some(t) => t
+      None =>
+        @engine.name_axis_trigger(
+          match a.name {
+            Some(n) => n
+            None => a.target
+          },
+        )
+    }
+    // canonical と同じ綴りしか足さない alias は一覧に出さない (別名になっていない)。
+    // 比較は綴り軸どうしで行う。
+    if alias_spelling == target.trigger_spelling() {
       continue
     }
-    let alias_name = match a.name {
-      Some(n) => n
-      None => a.target
-    }
-    if alias_name == a.target {
-      continue
-    }
-    match output.get(a.target) {
-      Some(existing) => push_unique(existing, alias_name)
+    // キーは解決後の command の参照識別子 — 呼び出し側は `command.name` で引く。
+    match output.get(target.name) {
+      Some(existing) => push_unique(existing, alias_spelling)
       None => {
         let arr : Array[String] = []
-        arr.push(alias_name)
-        output.set(a.target, arr)
+        arr.push(alias_spelling)
+        output.set(target.name, arr)
       }
     }
   }

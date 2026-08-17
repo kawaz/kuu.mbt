@@ -102,3 +102,38 @@ test "help: nested path reads post-fixpoint global declaration copy" {
   assert_eq(model.description, Some("add a remote"))
   assert_eq(help_option_spellings(model.options), ["--help"])
 }
+
+///|
+/// DR-136 §5「alias は綴り軸の別名を追加する入口ノード」: command alias の一覧に出すのは
+/// **入口綴り** (alias ノードの trigger_name) であって name 軸の値ではない。name 軸を出すと
+/// help が `co_x` と表示するのに実際に打てるのは `co-x` という食い違いになる (option 側の
+/// `alias_spellings` は綴り軸なので、command 側だけが非対称だった)。
+test "command aliases are listed on the spelling axis (DR-136 §5)" {
+  let src =
+    #|{"commands":[{"type":"command","name":"co_main","help":"m"},{"alias":"co_main","type":"command","name":"co_x"}]}
+  let ast = match parse_definition(@json.parse(src)) {
+    Ok(ast) => ast
+    Err(_) => {
+      fail("definition was rejected")
+      return
+    }
+  }
+  let model = match help(ast) {
+    Ok(model) => model
+    Err(_) => {
+      fail("help query failed")
+      return
+    }
+  }
+  assert_eq(model.commands.length(), 1)
+  assert_eq(model.commands[0].aliases, ["co-x"])
+  // 表示した綴りが実際に打てる綴りであること (help と CLI 表面の一致こそが §5 の眼目)。
+  match test_resolve(ast, ["co-x"]) {
+    Success(_) => ()
+    Failure(_) => fail("the spelling listed by help is not accepted on the CLI")
+  }
+  match test_resolve(ast, ["co_x"]) {
+    Success(_) => fail("the name-axis spelling must not be a CLI entry")
+    Failure(_) => ()
+  }
+}
