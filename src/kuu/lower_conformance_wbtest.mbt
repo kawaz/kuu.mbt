@@ -1665,3 +1665,48 @@ fn verify_installer_permutation_property() -> Unit {
 test "installer order invariance over the fixture corpus (DR-042 §5)" {
   verify_installer_permutation_property()
 }
+
+///|
+/// DR-054 §1「不正な値域 (… repeat の min > max 等)」は Error、§4 は errors の**全列挙**を
+/// 要求する。したがって repeat の min > max 検査は要素の配置に依らず同じ結果でなければならない
+/// — options / positionals / 構造子配下の子要素 (named group / or 枝 leaf) / command 配下の
+/// どこに書いても definition-error になる。以前は positionals[] の最上段だけを走っていたため、
+/// 同じ不正値が option や入れ子では素通りしていた。
+test "repeat min > max is a definition error wherever it is declared (DR-054 §1/§4)" {
+  let cases : Array[(String, String)] = [
+    ("toplevel positional", (
+      #|{"positionals":[{"name":"a","type":"string","repeat":{"min":3,"max":1}}]}
+    )),
+    ("toplevel option", (
+      #|{"options":[{"name":"a","type":"string","long":true,"repeat":{"min":3,"max":1}}]}
+    )),
+    ("named group child", (
+      #|{"positionals":[{"name":"g","positionals":[{"name":"a","type":"string","repeat":{"min":3,"max":1}}]}]}
+    )),
+    ("or branch leaf", (
+      #|{"options":[{"name":"o","long":true,"or":[{"name":"a","type":"string","repeat":{"min":3,"max":1}},{"name":"b","type":"string"}]}]}
+    )),
+    ("option under a command", (
+      #|{"commands":[{"name":"c","options":[{"name":"a","type":"string","long":true,"repeat":{"min":3,"max":1}}]}]}
+    )),
+  ]
+  for case in cases {
+    let (label, src) = case
+    match parse_definition(@json.parse(src)) {
+      Ok(_) => fail(label + ": repeat min 3 > max 1 was accepted")
+      Err(Malformed(reason)) =>
+        fail(label + ": expected a definition error, got malformed: " + reason)
+      Err(Rejected(errs)) => {
+        let mut seen = false
+        for e in errs {
+          if e.kind is @abi.InvalidRange && e.message == "repeat min 3 > max 1" {
+            seen = true
+          }
+        }
+        if !seen {
+          fail(label + ": no InvalidRange error for the repeat range")
+        }
+      }
+    }
+  }
+}

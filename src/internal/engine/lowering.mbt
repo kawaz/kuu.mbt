@@ -5547,28 +5547,53 @@ fn check_element_absent_link(
 ///|
 /// invalid value range (DR-054 / DR-052): repeat min > max。全件収集。
 fn collect_invalid_range(def : Definition, out : Array[DefError]) -> Unit {
+  for e in def.options {
+    collect_invalid_range_element(e, out)
+  }
   for e in def.positionals {
-    match e.repeat {
-      Some(spec) =>
-        match spec.max {
-          Some(mx) =>
-            if spec.min > mx {
-              out.push(
-                def_err(
-                  e.name,
-                  InvalidRange,
-                  "repeat min \{spec.min} > max \{mx}",
-                  "set the repeat max >= min",
-                ),
-              )
-            }
-          None => ()
-        }
-      None => ()
-    }
+    collect_invalid_range_element(e, out)
   }
   for c in def.commands {
     collect_invalid_range(c.body, out)
+  }
+}
+
+///|
+/// DR-054 §1「不正な値域 (… repeat の min > max 等)」は要素の配置に依らない Error で、§4 は
+/// errors の**全列挙**を要求する — したがって検査は options / positionals / 構造子配下の子要素
+/// (Group items / Or 枝の items) / command 配下をすべて同じ規則で走る。片方の配列や最上段だけを
+/// 走ると、同じ不正値が書かれた場所によって通ったり落ちたりする。
+fn collect_invalid_range_element(e : ElementDef, out : Array[DefError]) -> Unit {
+  match e.repeat {
+    Some(spec) =>
+      match spec.max {
+        Some(mx) =>
+          if spec.min > mx {
+            out.push(
+              def_err(
+                e.name,
+                InvalidRange,
+                "repeat min \{spec.min} > max \{mx}",
+                "set the repeat max >= min",
+              ),
+            )
+          }
+        None => ()
+      }
+    None => ()
+  }
+  match e.body {
+    Group(items) =>
+      for item in items {
+        collect_invalid_range_element(item, out)
+      }
+    Or(branches) =>
+      for branch in branches {
+        for item in branch.items {
+          collect_invalid_range_element(item, out)
+        }
+      }
+    Cell | Enum(_) => ()
   }
 }
 
